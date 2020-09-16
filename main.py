@@ -203,6 +203,7 @@ init_mesh()
 init_pos()
 precomputation()
 gui = ti.GUI('Projective Dynamics v0.1')
+wait = input("PRESS ENTER TO CONTINUE.")
 while gui.running:
     # for i in range(30):
     #     with ti.Tape(loss=U):
