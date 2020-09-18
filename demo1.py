@@ -6,10 +6,11 @@ ti.init(arch=ti.gpu)
 
 N = 32
 dt = 3e-3
+# dt = 1.0/480
 dx = 1 / N
 rho = 4e1
 NF = 2 * N ** 2   # number of faces
-NV = (N + 1) ** 2 # number of vertices
+NV = (N + 1) ** 2  # number of vertices
 E, nu = 4e4, 0.2  # Young's modulus and Poisson's ratio
 mu, lam = E / 2 / (1 + nu), E * nu / (1 + nu) / (1 - 2 * nu)  # Lame parameters
 ball_pos, ball_radius = ti.Vector([0.5, 0.0]), 0.32
@@ -21,6 +22,7 @@ m_weight_strain = mu * 0.000061 * 2
 
 pos = ti.Vector.field(2, float, NV)
 pos_new = ti.Vector.field(2, float, NV)
+last_pos_new = ti.Vector.field(2, float, NV)
 
 vel = ti.Vector.field(2, float, NV)
 f2v = ti.Vector.field(3, int, NF)  # ids of three vertices of each face
@@ -28,7 +30,10 @@ B = ti.Matrix.field(2, 2, float, NF)  # The inverse of the init elements -- Dm
 F = ti.Matrix.field(2, 2, float, NF, needs_grad=True)
 A = ti.Matrix.field(4, 6, float, NF)
 Bp = ti.Matrix.field(2, 2, float, NF)
+
 rhs = ti.field(float, NV * 2)
+rhs_last = ti.field(float, NV * 2)
+
 Sn = ti.field(float, NV * 2)
 lhs_matrix = ti.field(ti.f32, shape=(NV * 2, NV * 2))
 
@@ -170,16 +175,17 @@ def build_rhs():
 
 @ti.kernel
 def update_velocity_pos():
+    print("pos_new[0] after solver, before advection:", pos_new[0])
     for i in range(NV):
         vel[i] = (pos_new[i] - pos[i]) / dt
         pos[i] = pos_new[i]
         # rect boundary condition:
-        cond = pos[i] < 0.1 and vel[i] < 0 or pos[i] > 1 and vel[i] > 0
+        cond = pos[i] < 0.0 and vel[i] < 0 or pos[i] > 1 and vel[i] > 0
         for j in ti.static(range(pos.n)):
             if cond[j]: vel[i][j] = 0.0
         pos[i] += dt * vel[i]
-    print("pos[0]:", pos[0])
-    print("vel[0]:", vel[0])
+    print("pos[0] after advection:", pos[0])
+    print("vel[0] after advection:", vel[0])
 
 
 @ti.kernel
@@ -198,21 +204,24 @@ def update_pos_new_from_numpy(sol: ti.ext_arr()):
         pos_new[pos_idx][1] = sol[sol_idx2]
 
 
+@ti.kernel
+def check_residual():
+    residual = 0.0
+    for i in range(NV):
+        residual += (last_pos_new[i] - pos_new[i]).norm()
+    print("residual:", residual)
+
 frame_counter = 0
 init_mesh()
 init_pos()
 precomputation()
-gui = ti.GUI('Projective Dynamics v0.1')
+gui = ti.GUI('Projective Dynamics Demo1 v0.1', res=(512, 512), background_color=0xdddddd)
 wait = input("PRESS ENTER TO CONTINUE.")
 while gui.running:
-    # for i in range(30):
-    #     with ti.Tape(loss=U):
-    #         update_U()
-    #     advance()
     build_sn()
     # Warm up:
     warm_up()
-    # pos_new = Sn
+    last_pos_new = pos_new
     for itr in range(solver_iteration):
         local_solve_build_bp_for_all_constraints()
         build_rhs()
@@ -220,8 +229,9 @@ while gui.running:
         rhs_np = rhs.to_numpy()
         lhs_matrix_np = lhs_matrix.to_numpy()
         pos_new_np = np.linalg.solve(lhs_matrix_np, rhs_np)
-        # print("pos_new_np shape:", pos_new_np.shape)
         update_pos_new_from_numpy(pos_new_np)
+        check_residual()
+        last_pos_new = pos_new
     # Update velocity and positions
     update_velocity_pos()
 

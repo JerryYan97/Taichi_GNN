@@ -1,10 +1,17 @@
 **Taichi Projective Dynamic**
 
-## Error
+## Current Result
 
-![gif](./results/PJD.gif)
+![gif](./results/PJD_demo2_v0.2.gif)
+
+## Blooper
+
+![gif](./results/PJD_demo1_v0.1.gif)
 
 ## TODO
 
-* Debug
+* optimization
 
+* more demos
+
+* deeper understanding

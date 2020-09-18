@@ -2,7 +2,9 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="c7b7a7b5-593c-4b57-8d86-8bca1f6e5042" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/results/PJD.gif" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -31,7 +33,28 @@
     <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
     <property name="settings.editor.selected.configurable" value="com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable" />
   </component>
-  <component name="RunManager" selected="Python.main">
+  <component name="RunManager" selected="Python.demo2">
+    <configuration name="demo2" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="ProjectiveDynamic_Taichi" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/demo2.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="experiment_field" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="ProjectiveDynamic_Taichi" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -97,6 +120,7 @@
     </configuration>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.demo2" />
         <item itemvalue="Python.main" />
         <item itemvalue="Python.experiment_field" />
         <item itemvalue="Python.fem99" />
@@ -117,29 +141,29 @@
     <servers />
   </component>
   <component name="WindowStateProjectService">
-    <state x="614" y="217" width="1092" height="706" key="#com.intellij.execution.impl.EditConfigurationsDialog" timestamp="1600203084817">
+    <state x="614" y="217" width="1092" height="706" key="#com.intellij.execution.impl.EditConfigurationsDialog" timestamp="1600433680812">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state x="614" y="217" width="1092" height="706" key="#com.intellij.execution.impl.EditConfigurationsDialog/0.0.1920.1040@0.0.1920.1040" timestamp="1600203084817" />
-    <state width="1142" height="194" key="GridCell.Tab.0.bottom" timestamp="1600217217682">
+    <state x="614" y="217" width="1092" height="706" key="#com.intellij.execution.impl.EditConfigurationsDialog/0.0.1920.1040@0.0.1920.1040" timestamp="1600433680812" />
+    <state width="1067" height="154" key="GridCell.Tab.0.bottom" timestamp="1600442277576">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state width="1142" height="194" key="GridCell.Tab.0.bottom/0.0.1920.1040@0.0.1920.1040" timestamp="1600217217682" />
-    <state width="1142" height="194" key="GridCell.Tab.0.center" timestamp="1600217217682">
+    <state width="1067" height="154" key="GridCell.Tab.0.bottom/0.0.1920.1040@0.0.1920.1040" timestamp="1600442277576" />
+    <state width="1067" height="154" key="GridCell.Tab.0.center" timestamp="1600442277575">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state width="1142" height="194" key="GridCell.Tab.0.center/0.0.1920.1040@0.0.1920.1040" timestamp="1600217217682" />
-    <state width="1142" height="194" key="GridCell.Tab.0.left" timestamp="1600217217682">
+    <state width="1067" height="154" key="GridCell.Tab.0.center/0.0.1920.1040@0.0.1920.1040" timestamp="1600442277575" />
+    <state width="1067" height="154" key="GridCell.Tab.0.left" timestamp="1600442277574">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state width="1142" height="194" key="GridCell.Tab.0.left/0.0.1920.1040@0.0.1920.1040" timestamp="1600217217682" />
-    <state width="1142" height="194" key="GridCell.Tab.0.right" timestamp="1600217217682">
+    <state width="1067" height="154" key="GridCell.Tab.0.left/0.0.1920.1040@0.0.1920.1040" timestamp="1600442277574" />
+    <state width="1067" height="154" key="GridCell.Tab.0.right" timestamp="1600442277576">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state width="1142" height="194" key="GridCell.Tab.0.right/0.0.1920.1040@0.0.1920.1040" timestamp="1600217217682" />
-    <state x="852" y="371" key="com.intellij.ide.util.TipDialog" timestamp="1600217458413">
+    <state width="1067" height="154" key="GridCell.Tab.0.right/0.0.1920.1040@0.0.1920.1040" timestamp="1600442277576" />
+    <state x="852" y="371" key="com.intellij.ide.util.TipDialog" timestamp="1600433520462">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state x="852" y="371" key="com.intellij.ide.util.TipDialog/0.0.1920.1040@0.0.1920.1040" timestamp="1600217458413" />
+    <state x="852" y="371" key="com.intellij.ide.util.TipDialog/0.0.1920.1040@0.0.1920.1040" timestamp="1600433520462" />
   </component>
 </project>
