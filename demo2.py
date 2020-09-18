@@ -2,6 +2,11 @@
 
 import taichi as ti
 import numpy as np
+import time
+from scipy import sparse
+from scipy.sparse.linalg import spsolve
+from scipy.sparse.linalg import factorized
+
 ti.init(arch=ti.gpu)
 
 dim = 2
@@ -28,6 +33,7 @@ mass = ti.field(float, NV)
 
 pos = ti.Vector.field(2, float, NV)
 pos_new = ti.Vector.field(2, float, NV)
+last_pos_new = ti.Vector.field(2, float, NV)
 posn = ti.Vector.field(2, float, NV)
 
 vel = ti.Vector.field(2, float, NV)
@@ -36,11 +42,14 @@ B = ti.Matrix.field(2, 2, float, NF)  # The inverse of the init elements -- Dm
 F = ti.Matrix.field(2, 2, float, NF, needs_grad=True)
 A = ti.Matrix.field(4, 6, float, NF)
 Bp = ti.Matrix.field(2, 2, float, NF * 2)
-rhs = ti.field(float, NV * 2)
+# rhs = ti.field(float, NV * 2)
+rhs_np = np.zeros(NV * 2, dtype=np.float32)
+
 Sn = ti.field(float, NV * 2)
 # weight = ti.field(float, NF * 2)
 lhs_matrix = ti.field(ti.f32, shape=(NV * 2, NV * 2))
 phi = ti.field(float, NF)  # potential energy of each element(face) for linear coratated elasticity material.
+
 
 resolutionX = 512
 pixels = ti.var(ti.f32, shape=(resolutionX, resolutionX))
@@ -51,7 +60,8 @@ drag = 0.2
 # phi = ti.field(float, NF)  # potential energy of each face (Neo-Hookean)
 # U = ti.field(float, (), needs_grad=True)  # total potential energy
 
-solver_iteration = 20
+solver_max_iteration = 10
+solver_stop_residual = 0.0001
 
 
 @ti.kernel
@@ -59,30 +69,14 @@ def init_pos():
     for i, j in ti.ndrange(N + 1, W + 1):
         k = i*(W+1)+j
         pos[k] = ti.Vector([i/N*0.4, j/W*0.2]) + ti.Vector([0.2, 0.4]) # 0.2, 0.4 - 0.6,0.6  0.02*0.02
-        # print("ind: ", k, ": ", pos[k][0],", ",pos[k][1])
-        # pos[k] = ti.Vector([i, j]) / N * 0.25 + ti.Vector([0.4, 0.4])
         vel[k] = ti.Vector([0, 0])
     for i in range(NF): # NF number of face
         ia, ib, ic = f2v[i]
         a, b, c = pos[ia], pos[ib], pos[ic]
-        B_i_inv = ti.Matrix.cols([b - a, c - a]) # rest B
-        # print("area:", B_i_inv.determinant())
-        B[i] = B_i_inv.inverse() # rest of B inverse
+        B_i_inv = ti.Matrix.cols([b - a, c - a])  # rest B
+        B[i] = B_i_inv.inverse()  # rest of B inverse
 
 
-# 10 21 32 43
-# 9 20 31 42
-# 8 19 30 41
-# 7 18 29 40
-# 6 17 28 39
-# 5 16 27 38
-# 4 15 26 37
-# 3 14 25 36
-# 2 13 24 35
-# 1 12 23 34
-# 0 11 22 33 44 55 66 77 88 99
-
-# 0 1 3
 @ti.kernel
 def init_mesh():  # generate two triangles
     for i, j in ti.ndrange(N, W):
@@ -93,8 +87,6 @@ def init_mesh():  # generate two triangles
         d = a + W + 1  # 11
         f2v[k + 0] = [a, d, c]
         f2v[k + 1] = [a, c, b]
-        # print("tri: ", k, ": ", a, " ", d, " ", c)
-        # print("tri: ", k+1, ": ", a, " ", c, " ", b)
 
 
 @ti.kernel
@@ -163,6 +155,7 @@ def precomputation():
 @ti.kernel
 def local_solve_build_bp_for_all_constraints():
     for i in range(NF):
+        # Construct strain constraints:
         # Construct Current F_i:
         ia, ib, ic = f2v[i]
         a, b, c = pos_new[ia], pos_new[ib], pos_new[ic]
@@ -172,30 +165,25 @@ def local_solve_build_bp_for_all_constraints():
         U, sigma, V = ti.svd(F_i, ti.f32)
         Bp[i] = U @ V.transpose()
 
-    for i in range(NF):
-        ia, ib, ic = f2v[i]
-        a, b, c = pos_new[ia], pos_new[ib], pos_new[ic]
-        D_i = ti.Matrix.cols([b - a, c - a])
-        F_i = D_i @ B[i]
-        U, sigma, V = ti.svd(F_i, ti.f32)
+        # Construct volume preservation constraints:
         x, y, max_it, tol = 10.0, 10.0, 80, 1e-6
         for t in range(max_it):
-            aa, bb = x+sigma[0,0], y+sigma[1,1]
-            f = aa*bb-1
+            aa, bb = x + sigma[0, 0], y + sigma[1, 1]
+            f = aa * bb - 1
             g1, g2 = bb, aa
-            bot = g1*g1 + g2*g2
+            bot = g1 * g1 + g2 * g2
             if abs(bot) < tol:
                 break
-            top = x*g1 + y*g2 - f
+            top = x * g1 + y * g2 - f
             div = top / bot
             x0, y0 = x, y
-            x = div*g1
-            y = div*g2
+            x = div * g1
+            y = div * g2
             _dx, _dy = x - x0, y - y0
-            if _dx*_dx + _dy*_dy < tol*tol:
+            if _dx * _dx + _dy * _dy < tol * tol:
                 break
-        PP = ti.Matrix.rows([[x+sigma[0,0],0.0], [0.0,sigma[1,1]+y]])
-        Bp[NF+i] = U @ PP @V.transpose()
+        PP = ti.Matrix.rows([[x + sigma[0, 0], 0.0], [0.0, sigma[1, 1] + y]])
+        Bp[NF + i] = U @ PP @ V.transpose()
 
     # Calculate Phi for all the elements:
     for i in range(NF):
@@ -213,7 +201,7 @@ def build_sn():
         Sn_idx1 = vert_idx*2  # m_sn
         Sn_idx2 = vert_idx*2+1
         pos_i = pos[vert_idx]  # pos = m_x
-        posn[vert_idx] = pos[vert_idx]  # posn = m_xn
+        # posn[vert_idx] = pos[vert_idx]  # posn = m_xn
         vel_i = vel[vert_idx]
         Sn[Sn_idx1] = pos_i[0] + dt * vel_i[0]  # x-direction;
         Sn[Sn_idx2] = pos_i[1] + dt * vel_i[1] + dt * dt * gravity[1]  # y-direction;
@@ -221,11 +209,12 @@ def build_sn():
 
 
 @ti.kernel
-def build_rhs():
+def build_rhs(rhs: ti.ext_arr()):
     one_over_dt2 = 1.0 / (dt ** 2)
     for i in range(NV * 2):
         # print("test pos ", i/2, " ", i%2)
-        pos_i = posn[i/2]
+        # pos_i = posn[i/2]
+        pos_i = pos[i/2]
         p0 = pos_i[0]
         p1 = pos_i[1]
         if i % 2 == 0:
@@ -267,15 +256,12 @@ def build_rhs():
 @ti.kernel
 def update_velocity_pos():
     for i in range(NV):
-        vel[i] = (pos_new[i] - posn[i]) / dt
+        vel[i] = (pos_new[i] - pos[i]) / dt
         pos[i] = pos_new[i]
         # rect boundary condition:
         cond = pos[i] < 0.1 and vel[i] < 0 or pos[i] > 1 and vel[i] > 0
         for j in ti.static(range(pos.n)):
             if cond[j]: vel[i][j] = 0.0
-        # pos[i] += dt * vel[i]
-    # print("pos[0]:", pos[0])
-    # print("vel[0]:", vel[0])
 
 
 @ti.kernel
@@ -305,6 +291,16 @@ def update_pos_new_from_numpy(sol: ti.ext_arr()):
         pos_new[pos_idx][1] = sol[sol_idx2]
 
 
+@ti.kernel
+def check_residual() -> ti.f32:
+    residual = 0.0
+    for i in range(NV):
+        residual += (last_pos_new[i] - pos_new[i]).norm()
+        last_pos_new[i] = pos_new[i]
+    # print("residual:", residual)
+    return residual
+
+
 def paint_phi(gui):
     pos_np = pos.to_numpy()
     phi_np = phi.to_numpy()
@@ -313,9 +309,9 @@ def paint_phi(gui):
     k = phi_np * (350 / E)
     gb = (1 - k) * 0.7
     # gb = 0.5
-    print("gb:", gb[0])
-    print("phi_np", phi_np[0])
-    print("k", k[0])
+    # print("gb:", gb[0])
+    # print("phi_np", phi_np[0])
+    # print("k", k[0])
     gui.triangles(a, b, c, color=ti.rgb_to_hex([k + gb, gb, gb]))
     gui.lines(a, b, color=0xffffff, radius=0.5)
     gui.lines(b, c, color=0xffffff, radius=0.5)
@@ -326,9 +322,15 @@ frame_counter = 0
 init_mesh()
 init_pos()
 precomputation()
+lhs_matrix_np = lhs_matrix.to_numpy()
+s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
+pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
+
+print("sparse lhs matrix:\n", s_lhs_matrix_np)
+
 initinfo()
 
-gui = ti.GUI('Projective Dynamics Demo2 v0.2')
+gui = ti.GUI('Projective Dynamics Demo2 v0.3')
 wait = input("PRESS ENTER TO CONTINUE.")
 
 gui.circles(pos.to_numpy(), radius=2, color=0xffaa33)
@@ -336,23 +338,39 @@ filename = f'./results/frame_rest.png'
 gui.show(filename)
 
 while gui.running:
-    # for i in range(30):
-    #     with ti.Tape(loss=U):
-    #         update_U()
-    #     advance()
     build_sn()
     # Warm up:
     warm_up()
-    # pos_new = Sn
-    for itr in range(solver_iteration):
+    for itr in range(solver_max_iteration):
+
+        # start_solve_constraints_time = time.perf_counter_ns()
         local_solve_build_bp_for_all_constraints()
-        build_rhs()
-        # Solve for pos:
-        rhs_np = rhs.to_numpy()
-        lhs_matrix_np = lhs_matrix.to_numpy()
-        pos_new_np = np.linalg.solve(lhs_matrix_np, rhs_np)
-        # print("pos_new_np shape:", pos_new_np.shape)
+        # end_solve_constraints_time = time.perf_counter_ns()
+        # print("solve constraints time elapsed:", end_solve_constraints_time - start_solve_constraints_time)
+
+        # start_build_rhs_time = time.perf_counter_ns()
+        build_rhs(rhs_np)
+        # end_build_rhs_time = time.perf_counter_ns()
+        # print("build rhs time elapsed:", end_build_rhs_time - start_build_rhs_time)
+
+        # start_linear_solve_time = time.perf_counter_ns()
+        pos_new_np = pre_fact_lhs_solve(rhs_np)
+        # end_linear_solve_time = time.perf_counter_ns()
+        # print("linear solve time elapsed:", end_linear_solve_time - start_linear_solve_time)
+
+        # start_check_residual_time = time.perf_counter_ns()
+        residual = check_residual()
+        # end_check_residual_time = time.perf_counter_ns()
+        # print("check residual elapsed:", end_check_residual_time - start_check_residual_time)
+
+        # start_update_pos_time = time.perf_counter_ns()
         update_pos_new_from_numpy(pos_new_np)
+        # end_update_pos_time = time.perf_counter_ns()
+        # print("update pos new elapsed:", end_update_pos_time - start_update_pos_time)
+
+        if residual < solver_stop_residual:
+            break
+
     # Update velocity and positions
     update_velocity_pos()
     paint_phi(gui)
@@ -360,3 +378,29 @@ while gui.running:
     frame_counter += 1
     filename = f'./results/frame_{frame_counter:05d}.png'
     gui.show(filename)
+    print("\n")
+
+
+# Performance note (unit: ns):
+# solve constraints time elapsed: 54000
+# build rhs time elapsed: 324600
+# linear solve time elapsed: 35200
+# check residual elapsed: 502900
+# update pos new elapsed: 189100
+
+# solve constraints time elapsed: 57900
+# build rhs time elapsed: 291500
+# linear solve time elapsed: 2013200
+# check residual elapsed: 501900
+# update pos new elapsed: 173600
+
+# solve time elapsed: 16916100
+# check residual elapsed: 689100
+# update pos new elapsed: 334500
+# solve constraints time elapsed: 63200
+# build rhs time elapsed: 398600
+
+
+
+
+
