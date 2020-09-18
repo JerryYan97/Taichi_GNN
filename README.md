@@ -2,7 +2,7 @@
 
 ## Current Result
 
-![gif](./results/PJD_demo2_v0.2.gif)
+![gif](./results/PJD_demo2_v0.3.gif)
 
 ## Blooper
 
