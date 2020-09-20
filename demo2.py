@@ -382,10 +382,10 @@ while gui.running:
 
 
 # Performance note (unit: ns):
-# solve constraints time elapsed: 54000
-# build rhs time elapsed: 324600
-# linear solve time elapsed: 35200
-# check residual elapsed: 502900
+# # solve constraints time elapsed: 54000
+# # build rhs time elapsed: 324600
+# # linear solve time elapsed: 35200
+# # check residual elapsed: 502900
 # update pos new elapsed: 189100
 
 # solve constraints time elapsed: 57900
