@@ -167,8 +167,6 @@ def precomputation():
                             lhs_matrix[lhs_row_idx, lhs_col_idx] += (A_i[idx, A_row_idx] * A_i[idx, A_col_idx] * weight)
 
 
-
-
 @ti.kernel
 def local_solve_build_bp_for_all_constraints():
     for i in range(NF):

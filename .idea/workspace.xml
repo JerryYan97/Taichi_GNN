@@ -3,7 +3,7 @@
   <component name="ChangeListManager">
     <list default="true" id="c7b7a7b5-593c-4b57-8d86-8bca1f6e5042" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/demo2.py" beforeDir="false" afterPath="$PROJECT_DIR$/demo2.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/demo3.py" beforeDir="false" afterPath="$PROJECT_DIR$/demo3.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -30,6 +30,7 @@
   <component name="PropertiesComponent">
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
     <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$" />
     <property name="settings.editor.selected.configurable" value="com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable" />
   </component>
   <component name="RunManager" selected="Python.demo3">
@@ -162,10 +163,14 @@
     <servers />
   </component>
   <component name="WindowStateProjectService">
-    <state x="614" y="217" width="1092" height="706" key="#com.intellij.execution.impl.EditConfigurationsDialog" timestamp="1600433680812">
+    <state x="26" y="196" width="1092" height="706" key="#com.intellij.execution.impl.EditConfigurationsDialog" timestamp="1600564109958">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state x="614" y="217" width="1092" height="706" key="#com.intellij.execution.impl.EditConfigurationsDialog/0.0.1920.1040@0.0.1920.1040" timestamp="1600433680812" />
+    <state x="26" y="196" width="1092" height="706" key="#com.intellij.execution.impl.EditConfigurationsDialog/0.0.1920.1040@0.0.1920.1040" timestamp="1600564109958" />
+    <state x="491" y="222" key="FileChooserDialogImpl" timestamp="1600795443547">
+      <screen x="0" y="0" width="1920" height="1040" />
+    </state>
+    <state x="491" y="222" key="FileChooserDialogImpl/0.0.1920.1040@0.0.1920.1040" timestamp="1600795443547" />
     <state width="1266" height="141" key="GridCell.Tab.0.bottom" timestamp="1600561298559">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
@@ -182,9 +187,9 @@
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
     <state width="1266" height="141" key="GridCell.Tab.0.right/0.0.1920.1040@0.0.1920.1040" timestamp="1600561298559" />
-    <state x="852" y="371" key="com.intellij.ide.util.TipDialog" timestamp="1600552917504">
+    <state x="852" y="371" key="com.intellij.ide.util.TipDialog" timestamp="1600795120119">
       <screen x="0" y="0" width="1920" height="1040" />
     </state>
-    <state x="852" y="371" key="com.intellij.ide.util.TipDialog/0.0.1920.1040@0.0.1920.1040" timestamp="1600552917504" />
+    <state x="852" y="371" key="com.intellij.ide.util.TipDialog/0.0.1920.1040@0.0.1920.1040" timestamp="1600795120119" />
   </component>
 </project>

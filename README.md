@@ -16,8 +16,8 @@
 
 ## TODO
 
-* optimization
+* Diagionalize the solving lhs matrix
 
-* more demos
+## Acknowledgement
 
-* deeper understanding
+* [UPenn CG Lab](http://cg.cis.upenn.edu/)
