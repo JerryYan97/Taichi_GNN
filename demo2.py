@@ -161,6 +161,7 @@ def local_solve_build_bp_for_all_constraints():
         a, b, c = pos_new[ia], pos_new[ib], pos_new[ic]
         D_i = ti.Matrix.cols([b - a, c - a])
         F_i = D_i @ B[i]
+        F[i] = F_i
         # Use current F_i construct current 'B * p' or Ri
         U, sigma, V = ti.svd(F_i, ti.f32)
         Bp[i] = U @ V.transpose()
@@ -270,6 +271,7 @@ def warm_up():
         sn_idx1, sn_idx2 = pos_idx * 2, pos_idx * 2 + 1
         pos_new[pos_idx][0] = Sn[sn_idx1]
         pos_new[pos_idx][1] = Sn[sn_idx2]
+        last_pos_new[pos_idx] = pos_new[pos_idx]
 
 
 @ti.kernel
@@ -306,7 +308,7 @@ def paint_phi(gui):
     phi_np = phi.to_numpy()
     f2v_np = f2v.to_numpy()
     a, b, c = pos_np[f2v_np[:, 0]], pos_np[f2v_np[:, 1]], pos_np[f2v_np[:, 2]]
-    k = phi_np * (350 / E)
+    k = phi_np * (8000 / E)
     gb = (1 - k) * 0.7
     # gb = 0.5
     # print("gb:", gb[0])
@@ -330,7 +332,7 @@ print("sparse lhs matrix:\n", s_lhs_matrix_np)
 
 initinfo()
 
-gui = ti.GUI('Projective Dynamics Demo2 v0.3')
+gui = ti.GUI('Projective Dynamics Demo2 v0.4')
 wait = input("PRESS ENTER TO CONTINUE.")
 
 gui.circles(pos.to_numpy(), radius=2, color=0xffaa33)
@@ -358,15 +360,15 @@ while gui.running:
         # end_linear_solve_time = time.perf_counter_ns()
         # print("linear solve time elapsed:", end_linear_solve_time - start_linear_solve_time)
 
-        # start_check_residual_time = time.perf_counter_ns()
-        residual = check_residual()
-        # end_check_residual_time = time.perf_counter_ns()
-        # print("check residual elapsed:", end_check_residual_time - start_check_residual_time)
-
         # start_update_pos_time = time.perf_counter_ns()
         update_pos_new_from_numpy(pos_new_np)
         # end_update_pos_time = time.perf_counter_ns()
         # print("update pos new elapsed:", end_update_pos_time - start_update_pos_time)
+
+        # start_check_residual_time = time.perf_counter_ns()
+        residual = check_residual()
+        # end_check_residual_time = time.perf_counter_ns()
+        # print("check residual elapsed:", end_check_residual_time - start_check_residual_time)
 
         if residual < solver_stop_residual:
             break
@@ -378,7 +380,7 @@ while gui.running:
     frame_counter += 1
     filename = f'./results/frame_{frame_counter:05d}.png'
     gui.show(filename)
-    print("\n")
+    # print("\n")
 
 
 # Performance note (unit: ns):
