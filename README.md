@@ -4,11 +4,11 @@
 
 ### Demo 3
 
-![gif](./results/PJD_demo3_v0.1.gif)
+![gif](./results/PJD_demo3_v0.2.gif)
 
 ### Demo 2
 
-![gif](./results/PJD_demo2_v0.3.gif)
+![gif](./results/PJD_demo2_v0.4.gif)
 
 ## Blooper
 
