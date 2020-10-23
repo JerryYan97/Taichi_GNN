@@ -1,18 +1,19 @@
 # Acknowledgement: ti example fem99.py
+# Demo 3
 
 import taichi as ti
 import numpy as np
 import time
+import csv
 from scipy import sparse
 from scipy.sparse.linalg import spsolve
 from scipy.sparse.linalg import factorized
 
-ti.init(arch=ti.gpu)
+ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
 
 dim = 2
-N = 20 # internal of one edge
+N = 20  # internal of one edge
 W = 10
-# dt = 3e-3
 dt = 1.0/480
 dx = 1 / N  # 0.05
 rho = 1e1
@@ -21,47 +22,43 @@ NV = (N+1)*(W+1) # (N + 1) ** 2 # number of vertices
 E, nu = 1e2, 0.4  # Young's modulus and Poisson's ratio
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
 ball_pos, ball_radius = ti.Vector([0.5, 0.0]), 0.32
-gravity = ti.Vector([0, -9.8])
-damping = 12.5
+# gravity = ti.Vector([0, -9.8])
+gravity = ti.Vector([0.0, 0.0])
 # Area: 0.000061 0.02*0.02*sin90*0.5
 volume = 0.0002
 m_weight_strain = mu * 2 * volume
 m_weight_volume = lam * dim * volume
+m_weight_positional = 10000.0
 print("m_weight_strain/volume", m_weight_strain/volume, "  m_weight_volume/volume", m_weight_volume/volume)
 
-mass = ti.field(float, NV)
+mass = ti.field(ti.f64, NV)
 
-pos = ti.Vector.field(2, float, NV)
-pos_new = ti.Vector.field(2, float, NV)
-last_pos_new = ti.Vector.field(2, float, NV)
-posn = ti.Vector.field(2, float, NV)
+pos = ti.Vector.field(2, ti.f64, NV)
+pos_new = ti.Vector.field(2, ti.f64, NV)
+pos_init = ti.Vector.field(2, ti.f64, NV)
+last_pos_new = ti.Vector.field(2, ti.f64, NV)
 boundary_labels = ti.field(int, NV)
 
-vel = ti.Vector.field(2, float, NV)
+vel = ti.Vector.field(2, ti.f64, NV)
 f2v = ti.Vector.field(3, int, NF)  # ids of three vertices of each face
-B = ti.Matrix.field(2, 2, float, NF)  # The inverse of the init elements -- Dm
-F = ti.Matrix.field(2, 2, float, NF, needs_grad=True)
-A = ti.Matrix.field(4, 6, float, NF)
-Bp = ti.Matrix.field(2, 2, float, NF * 2)
-# rhs = ti.field(float, NV * 2)
-rhs_np = np.zeros(NV * 2, dtype=np.float32)
+B = ti.Matrix.field(2, 2, ti.f64, NF)  # The inverse of the init elements -- Dm
+F = ti.Matrix.field(2, 2, ti.f64, NF)
+A = ti.Matrix.field(4, 6, ti.f64, NF * 2)
+Bp = ti.Matrix.field(2, 2, ti.f64, NF * 2)
+rhs_np = np.zeros(NV * 2, dtype=np.float64)
 
-Sn = ti.field(float, NV * 2)
-# weight = ti.field(float, NF * 2)
-lhs_matrix = ti.field(ti.f32, shape=(NV * 2, NV * 2))
-phi = ti.field(float, NF)  # potential energy of each element(face) for linear coratated elasticity material.
+Sn = ti.field(ti.f64, NV * 2)
+lhs_matrix = ti.field(ti.f64, shape=(NV * 2, NV * 2))
+phi = ti.field(ti.f64, NF)  # potential energy of each element(face) for linear coratated elasticity material.
 
 
 resolutionX = 512
 pixels = ti.var(ti.f32, shape=(resolutionX, resolutionX))
 
-drag = 0.2
+# drag = 0.2
+drag = 0.0
 
-# V = ti.field(float, NF)
-# phi = ti.field(float, NF)  # potential energy of each face (Neo-Hookean)
-# U = ti.field(float, (), needs_grad=True)  # total potential energy
-
-solver_max_iteration = 8
+solver_max_iteration = 10
 solver_stop_residual = 0.0001
 
 
@@ -70,6 +67,7 @@ def init_pos():
     for i, j in ti.ndrange(N + 1, W + 1):
         k = i*(W+1)+j
         pos[k] = ti.Vector([i/N*0.4, j/W*0.2]) + ti.Vector([0.2, 0.4]) # 0.2, 0.4 - 0.6,0.6  0.02*0.02
+        pos_init[k] = pos[k]
         vel[k] = ti.Vector([0, 0])
         if i == 0:
             boundary_labels[k] = 1
@@ -104,6 +102,7 @@ def precomputation():
         mass[ic] += volume/dimp * rho
 
     # Construct A_i matrix for every element / Build A for all the constraints:
+    # Strain constraints and area constraints
     for t in ti.static(range(2)):
         for i in range(NF):
             # Get (Dm)^-1 for this element:
@@ -125,23 +124,13 @@ def precomputation():
             A[t*NF+i][3, 1] = -b-d
             A[t*NF+i][3, 3] = b
             A[t*NF+i][3, 5] = d
-    # Construct lhs matrix:
-    # Init diagonal elements:
-    #for i in range(NV * 2):
-    #    lhs_matrix[i,i] = rho * volume / (dt * dt)  # 0.000061
-    # Map A_i_T * A_i back to this lhs_matrix:
 
+    # Construct lhs matrix without constraints
     for i in range(NV):
-        if boundary_labels[i] == 1:
-            # Enforce boundary condition:
-            sys_idx_x, sys_idx_y = i * 2, i * 2 + 1
-            lhs_matrix[sys_idx_x, sys_idx_x] = 1.0
-            lhs_matrix[sys_idx_y, sys_idx_y] = 1.0
-        else:
-            for d in ti.static(range(2)):
-                lhs_matrix[i * dim + d, i * dim + d] += (drag / dt) + mass[i] / (dt * dt)
+        for d in ti.static(range(2)):
+            lhs_matrix[i * dim + d, i * dim + d] += (drag / dt) + mass[i] / (dt * dt)
 
-
+    # Add strain and area/volume constraints to the lhs matrix
     for t in ti.static(range(2)):
         for ele_idx in range(NF):
             A_i = A[t*NF+ele_idx]
@@ -155,18 +144,25 @@ def precomputation():
                 for A_col_idx in ti.static(range(6)):
                     lhs_row_idx = q_idx_vec[A_row_idx]
                     lhs_col_idx = q_idx_vec[A_col_idx]
-                    vert_idx = ti.floor(lhs_row_idx / 2)
-                    # Enforce boundary condition:
-                    if boundary_labels[vert_idx] == 0:
-                        for idx in ti.static(range(4)):
-                            weight = 0.0
-                            if t == 0:
-                                weight = m_weight_strain
-                            else:
-                                weight = m_weight_volume
-                            lhs_matrix[lhs_row_idx, lhs_col_idx] += (A_i[idx, A_row_idx] * A_i[idx, A_col_idx] * weight)
+                    for idx in ti.static(range(4)):
+                        weight = 0.0
+                        if t == 0:
+                            weight = m_weight_strain
+                        else:
+                            weight = m_weight_volume
+                        lhs_matrix[lhs_row_idx, lhs_col_idx] += (A_i[idx, A_row_idx] * A_i[idx, A_col_idx] * weight)
+
+    # Add positional constraints to the lhs matrix
+    for i in range(NV):
+        if boundary_labels[i] == 1:
+            q_i_x_idx = i * 2
+            q_i_y_idx = i * 2 + 1
+            lhs_matrix[q_i_x_idx, q_i_x_idx] += m_weight_positional  # This is the weight of positional constraints
+            lhs_matrix[q_i_y_idx, q_i_y_idx] += m_weight_positional
 
 
+# NOTE: This function doesn't build all constraints
+# It just builds strain constraints and area/volume constraints
 @ti.kernel
 def local_solve_build_bp_for_all_constraints():
     for i in range(NF):
@@ -175,10 +171,10 @@ def local_solve_build_bp_for_all_constraints():
         ia, ib, ic = f2v[i]
         a, b, c = pos_new[ia], pos_new[ib], pos_new[ic]
         D_i = ti.Matrix.cols([b - a, c - a])
-        F_i = D_i @ B[i]
+        F_i = ti.cast(D_i @ B[i], ti.f64)
         F[i] = F_i
         # Use current F_i construct current 'B * p' or Ri
-        U, sigma, V = ti.svd(F_i, ti.f32)
+        U, sigma, V = ti.svd(F_i, ti.f64)
         Bp[i] = U @ V.transpose()
 
         # Construct volume preservation constraints:
@@ -217,19 +213,16 @@ def build_sn():
         Sn_idx1 = vert_idx*2  # m_sn
         Sn_idx2 = vert_idx*2+1
         pos_i = pos[vert_idx]  # pos = m_x
-        # posn[vert_idx] = pos[vert_idx]  # posn = m_xn
         vel_i = vel[vert_idx]
         Sn[Sn_idx1] = pos_i[0] + dt * vel_i[0]  # x-direction;
         Sn[Sn_idx2] = pos_i[1] + dt * vel_i[1] + dt * dt * gravity[1]  # y-direction;
-    # print("Proposed pos:", Sn[0], ", ", Sn[1])
 
 
 @ti.kernel
 def build_rhs(rhs: ti.ext_arr()):
     one_over_dt2 = 1.0 / (dt ** 2)
+    # Construct the first part of the rhs
     for i in range(NV * 2):
-        # print("test pos ", i/2, " ", i%2)
-        # pos_i = posn[i/2]
         pos_i = pos[i/2]
         p0 = pos_i[0]
         p1 = pos_i[1]
@@ -237,7 +230,7 @@ def build_rhs(rhs: ti.ext_arr()):
             rhs[i] = one_over_dt2 * mass[i/2] * Sn[i] + (drag/dt*p0)  # 0.000061
         else:
             rhs[i] = one_over_dt2 * mass[i/2] * Sn[i] + (drag/dt*p1)  # 0.000061
-
+    # Add strain and volume/area constraints to the rhs
     for t in ti.static(range(2)):
         for ele_idx in range(NF):
             ia, ib, ic = f2v[ele_idx]
@@ -267,26 +260,21 @@ def build_rhs(rhs: ti.ext_arr()):
             q_ic_y_idx = q_ic_x_idx+1
             rhs[q_ic_x_idx] += AT_Bp[4]
             rhs[q_ic_y_idx] += AT_Bp[5]
-
-    # Enforce boundary condition:
+    # Add positional constraints Bp to the rhs
     for i in range(NV):
-        pos_i = pos[i]
         if boundary_labels[i] == 1:
-            sys_idx_x, sys_idx_y = 2 * i, 2 * i + 1
-            rhs[sys_idx_x] = pos_i[0]
-            rhs[sys_idx_y] = pos_i[1]
+            pos_init_i = pos_init[i]
+            q_i_x_idx = i * 2
+            q_i_y_idx = i * 2 + 1
+            rhs[q_i_x_idx] += (pos_init_i[0] * m_weight_positional)
+            rhs[q_i_y_idx] += (pos_init_i[1] * m_weight_positional)
 
 
 @ti.kernel
 def update_velocity_pos():
     for i in range(NV):
-        if boundary_labels[i] == 0:
-            vel[i] = (pos_new[i] - pos[i]) / dt
-            pos[i] = pos_new[i]
-        # rect boundary condition:
-        # cond = pos[i] < 0.1 and vel[i] < 0 or pos[i] > 1 and vel[i] > 0
-        # for j in ti.static(range(pos.n)):
-        #     if cond[j]: vel[i][j] = 0.0
+        vel[i] = (pos_new[i] - pos[i]) / dt
+        pos[i] = pos_new[i]
 
 
 @ti.kernel
@@ -327,14 +315,83 @@ def check_residual() -> ti.f32:
 
 
 @ti.kernel
-def check_boundary_points():
-    # Enforce boundary condition:
-    counter = 0
+def compute_T1_energy() -> ti.f64:
+    T1 = 0.0
     for i in range(NV):
-        pos_i = pos[i]
-        if abs(pos_i[0] - 0.2) < 0.001:
-            counter += 1
-    print("boundary points number:", counter)
+        sn_idx1, sn_idx2 = i * 2, i * 2 + 1
+        sn_i = ti.Vector([Sn[sn_idx1], Sn[sn_idx2]])
+        temp_diff = (pos_new[i] - sn_i) * ti.sqrt(mass[i])
+        T1 += (temp_diff[0]**2 + temp_diff[1]**2)
+    return T1 / (2.0 * dt**2)
+
+
+@ti.kernel
+def global_compute_T2_energy() -> ti.f64:
+    T2_global_energy = ti.cast(0.0, ti.f64)
+    # Calculate the energy contributed by strain and volume/area constraints
+    for i in range(NF):
+        # Construct Current F_i
+        ia, ib, ic = f2v[i]
+        a, b, c = pos_new[ia], pos_new[ib], pos_new[ic]
+        D_i = ti.Matrix.cols([b - a, c - a])
+        F_i = ti.cast(D_i @ B[i], ti.f64)
+        # Get current Bp
+        Bp_i_strain = Bp[i]
+        Bp_i_volume = Bp[NF + i]
+        energy1 = m_weight_strain * ((F_i - Bp_i_strain).norm() ** 2) / ti.cast(2.0, ti.f64)
+        energy2 = m_weight_volume * ((F_i - Bp_i_volume).norm() ** 2) / ti.cast(2.0, ti.f64)
+        T2_global_energy += (energy1 + energy2)
+    # Calculate the energy contributed by positional constraints
+    # total_energy3 = 0.0
+    for i in range(NV):
+        if boundary_labels[i] == 1:
+            pos_init_i = pos_init[i]
+            pos_curr_i = pos_new[i]
+            energy3 = m_weight_positional * ((pos_curr_i - pos_init_i).norm() ** 2) / ti.cast(2.0, ti.f64)
+            # total_energy3 += energy3
+            T2_global_energy += energy3
+    # print("global energy3:", total_energy3)
+    return T2_global_energy
+
+
+@ti.kernel
+def local_compute_T2_energy() -> ti.f64:
+    # Calculate T2 energy
+    local_T2_energy = ti.cast(0.0, ti.f64)
+    # Calculate the energy contributed by strain and volume/area constraints
+    for e_it in range(NF):
+        Bp_i_strain = Bp[e_it]
+        Bp_i_volume = Bp[e_it + NF]
+        F_i = F[e_it]
+        energy1 = m_weight_strain * ((F_i - Bp_i_strain).norm() ** 2) / ti.cast(2.0, ti.f64)
+        energy2 = m_weight_volume * ((F_i - Bp_i_volume).norm() ** 2) / ti.cast(2.0, ti.f64)
+        local_T2_energy += (energy1 + energy2)
+    # Calculate the energy contributed by positional constraints
+    # total_energy3 = 0.0
+    for i in range(NV):
+        if boundary_labels[i] == 1:
+            pos_init_i = pos_init[i]
+            pos_curr_i = pos_new[i]
+            energy3 = m_weight_positional * ((pos_curr_i - pos_init_i).norm() ** 2) / ti.cast(2.0, ti.f64)
+            # total_energy3 += energy3
+            local_T2_energy += energy3
+    # print("local energy3:", total_energy3)
+    return local_T2_energy
+
+
+def compute_global_step_energy():
+    # Calculate global T2 energy
+    global_T2_energy = global_compute_T2_energy()
+    # Calculate global T1 energy
+    global_T1_energy = compute_T1_energy()
+    return (global_T1_energy + global_T2_energy)
+
+
+def compute_local_step_energy():
+    local_T2_energy = local_compute_T2_energy()
+    # Calculate T1 energy
+    local_T1_energy = compute_T1_energy()
+    return (local_T1_energy + local_T2_energy)
 
 
 def paint_phi(gui):
@@ -344,7 +401,6 @@ def paint_phi(gui):
     a, b, c = pos_np[f2v_np[:, 0]], pos_np[f2v_np[:, 1]], pos_np[f2v_np[:, 2]]
     k = phi_np * (8000 / E)
     gb = (1 - k) * 0.7
-    # gb = 0.5
     # print("gb:", gb[0])
     # print("phi_np", phi_np[0])
     # print("k", k[0])
@@ -373,10 +429,16 @@ gui.circles(pos.to_numpy(), radius=2, color=0xffaa33)
 filename = f'./results/frame_rest.png'
 gui.show(filename)
 
-while gui.running:
+frame_counter = 0
+sim_t = 0.0
+plot_array = []
+
+while frame_counter < 150:
     build_sn()
     # Warm up:
     warm_up()
+    print("Frame ", frame_counter)
+    last_record_energy = 1000000.0
     for itr in range(solver_max_iteration):
 
         # start_solve_constraints_time = time.perf_counter_ns()
@@ -389,6 +451,14 @@ while gui.running:
         # end_build_rhs_time = time.perf_counter_ns()
         # print("build rhs time elapsed:", end_build_rhs_time - start_build_rhs_time)
 
+        local_step_energy = compute_local_step_energy()
+        print("energy after local step:", local_step_energy)
+        if local_step_energy > last_record_energy:
+            print("Energy Error: LOCAL; Error Amount:", (local_step_energy - last_record_energy) / local_step_energy)
+            if (local_step_energy - last_record_energy) / local_step_energy > 0.01:
+                print("Large Error: LOCAL")
+        last_record_energy = local_step_energy
+
         # start_linear_solve_time = time.perf_counter_ns()
         pos_new_np = pre_fact_lhs_solve(rhs_np)
         # end_linear_solve_time = time.perf_counter_ns()
@@ -399,14 +469,23 @@ while gui.running:
         # end_update_pos_time = time.perf_counter_ns()
         # print("update pos new elapsed:", end_update_pos_time - start_update_pos_time)
 
+        global_step_energy = compute_global_step_energy()
+        print("energy after global step:", global_step_energy)
+        plot_array.append([itr, global_step_energy])
+        if global_step_energy > last_record_energy:
+            print("Energy Error: GLOBAL; Error Amount:", (global_step_energy - last_record_energy) / global_step_energy)
+            if (global_step_energy - last_record_energy) / global_step_energy > 0.01:
+                print("Large Error: GLOBAL")
+        last_record_energy = global_step_energy
+
         # start_check_residual_time = time.perf_counter_ns()
-        residual = check_residual()
+        # residual = check_residual()
         # end_check_residual_time = time.perf_counter_ns()
         # print("check residual elapsed:", end_check_residual_time - start_check_residual_time)
 
         # check_boundary_points()
-        if residual < solver_stop_residual:
-            break
+        # if residual < solver_stop_residual:
+        #   break
 
     # Update velocity and positions
     update_velocity_pos()
@@ -416,6 +495,12 @@ while gui.running:
     filename = f'./results/frame_{frame_counter:05d}.png'
     gui.show(filename)
     # print("\n")
+
+
+# Energy Error note (under first 150 frames):
+# 5 fixed iterations: 76; Local: 0; Global: 76; (5%)
+# 10 fixed iterations: 421; Local: 0; Global: 420; (14%)
+# 100 fixed iterations: 6584; Local: 2931; 3654; (21%)
 
 
 # Performance note (unit: ns):
@@ -436,4 +521,3 @@ while gui.running:
 # update pos new elapsed: 334500
 # solve constraints time elapsed: 63200
 # build rhs time elapsed: 398600
-

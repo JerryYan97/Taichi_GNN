@@ -1,5 +1,3 @@
-# Acknowledgement: ti example fem99.py
-
 import taichi as ti
 import numpy as np
 import time
@@ -7,12 +5,11 @@ from scipy import sparse
 from scipy.sparse.linalg import spsolve
 from scipy.sparse.linalg import factorized
 
-ti.init(arch=ti.gpu)
+ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
 
 dim = 2
 N = 20 # internal of one edge
 W = 10
-# dt = 3e-3
 dt = 1.0/480
 dx = 1 / N  # 0.05
 rho = 1e1
@@ -21,44 +18,39 @@ NV = (N+1)*(W+1) # (N + 1) ** 2 # number of vertices
 E, nu = 1e2, 0.4  # Young's modulus and Poisson's ratio
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
 ball_pos, ball_radius = ti.Vector([0.5, 0.0]), 0.32
-gravity = ti.Vector([0, -9.8])
-damping = 12.5
+# gravity = ti.Vector([0, -9.8])
+gravity = ti.Vector([0.0, 0.0])
 # Area: 0.000061 0.02*0.02*sin90*0.5
 volume = 0.0002
 m_weight_strain = mu * 2 * volume
 m_weight_volume = lam * dim * volume
 print("m_weight_strain/volume", m_weight_strain/volume, "  m_weight_volume/volume", m_weight_volume/volume)
 
-mass = ti.field(float, NV)
+mass = ti.field(ti.f64, NV)
 
-pos = ti.Vector.field(2, float, NV)
-pos_new = ti.Vector.field(2, float, NV)
-last_pos_new = ti.Vector.field(2, float, NV)
-posn = ti.Vector.field(2, float, NV)
+pos = ti.Vector.field(2, ti.f64, NV)
+pos_new = ti.Vector.field(2, ti.f64, NV)
+last_pos_new = ti.Vector.field(2, ti.f64, NV)
+posn = ti.Vector.field(2, ti.f64, NV)
 
-vel = ti.Vector.field(2, float, NV)
+vel = ti.Vector.field(2, ti.f64, NV)
 f2v = ti.Vector.field(3, int, NF)  # ids of three vertices of each face
-B = ti.Matrix.field(2, 2, float, NF)  # The inverse of the init elements -- Dm
-F = ti.Matrix.field(2, 2, float, NF, needs_grad=True)
-A = ti.Matrix.field(4, 6, float, NF)
-Bp = ti.Matrix.field(2, 2, float, NF * 2)
-# rhs = ti.field(float, NV * 2)
-rhs_np = np.zeros(NV * 2, dtype=np.float32)
+B = ti.Matrix.field(2, 2, ti.f64, NF)  # The inverse of the init elements -- Dm
+F = ti.Matrix.field(2, 2, ti.f64, NF)
+A = ti.Matrix.field(4, 6, ti.f64, NF * 2)
+Bp = ti.Matrix.field(2, 2, ti.f64, NF * 2)
+rhs_np = np.zeros(NV * 2, dtype=np.float64)
 
-Sn = ti.field(float, NV * 2)
-# weight = ti.field(float, NF * 2)
-lhs_matrix = ti.field(ti.f32, shape=(NV * 2, NV * 2))
-phi = ti.field(float, NF)  # potential energy of each element(face) for linear coratated elasticity material.
+Sn = ti.field(ti.f64, NV * 2)
+lhs_matrix = ti.field(ti.f64, shape=(NV * 2, NV * 2))
+phi = ti.field(ti.f64, NF)  # potential energy of each element(face) for linear coratated elasticity material.
 
 
 resolutionX = 512
 pixels = ti.var(ti.f32, shape=(resolutionX, resolutionX))
 
-drag = 0.2
-
-# V = ti.field(float, NF)
-# phi = ti.field(float, NF)  # potential energy of each face (Neo-Hookean)
-# U = ti.field(float, (), needs_grad=True)  # total potential energy
+drag = 0.0
+# drag = 0.2
 
 solver_max_iteration = 10
 solver_stop_residual = 0.0001
@@ -120,11 +112,6 @@ def precomputation():
             A[t*NF+i][3, 1] = -b-d
             A[t*NF+i][3, 3] = b
             A[t*NF+i][3, 5] = d
-    # Construct lhs matrix:
-    # Init diagonal elements:
-    #for i in range(NV * 2):
-    #    lhs_matrix[i,i] = rho * volume / (dt * dt)  # 0.000061
-    # Map A_i_T * A_i back to this lhs_matrix:
 
     for i in range(NV):
         for d in ti.static(range(2)):
@@ -160,7 +147,7 @@ def local_solve_build_bp_for_all_constraints():
         ia, ib, ic = f2v[i]
         a, b, c = pos_new[ia], pos_new[ib], pos_new[ic]
         D_i = ti.Matrix.cols([b - a, c - a])
-        F_i = D_i @ B[i]
+        F_i = ti.cast(D_i @ B[i], ti.f64)
         F[i] = F_i
         # Use current F_i construct current 'B * p' or Ri
         U, sigma, V = ti.svd(F_i, ti.f32)
@@ -303,6 +290,64 @@ def check_residual() -> ti.f32:
     return residual
 
 
+@ti.kernel
+def compute_T1_energy() -> ti.f64:
+    T1 = 0.0
+    for i in range(NV):
+        sn_idx1, sn_idx2 = i * 2, i * 2 + 1
+        sn_i = ti.Vector([Sn[sn_idx1], Sn[sn_idx2]])
+        temp_diff = (pos_new[i] - sn_i) * ti.sqrt(mass[i])
+        T1 += (temp_diff[0]**2 + temp_diff[1]**2)
+    return T1 / (2.0 * dt**2)
+
+
+@ti.kernel
+def global_compute_T2_energy() -> ti.f64:
+    T2_global_energy = ti.cast(0.0, ti.f64)
+    for i in range(NF):
+        # Construct Current F_i
+        ia, ib, ic = f2v[i]
+        a, b, c = pos_new[ia], pos_new[ib], pos_new[ic]
+        D_i = ti.Matrix.cols([b - a, c - a])
+        F_i = ti.cast(D_i @ B[i], ti.f64)
+        # Get current Bp
+        Bp_i_strain = Bp[i]
+        Bp_i_volume = Bp[NF + i]
+        energy1 = m_weight_strain * ((F_i - Bp_i_strain).norm() ** 2) / ti.cast(2.0, ti.f64)
+        energy2 = m_weight_volume * ((F_i - Bp_i_volume).norm() ** 2) / ti.cast(2.0, ti.f64)
+        T2_global_energy += (energy1 + energy2)
+    return T2_global_energy
+
+
+@ti.kernel
+def local_compute_T2_energy() -> ti.f64:
+    # Calculate T2 energy
+    local_T2_energy = ti.cast(0.0, ti.f64)
+    for e_it in range(NF):
+        Bp_i_strain = Bp[e_it]
+        Bp_i_volume = Bp[e_it + NF]
+        F_i = F[e_it]
+        energy1 = m_weight_strain * ((F_i - Bp_i_strain).norm() ** 2) / ti.cast(2.0, ti.f64)
+        energy2 = m_weight_volume * ((F_i - Bp_i_volume).norm() ** 2) / ti.cast(2.0, ti.f64)
+        local_T2_energy += (energy1 + energy2)
+    return local_T2_energy
+
+
+def compute_global_step_energy():
+    # Calculate global T2 energy
+    global_T2_energy = global_compute_T2_energy()
+    # Calculate global T1 energy
+    global_T1_energy = compute_T1_energy()
+    return (global_T1_energy + global_T2_energy)
+
+
+def compute_local_step_energy():
+    local_T2_energy = local_compute_T2_energy()
+    # Calculate T1 energy
+    local_T1_energy = compute_T1_energy()
+    return (local_T1_energy + local_T2_energy)
+
+
 def paint_phi(gui):
     pos_np = pos.to_numpy()
     phi_np = phi.to_numpy()
@@ -310,7 +355,6 @@ def paint_phi(gui):
     a, b, c = pos_np[f2v_np[:, 0]], pos_np[f2v_np[:, 1]], pos_np[f2v_np[:, 2]]
     k = phi_np * (8000 / E)
     gb = (1 - k) * 0.7
-    # gb = 0.5
     # print("gb:", gb[0])
     # print("phi_np", phi_np[0])
     # print("k", k[0])
@@ -320,7 +364,6 @@ def paint_phi(gui):
     gui.lines(c, a, color=0xffffff, radius=0.5)
 
 
-frame_counter = 0
 init_mesh()
 init_pos()
 precomputation()
@@ -339,10 +382,15 @@ gui.circles(pos.to_numpy(), radius=2, color=0xffaa33)
 filename = f'./results/frame_rest.png'
 gui.show(filename)
 
-while gui.running:
+frame_counter = 0
+sim_t = 0.0
+
+while frame_counter < 150:
     build_sn()
     # Warm up:
     warm_up()
+    print("Frame ", frame_counter)
+    last_record_energy = 1000000.0
     for itr in range(solver_max_iteration):
 
         # start_solve_constraints_time = time.perf_counter_ns()
@@ -354,6 +402,14 @@ while gui.running:
         build_rhs(rhs_np)
         # end_build_rhs_time = time.perf_counter_ns()
         # print("build rhs time elapsed:", end_build_rhs_time - start_build_rhs_time)
+
+        local_step_energy = compute_local_step_energy()
+        print("energy after local step:", local_step_energy)
+        if local_step_energy > last_record_energy:
+            print("Energy Error: LOCAL; Error Amount:", (local_step_energy - last_record_energy) / local_step_energy)
+            if (local_step_energy - last_record_energy) / local_step_energy > 0.01:
+                print("Large Error: LOCAL")
+        last_record_energy = local_step_energy
 
         # start_linear_solve_time = time.perf_counter_ns()
         pos_new_np = pre_fact_lhs_solve(rhs_np)
@@ -370,8 +426,16 @@ while gui.running:
         # end_check_residual_time = time.perf_counter_ns()
         # print("check residual elapsed:", end_check_residual_time - start_check_residual_time)
 
-        if residual < solver_stop_residual:
-            break
+        global_step_energy = compute_global_step_energy()
+        print("energy after global step:", global_step_energy)
+        if global_step_energy > last_record_energy:
+            print("Energy Error: GLOBAL; Error Amount:", (global_step_energy - last_record_energy) / global_step_energy)
+            if (global_step_energy - last_record_energy) / global_step_energy > 0.01:
+                print("Large Error: GLOBAL")
+        last_record_energy = global_step_energy
+
+        # if residual < solver_stop_residual:
+        #    break
 
     # Update velocity and positions
     update_velocity_pos()
@@ -380,7 +444,14 @@ while gui.running:
     frame_counter += 1
     filename = f'./results/frame_{frame_counter:05d}.png'
     gui.show(filename)
-    # print("\n")
+    print("\n")
+
+
+# Energy Error note (under first 150 frames):
+# 5 fixed iterations: 0 errors.
+# 10 fixed iterations: 251 errors. LOCAL: 95; GLOBAL: 156. (251 / (3000) = 8%)
+# 100 fixed iterations: 8699 errors. LOCAL: 4330; GLOBAL: 4365. (8699 / (300 * 100) = 29%)
+# (The # of errors would change)
 
 
 # Performance note (unit: ns):
@@ -401,6 +472,7 @@ while gui.running:
 # update pos new elapsed: 334500
 # solve constraints time elapsed: 63200
 # build rhs time elapsed: 398600
+
 
 
 
