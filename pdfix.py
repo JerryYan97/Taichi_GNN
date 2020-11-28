@@ -1,3 +1,5 @@
+# Acknowledgement: ti example fem99.py
+# Demo 3
 import taichi as ti
 import numpy as np
 import sys, os, time
@@ -8,41 +10,38 @@ from scipy.sparse.linalg import factorized
 from reader import*
 import pymesh
 import math
-from PN import *
-from numpy.linalg import inv
-from scipy.linalg import sqrtm
-from numpy import linalg as LA
-import matplotlib.pyplot as plt
-
 
 ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
 real = ti.f64
 
+
 @ti.data_oriented
-class PDSimulation:
-    def __init__(self, obj_file, _dim):
-        self.dim = _dim
+class PD_Simulation:
+    def __init__(self, objfilenum, _dim):
+        self.dim = 2
         self.dt = 0.01
 
-        ################################ mesh ######################################
-        self.mesh, _, _, _ = read(int(obj_file))
+        self.mesh, _, _, _ = read(int(objfilenum))
         self.NV, self.NF, _ = self.mesh.num_vertices, self.mesh.num_faces, self.mesh.num_voxels
-        self.n_particles = self.NV
-        ################################ material ######################################
+        
         self.rho = 100
         self.E = 1e4
-        self.nu = 0.4
-        self.mu = self.E / (2*(1+self.nu))
+        self.nu = 0.4  # Young's modulus and Poisson's ratio
+        self.mu = self.E / (2*(1+self.nu)) # Lame parameters
         self.lam = self.E * self.nu / ((1+self.nu)*(1-2*self.nu))
 
-        ################################ field ######################################
+        self.ball_pos, ball_radius = ti.Vector([0.5, 0.0]), 0.32
+
+        # Area: 0.000061 0.02*0.02*sin90*0.5
         self.volume = ti.field(real, self.NF)
-        self.m_weight_strain = ti.field(real, self.NF)  # self.mu * 2 * self.volume
-        self.m_weight_volume = ti.field(real, self.NF)  # self.lam * self.dim * self.volume
+        self.m_weight_strain = ti.field(real, self.NF)  #  self.mu * 2 * self.volume
+        self.m_weight_volume = ti.field(real, self.NF)  #  self.lam * self.dim * self.volume
 
         self.m_weight_positional = 10000000.0
+        # self.print("m_weight_strain/volume", m_weight_strain/volume, "  m_weight_volume/volume", m_weight_volume/volume)
 
         self.mass = ti.field(ti.f64, self.NV)
+
         self.pos = ti.Vector.field(2, ti.f64, self.NV)
         self.pos_new = ti.Vector.field(2, ti.f64, self.NV)
         self.pos_init = ti.Vector.field(2, ti.f64, self.NV)
@@ -63,7 +62,7 @@ class PDSimulation:
         self.Sn = ti.field(ti.f64, self.NV * 2)
 
         self.lhs_matrix = ti.field(ti.f64, shape=(self.NV * 2, self.NV * 2))
-        self.phi = ti.field(ti.f64, self.NF)
+        self.phi = ti.field(ti.f64, self.NF)  # potential energy of each element(face) for linear coratated elasticity material.
 
         self.resolutionX = 512
         self.pixels = ti.var(ti.f32, shape=(self.resolutionX, self.resolutionX))
@@ -73,29 +72,11 @@ class PDSimulation:
         self.solver_max_iteration = 10
         self.solver_stop_residual = 0.0001
 
-        self.gradE = ti.var(real, shape=2000)
-        self.x_xtilde = ti.Vector.field(self.dim, real, self.n_particles)
-
-        ################################ shape matching ######################################
-        self.initial_com = ti.Vector([0.0, 0.0])
-        self.initial_rel_pos = np.array([self.n_particles, 2])
-
-        self.pi = ti.Vector.field(self.dim, real, self.n_particles)
-        self.qi = ti.Vector.field(self.dim, real, self.n_particles)
-        self.init_pos = self.mesh.vertices.astype(np.float32)
-        self.init_pos = self.init_pos[:, :2]
-
-        ################################ force field ################################
+         # force field
         self.gravity = ti.Vector([0, 0])
-        self.exf_angle = np.arange(0, 2*np.pi, 30)
-        self.exf_mag = np.arange(0, 10.0, 30)
-        # print("angle: ", self.exf_angle, " mag: ", self.exf_mag)
-        self.exf_ind = 0
-        self.mag_ind = 0
         self.ex_force = ti.Vector.field(self.dim, real, 1)
-        self.npex_f = np.zeros((2, 1))
 
-        ################################ boundary setting ################################
+        # boundary setting
         edges = set()
         for [i, j, k] in self.mesh.faces:
             edges.add((i, j))
@@ -110,10 +91,8 @@ class PDSimulation:
             if (i, k) not in edges:
                 self.boundary_points_.update([i, k])
 
-        self.input_xn = ti.Vector.field(self.dim, real, self.NV)
-        self.input_vn = ti.Vector.field(self.dim, real, self.NV)
 
-    def set_material(self, _rho, _ym, _nu, _dt):
+    def set_Material(self, _rho, _ym, _nu, _dt):
         self.dt = _dt
         self.rho = _rho
         self.E = _ym
@@ -121,18 +100,18 @@ class PDSimulation:
         self.mu = self.E / (2*(1+self.nu))
         self.lam = self.E * self.nu / ((1+self.nu)*(1-2*self.nu))
 
-    def set_force(self, ind, mag):
-        self.exf_ind = ind
-        self.mag_ind = mag
-        x = 0.3*mag * ti.sin(3.1415926/30.0*ind)
-        y = 0.3*mag * ti.cos(3.1415926/30.0*ind)
-        self.ex_force[0] = ti.Vector([x, y])
+
+    def set_Force(self, ex_force):
+        print("ex_force:", ex_force)
+        self.ex_force[0][0] = ex_force[0]
+        self.ex_force[0][1] = ex_force[1]
+
 
     def init_mesh_obj(self):
         for i in range(self.mesh.num_faces):
             self.f2v[i] = ti.Vector([self.mesh.faces[i][0], self.mesh.faces[i][1], self.mesh.faces[i][2]])
         for i in range(self.mesh.num_vertices):
-            self.pos[i] = ti.Vector([self.mesh.vertices[i][0], self.mesh.vertices[i][1]])
+            self.pos[i] = ti.Vector([self.mesh.vertices[i][0], self.mesh.vertices[i][1]])  # + ti.Vector([0.2, 0.4]) # 0.2, 0.4 - 0.6,0.6  0.02*0.02
             self.pos_init[i] = ti.Vector([self.mesh.vertices[i][0], self.mesh.vertices[i][1]])
             self.vel[i] = ti.Vector([0, 0])
             if i in self.boundary_points_ and i <= 10:
@@ -151,6 +130,7 @@ class PDSimulation:
             self.m_weight_strain[i] = self.mu * 2 * self.volume[i]
             self.m_weight_volume[i] = self.lam * self.dim * self.volume[i]
 
+
     @ti.kernel
     def precomputation(self):
         dimp = self.dim + 1
@@ -159,6 +139,7 @@ class PDSimulation:
             self.mass[ia] += self.volume[e_it]/dimp * self.rho
             self.mass[ib] += self.volume[e_it]/dimp * self.rho
             self.mass[ic] += self.volume[e_it]/dimp * self.rho
+
         # Construct A_i matrix for every element / Build A for all the constraints:
         # Strain constraints and area constraints
         for t in ti.static(range(2)):
@@ -217,6 +198,7 @@ class PDSimulation:
                 self.lhs_matrix[q_i_x_idx, q_i_x_idx] += self.m_weight_positional  # This is the weight of positional constraints
                 self.lhs_matrix[q_i_y_idx, q_i_y_idx] += self.m_weight_positional
 
+
     # NOTE: This function doesn't build all constraints
     # It just builds strain constraints and area/volume constraints
     @ti.kernel
@@ -232,6 +214,7 @@ class PDSimulation:
             # Use current F_i construct current 'B * p' or Ri
             U, sigma, V = ti.svd(F_i, ti.f64)
             self.Bp[i] = U @ V.transpose()
+
             # Construct volume preservation constraints:
             x, y, max_it, tol = 10.0, 10.0, 80, 1e-6
             for t in range(max_it):
@@ -261,6 +244,7 @@ class PDSimulation:
             energy2 = 0.5*self.lam*self.volume[i]*((F_i - Bp_i_volume).trace()**2)
             self.phi[i] = energy1 + energy2
 
+
     @ti.kernel
     def build_sn(self):
         for vert_idx in range(self.NV):  # number of vertices
@@ -270,6 +254,7 @@ class PDSimulation:
             vel_i = self.vel[vert_idx]
             self.Sn[Sn_idx1] = pos_i[0]+self.dt*vel_i[0]+(self.dt*self.dt)*(self.ex_force[0][0]/self.mass[vert_idx])  # x-direction;
             self.Sn[Sn_idx2] = pos_i[1]+self.dt*vel_i[1]+(self.dt*self.dt)*(self.ex_force[0][1]/self.mass[vert_idx])  # y-direction;
+
 
     @ti.kernel
     def build_rhs(self, rhs: ti.ext_arr()):
@@ -323,12 +308,14 @@ class PDSimulation:
                 rhs[q_i_x_idx] += (pos_init_i[0] * self.m_weight_positional)
                 rhs[q_i_y_idx] += (pos_init_i[1] * self.m_weight_positional)
 
+
     @ti.kernel
     def update_velocity_pos(self):
         for i in range(self.NV):
             self.vel[i] = (self.pos_new[i] - self.pos[i]) / self.dt
             self.pos_delta2[i] = self.pos_new[i] - self.pos[i]
             self.pos[i] = self.pos_new[i]
+
 
     @ti.kernel
     def update_delta_pos(self):
@@ -338,12 +325,14 @@ class PDSimulation:
                 self.pos_delta[i+1] = self.pos_new[i][1] - self.pos[i][1]
                 # self.pos_delta2[i] = self.pos_new[i] - self.pos[i]
 
+
     @ti.kernel
     def warm_up(self):
         for pos_idx in range(self.NV):
             sn_idx1, sn_idx2 = pos_idx * 2, pos_idx * 2 + 1
             self.pos_new[pos_idx][0] = self.Sn[sn_idx1]
             self.pos_new[pos_idx][1] = self.Sn[sn_idx2]
+
 
     @ti.kernel
     def initinfo(self):
@@ -355,12 +344,14 @@ class PDSimulation:
             else:
                 self.vel[i][0] = 0
 
+
     @ti.kernel
     def update_pos_new_from_numpy(self, sol: ti.ext_arr()):
         for pos_idx in range(self.NV):
             sol_idx1, sol_idx2 = pos_idx*2, pos_idx*2+1
             self.pos_new[pos_idx][0] = sol[sol_idx1]
             self.pos_new[pos_idx][1] = sol[sol_idx2]
+
 
     @ti.kernel
     def check_residual(self) -> ti.f32:
@@ -371,6 +362,7 @@ class PDSimulation:
         # print("residual:", residual)
         return residual
 
+
     @ti.kernel
     def compute_T1_energy(self) -> ti.f64:
         T1 = 0.0
@@ -380,6 +372,7 @@ class PDSimulation:
             temp_diff = (self.pos_new[i] - sn_i) * ti.sqrt(self.mass[i])
             T1 += (temp_diff[0]**2 + temp_diff[1]**2)
         return T1 / (2.0 * self.dt**2)
+
 
     @ti.kernel
     def global_compute_T2_energy(self) -> ti.f64:
@@ -409,9 +402,11 @@ class PDSimulation:
         # print("global energy3:", total_energy3)
         return T2_global_energy
 
+
     @ti.kernel
     def local_compute_T2_energy(self) -> ti.f64:
-        local_T2_energy = ti.cast(0.0, ti.f64)  # Calculate T2 energy
+        # Calculate T2 energy
+        local_T2_energy = ti.cast(0.0, ti.f64)
         # Calculate the energy contributed by strain and volume/area constraints
         for e_it in range(self.NF):
             Bp_i_strain = self.Bp[e_it]
@@ -432,15 +427,21 @@ class PDSimulation:
         # print("local energy3:", total_energy3)
         return local_T2_energy
 
+
     def compute_global_step_energy(self):
-        global_T2_energy = self.global_compute_T2_energy()  # Calculate global T2 energy
-        global_T1_energy = self.compute_T1_energy()  # Calculate global T1 energy
+        # Calculate global T2 energy
+        global_T2_energy = self.global_compute_T2_energy()
+        # Calculate global T1 energy
+        global_T1_energy = self.compute_T1_energy()
         return (global_T1_energy + global_T2_energy)
+
 
     def compute_local_step_energy(self):
         local_T2_energy = self.local_compute_T2_energy()
-        local_T1_energy = self.compute_T1_energy()  # Calculate T1 energy
+        # Calculate T1 energy
+        local_T1_energy = self.compute_T1_energy()
         return (local_T1_energy + local_T2_energy)
+
 
     def paint_phi(self, gui):
         pos_np = self.pos.to_numpy()
@@ -449,17 +450,30 @@ class PDSimulation:
         a, b, c = pos_np[f2v_np[:, 0]], pos_np[f2v_np[:, 1]], pos_np[f2v_np[:, 2]]
         k = phi_np * (8000 / self.E)
         gb = (1 - k) * 0.7
+        # print("gb:", gb[0])
+        # print("phi_np", phi_np[0])
+        # print("k", k[0])
         gui.triangles(a, b, c, color=ti.rgb_to_hex([k + gb, gb, gb]))
         gui.lines(a, b, color=0xffffff, radius=0.5)
         gui.lines(b, c, color=0xffffff, radius=0.5)
         gui.lines(c, a, color=0xffffff, radius=0.5)
+
 
     @ti.kernel
     def copy(self, x: ti.template(), y: ti.template()):
          for i in x:
             y[i] = x[i]
 
-    def just_run(self):
+
+    def output_pos(self, np_pos, i):
+        outname = "Output/output" + str(i) + ".txt"
+        if not os.path.exists(outname):
+            os.system(r"touch {}".format(outname))
+        np.savetxt(outname, np_pos)
+
+
+    def run(self):
+        frame_counter = 0
         self.init_mesh_obj()
         self.init_mesh_B()
         self.precomputation()
@@ -473,8 +487,11 @@ class PDSimulation:
         gui.circles(self.pos.to_numpy(), radius=2, color=0xffaa33)
         filename = f'./results/frame_rest.png'
         gui.show(filename)
+
         frame_counter = 0
+        sim_t = 0.0
         plot_array = []
+
         while frame_counter < 50:
             # print(self.pos.to_numpy())
             # print("////////////////////////////////////////////////////////////")
@@ -504,6 +521,7 @@ class PDSimulation:
                     if (global_step_energy - last_record_energy) / global_step_energy > 0.01:
                         print("Large Error: GLOBAL")
                 last_record_energy = global_step_energy
+
             # Update velocity and positions
             self.update_velocity_pos()
             self.paint_phi(gui)
@@ -512,54 +530,16 @@ class PDSimulation:
             frame_counter += 1
             filename = f'./results/frame_{frame_counter:05d}.png'
             gui.show(filename)
-
-    def calcCenterOfMass(self, vind):
-        sum = ti.Vector([0.0, 0.0])
-        summ = 0.0
-        for i in vind:
-            for d in ti.static(range(2)):
-                sum[d] += self.mass[i] * self.pos[i][d]
-            summ += self.mass[i]
-        sum[0] /= summ
-        sum[1] /= summ
-        return sum
-
-    @ti.func
-    def calcA_qq(self, num_neigh):
-        sum = ti.Matrix([[0, 0], [0, 0]])
-        for i in range(num_neigh):
-            sum += ti.outer_product(self.qi[i], self.qi[i].transpose())
-        return sum.inverse()
-
-    def calcA_pq(self, p_i, q_i):
-        sum = np.zeros((2, 2))
-        for i in range(p_i.shape[0]):
-            sum += np.outer(p_i[i], np.transpose(q_i[i]))
-        return sum
-
-    def calcR(self, A_pq):
-        S = sqrtm(np.dot(np.transpose(A_pq), A_pq))
-        R = np.dot(A_pq, inv(S))
-        return R
-
-    def build_pos_arr(self, adj_v, arr, rel_pos):
-        result = np.zeros((adj_v.shape[0], self.dim))
-        result_pos = np.zeros((adj_v.shape[0], self.dim))
-        t = 0
-        nparr = arr.to_numpy()
-        for p in adj_v:  # print("print! ", nparr[p, 0])
-            result[t, 0] = nparr[p, 0]
-            result[t, 1] = nparr[p, 1]
-            result_pos[t, :] = rel_pos[p, :]
-            t = t+1
-        return result, result_pos
-
-    def data_one_frame(self, input_p, input_v):
+            # print("\n")
+    
+    
+    def dataoneframe(self, input_p, input_v):
         lhs_matrix_np = self.lhs_matrix.to_numpy()
         s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
         pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
         self.copy(input_p, self.pos)
         self.copy(input_v, self.vel)
+        # print(self.pos.to_numpy())
         print("////////////////////////////////////////////////////////////")
         # print(self.vel.to_numpy())
         # print(input_v.to_numpy())
@@ -589,134 +569,38 @@ class PDSimulation:
         # self.update_delta_pos()
         return self.pos_delta2, self.pos_new, self.vel
 
-    def compute_restT_and_m(self):
+
+    def init(self):
         self.init_mesh_obj()
         self.init_mesh_B()  # this is only for the rest position, so it is ok!
         self.precomputation()
 
-    def output_all(self, pd_dis, pn_dis, grad_E, frame, T):
-        frame = str(frame).zfill(2)
-        if T == 0:
-            out_name = "Outputs/output"+str(self.exf_ind)+"_"+str(self.mag_ind)+"_"+frame+".txt"
-        else:
-            out_name = "Outputs_T/output"+str(self.exf_ind)+"_"+str(self.mag_ind)+"_"+frame+".txt"
-        if not os.path.exists(out_name):
-            file = open(out_name, 'w+')
-            file.close()
-        ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim  # pd pos + pn pos + local transform + residual + force
-        out = np.ones([self.n_particles, ele_count], dtype=float)
-        self.mesh.enable_connectivity()
-        for i in range(self.n_particles):
-            out[i, 0] = pd_dis[i, 0]  # pd pos
-            out[i, 1] = pd_dis[i, 1]
-            out[i, 2] = pn_dis[i, 0]  # pn pos
-            out[i, 3] = pn_dis[i, 1]
-            adj_v = self.mesh.get_vertex_adjacent_vertices(i)
-            adj_v = np.append(adj_v, i)
-            adj_v = np.sort(adj_v)
-            new_pos, init_rel_pos = self.build_pos_arr(adj_v, self.pos, self.initial_rel_pos)
-            com = self.calcCenterOfMass(adj_v).to_numpy()
-            curr_rel_pos = np.zeros((adj_v.shape[0], self.dim))
-            for j in range(new_pos.shape[0]):
-                curr_rel_pos[j, :] = new_pos[j, :] - com
-            A_pq = self.calcA_pq(curr_rel_pos, init_rel_pos)
-            R = self.calcR(A_pq)
-            out[i, 4] = R[0, 0]   # local transform
-            out[i, 5] = R[0, 1]
-            out[i, 6] = R[1, 0]
-            out[i, 7] = R[1, 1]
-            out[i, 8] = grad_E[i*2]   # output_deformation_gradient
-            out[i, 9] = grad_E[i*2+1]
-            temp_f = np.array([self.mass[i] * self.x_xtilde[i][0], self.mass[i] * self.x_xtilde[i][1]])
-            self.npex_f[0] = self.ex_force[0][0]
-            self.npex_f[1] = self.ex_force[0][1]
-            out[i, 10] = self.npex_f[0] + temp_f[0]  # output_deformation_gradient
-            out[i, 11] = self.npex_f[1] + temp_f[1]
-        np.savetxt(out_name, out)
+# Energy Error note (under first 150 frames):
+# 5 fixed iterations: 76; Local: 0; Global: 76; (5%)
+# 10 fixed iterations: 421; Local: 0; Global: 420; (14%)
+# 100 fixed iterations: 6584; Local: 2931; 3654; (21%)
 
-    def output_p(self, dis_pd, dis_pn, frame):
-        frame = str(frame).zfill(2)
-        # if istest == 0:
-        outname = "Outputs/output"+str(self.exf_ind)+"_"+str(self.mag_ind)+"_dp_"+frame+".txt"
-        # else:
-        #     outname = "Outputs_T/output" + str(self.exf_ind) + "_" + str(self.mag_ind) + "_dp_" + frame + ".txt"
-        if not os.path.exists(outname):
-            file = open(outname, 'w+')
-            file.close()
-        ele_count = self.dim+self.dim  # pd pos + pn pos + local transform + residual + force
-        out = np.ones([self.NV, ele_count], dtype=float)
-        self.mesh.enable_connectivity()
-        # delta_pos = np.subtract(dis_pn, dis_pd)
-        for i in range(self.NV):
-            out[i, 0] = dis_pd[i, 0]  # pd pos
-            out[i, 1] = dis_pd[i, 1]
-            out[i, 2] = dis_pn[i, 0]  # pn pos
-            out[i, 3] = dis_pn[i, 1]
-            # out[i, 4] = delta_pos[i, 0]
-            # out[i, 5] = delta_pos[i, 1]
-        np.savetxt(outname, out)
 
-    def Run(self, pn, is_test, frame_count):
-        self.init_mesh_obj()
-        self.init_mesh_B()
-        self.precomputation()
-        lhs_matrix_np = self.lhs_matrix.to_numpy()
-        s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
-        pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
-        print("sparse lhs matrix:\n", s_lhs_matrix_np)
-        gui = ti.GUI('Projective Dynamics Demo3 v0.2')
-        gui.circles(self.pos.to_numpy(), radius=2, color=0xffaa33)
-        filename = f'./results/frame_rest.png'
-        gui.show(filename)
-        frame_counter = 0
-        plot_array = []
-        self.initial_com = self.calcCenterOfMass(np.arange(self.n_particles))
-        self.initial_rel_pos = self.pos.to_numpy() - self.initial_com
-        while frame_counter < frame_count:
-            self.build_sn()
-            self.warm_up()  # Warm up:
-            print("Frame ", frame_counter)
-            last_record_energy = 100000000000.0
-            self.copy(self.pos, self.input_xn)
-            self.copy(self.vel, self.input_vn)
-            pn_v, pn_dis = pn.data_one_frame(self.input_xn, self.input_vn)
-            for itr in range(self.solver_max_iteration):
-                self.local_solve_build_bp_for_all_constraints()
-                self.build_rhs(self.rhs_np)
-                local_step_energy = self.compute_local_step_energy()
-                # print("energy after local step:", local_step_energy)
-                if local_step_energy > last_record_energy:
-                    print("Energy Error: LOCAL; Error Amount:", (local_step_energy - last_record_energy) / local_step_energy)
-                    if (local_step_energy - last_record_energy) / local_step_energy > 0.01:
-                        print("Large Error: LOCAL")
-                last_record_energy = local_step_energy
-                pos_new_np = pre_fact_lhs_solve(self.rhs_np)
-                self.update_pos_new_from_numpy(pos_new_np)
-                global_step_energy = self.compute_global_step_energy()
-                # print("energy after global step:", global_step_energy)
-                plot_array.append([itr, global_step_energy])
-                if global_step_energy > last_record_energy:
-                    print("Energy Error: GLOBAL; Error Amount:", (global_step_energy - last_record_energy) / global_step_energy)
-                    if (global_step_energy - last_record_energy) / global_step_energy > 0.01:
-                        print("Large Error: GLOBAL")
-                last_record_energy = global_step_energy
+# Performance note (unit: ns):
+# # solve constraints time elapsed: 54000
+# # build rhs time elapsed: 324600
+# # linear solve time elapsed: 35200
+# # check residual elapsed: 502900
+# update pos new elapsed: 189100
 
-            # Update velocity and positions
-            self.update_velocity_pos()
-            self.paint_phi(gui)
-            self.gradE, self.x_xtilde = pn.get_gradE_from_pd(self.pos)
-            # self.copy(gradE, self.gradE)
-            gui.circles(self.pos.to_numpy(), radius=2, color=0xd1d1d1)
-            self.output_all(self.pos_delta2.to_numpy(), pn_dis.to_numpy(), self.gradE, frame_counter, 0)
-            frame_counter += 1
-            filename = f'./results/frame_{frame_counter:05d}.png'
-            gui.show(filename)
+# solve constraints time elapsed: 57900
+# build rhs time elapsed: 291500
+# linear solve time elapsed: 2013200
+# check residual elapsed: 501900
+# update pos new elapsed: 173600
 
+# solve time elapsed: 16916100
+# check residual elapsed: 689100
+# update pos new elapsed: 334500
+# solve constraints time elapsed: 63200
+# build rhs time elapsed: 398600
 
 if __name__ == "__main__":
-    pd = PDSimulation(1, 2)
-    pn = PNSimulation(int(1), 2)
-    pd.set_force(13, 22)
-    pn.compute_restT_and_m()
-    pn.set_force(13, 22)
-    pn.set_material(pd.rho, pd.E, pd.nu, pd.dt)
+    pd = PD_Simulation(int(sys.argv[1]), 2)
+    pd.set_Force(13, 22)
+    pd.run()

@@ -1,0 +1,74 @@
+import pymesh
+import numpy as np
+
+def read(testcase):
+    if testcase == 0:
+        mesh = pymesh.load_mesh("input/Sharkey.obj")
+        dirichlet = np.array([i for i in range(12)])
+        # dirichlet = np.array([0, 1, 2, 3])
+        shesh_scale= 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.6
+        mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 1.0
+        return mesh, dirichlet, shesh_scale, mesh_offset
+    elif testcase == 1:
+        # mesh = pymesh.load_mesh("input/cubes.obj")
+        mesh = pymesh.load_mesh("input/demo3_mesh.obj")
+        # dirichlet = np.array([1, 2])
+        dirichlet = np.array([i for i in range(11)])
+        mesh_scale= 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.6
+        mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 0.9
+        shesh_scale, mesh_offset = 0.6, 0.4
+        return mesh, dirichlet, shesh_scale, mesh_offset
+    elif testcase == 2:
+        mesh = pymesh.load_mesh("input/Sharkey_floor.obj")
+        dirichlet = np.array([954, 955])
+        shesh_scale= 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 1
+        mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 1
+        return mesh, dirichlet, shesh_scale, mesh_offset
+    elif testcase == 3:
+        mesh = pymesh.load_mesh("input/spheres.obj")
+        dirichlet = np.array([0])
+        shesh_scale, mesh_offset = 1, 0.4
+        return mesh, dirichlet, shesh_scale, mesh_offset
+
+
+def get_routine(v1, v2, v3):
+    return [[v1, v2], [v2, v3], [v1, v3]]
+
+def getM(mesh):
+    edge_list = []
+    for i in range(mesh.faces.shape[0]):
+        r = get_routine(mesh.faces[i][0], mesh.faces[i][1], mesh.faces[i][2])
+        edge_list.append(r[0])
+        edge_list.append(r[1])
+        edge_list.append(r[2])
+    return edge_list
+
+def deleteDuplicatedElementFromList(list):
+    print("sorted list:%s" % list)
+    length = len(list)
+    lastItem = list[length - 1]
+    for i in range(length - 2, -1, -1):
+        currentItem = list[i]
+        if currentItem == lastItem:
+            list.remove(currentItem)
+        else:
+            lastItem = currentItem
+    return list
+
+# mesh, _, _, _ = read(1)
+
+def get_edge_list(mesh):
+    edge_list = getM(mesh)
+    edge_list.sort(key=lambda x:x[0], reverse=False)  # 根据第1个元素，sheng序排列
+    edge_list = deleteDuplicatedElementFromList(edge_list)
+    print("hgjh")
+    return edge_list
+
+
+# bad_vertex = np.logical_not(np.all(np.isfinite(mesh.vertices), axis=1))
+# bad_vertex_indices = np.arange(mesh.num_vertices, dtype=int)[bad_vertex]
+# for i in bad_vertex_indices:
+#     adj_v = mesh.get_vertex_adjacent_vertices(i)
+#     adj_v = adj_v[np.logical_not(bad_vertex[adj_v])]
+
+
