@@ -4,10 +4,14 @@
 *.vcxproj
 *.xcodeproj
 *.idea
+*.pyc
 build
 output
 Outputs_T
 results
+src/Utils/__pycache__
+src/Simulators/__pycache__
+src/NeuralNetworks/__pycache__
 
 # Created by https://www.gitignore.io/api/linux,osx,sublimetext,windows,jetbrains,vim,emacs,cmake,c++,cuda,visualstudio,webstorm,eclipse,xcode
 
@@ -201,7 +205,6 @@ install_manifest.txt
 *.pch
 
 # Compiled Dynamic libraries
-*.so
 *.dylib
 *.dll
 
@@ -282,7 +285,6 @@ artifacts/
 *_i.h
 *.ilk
 *.meta
-*.obj
 *.pch
 *.pdb
 *.pgc
