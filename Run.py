@@ -1,6 +1,3 @@
-# from /Simulators/PN import *
-# from PD import *
-
 from src.Simulators.PN import *
 from src.Simulators.PD import *
 

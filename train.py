@@ -6,8 +6,8 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.nn as nn
-from utils_gcn import *
-from GCN_net import *
+from src.Utils.utils_gcn import *
+from src.NeuralNetworks.GCN_net import *
 import math
 from torch.utils.data import Dataset, DataLoader
 
