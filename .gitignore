@@ -1,5 +1,3 @@
-cis565_getting_started
-cis565_getting_started_generated_kernel*
 *.orig
 *.filters
 *.sln
@@ -7,6 +5,9 @@ cis565_getting_started_generated_kernel*
 *.xcodeproj
 *.idea
 build
+output
+Outputs_T
+results
 
 # Created by https://www.gitignore.io/api/linux,osx,sublimetext,windows,jetbrains,vim,emacs,cmake,c++,cuda,visualstudio,webstorm,eclipse,xcode
 

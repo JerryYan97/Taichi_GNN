@@ -22,6 +22,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--fastmode', action='store_true', default=False, help='Validate during training pass.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
+# PN -> PD:
+# parser.add_argument('--epochs', type=int, default=500, help='Number of epochs to train.')
+# PD -> PN:
 parser.add_argument('--epochs', type=int, default=500, help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=0.0002, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=2e-3, help='Weight decay (L2 loss on parameters).')
@@ -74,7 +77,7 @@ for epoch in range(num_epochs):
 
 # Model and optimizer
 node_num = mesh.num_vertices
-input_features = 10
+input_features = 14
 output_features = dim
 model = GCN(nfeat=input_features, nhid=args.hidden, nclass=output_features, dropout=args.dropout).to(device)
 mse = nn.MSELoss(reduction='sum').to(device)
@@ -122,33 +125,6 @@ def Sim_train():
                 writer.add_scalar('training loss', loss_train, (epoch*len_data)+i)
                 writer.close()
                 ###################################################
-
-
-def Sim_test():
-    with torch.no_grad():
-        whole_loss = 0.0
-        for i, (inputs, outs) in enumerate(test_loader):
-            inputs = inputs.to(device)
-            outs = outs.to(device)
-            outputs = model(inputs, edge_index)
-            loss_test = mse(outputs, outs)
-            whole_loss = whole_loss + loss_test
-            print("loss test: ", loss_test)
-        print(f'Whole Loss of the network on the test data: {whole_loss} %')
-
-#     model.eval()
-#     if not os.path.exists("Test_results"):
-#         os.makedirs("Test_results")
-#     outfilename = "out" + ".txt"
-#     for r in range(test_features.shape[0]):
-#         output = model(test_features[r], adj)
-#         loss_test = mse(output[idx_test], labels[idx_test])
-#         out_arr = test_features[r].cpu().detach().numpy()
-#         out_arr = np.hstack((out_arr, output))
-#         print("Test set results:",
-#               "loss= ", loss_test.cpu().detach().numpy()
-#               )
-#     np.savetxt(outfilename, out_arr)
 
 
 # Train model

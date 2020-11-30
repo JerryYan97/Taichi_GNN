@@ -16,7 +16,8 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--fastmode', action='store_true', default=False, help='Validate during training pass.')
 parser.add_argument('--seed', type=int, default=546, help='Random seed.')
-parser.add_argument('--epochs', type=int, default=50, help='Number of epochs to train.')
+# parser.add_argument('--epochs', type=int, default=50, help='Number of epochs to train.')
+parser.add_argument('--epochs', type=int, default=800, help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=5e-4, help='Weight decay (L2 loss on parameters).')
 parser.add_argument('--hidden', type=int, default=32, help='Number of hidden units.')
@@ -41,7 +42,7 @@ mesh, edge_index, simdatasets = load_st_txt_data(1)  # load test data
 test_loader = DataLoader(dataset=simdatasets, batch_size=1, shuffle=False)
 
 node_num = mesh.num_vertices
-input_features = 10
+input_features = 14
 output_features = dim
 model = GCN(nfeat=input_features, nhid=args.hidden, nclass=output_features, dropout=args.dropout).to(device)
 
@@ -75,6 +76,7 @@ def AAA():
             # print("outs:\n", outs.cpu().detach().numpy())
             # print("output:\n", output.cpu().detach().numpy())
 
+            # PD displacement, PD-GNN, ???, PN displacement
             dis = npinputs[:, 0:2]
             after_add = np.add(dis, npouts)
             outfinal = np.hstack((dis, npouts))

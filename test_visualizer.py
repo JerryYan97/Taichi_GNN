@@ -84,7 +84,7 @@ def write_combined_image(f, pn_x, corrected_pd_x, pd_x):
                      (particle_pos_pd[b][0], particle_pos_pd[b][1]),
                      radius=1,
                      color=0xFF0000)
-            # # Corrected PD
+            # Corrected PD
             gui.line((particle_pos_cor_pd[a][0], particle_pos_cor_pd[a][1]),
                      (particle_pos_cor_pd[b][0], particle_pos_cor_pd[b][1]),
                      radius=1,
@@ -204,14 +204,15 @@ if __name__ == "__main__":
             pn_pos_delta = test_file[:, 6:8]
             # pn_pos_delta = test_file[:, 2:4]
 
-            corrected_pd_pos = pn_pos + corrected_pd_pos_delta
-            pd_pos = pn_pos + pd_pos_delta
-            pn_pos = pn_pos + pn_pos_delta
-            # corrected_pd_pos = corrected_pd_pos + corrected_pd_pos_delta
-            # pd_pos = pd_pos + pd_pos_delta
-            if f == 30:
-                print("used file:")
-                print(TestResults_Files[f])
+            # PN -> PD: pd_pos[n+1] is calculated by pn_pos[n] + pd_dis.
+            # corrected_pd_pos = pn_pos + corrected_pd_pos_delta
+            # pd_pos = pn_pos + pd_pos_delta
+            # pn_pos = pn_pos + pn_pos_delta
+
+            # PD -> PN: pn_pos[n+1] is calculated by pd_pos[n] + pn_dis.
+            corrected_pd_pos = corrected_pd_pos_delta + pd_pos
+            pn_pos = pn_pos_delta + pd_pos
+            pd_pos = pd_pos_delta + pd_pos
 
             write_combined_image(f, pn_pos, corrected_pd_pos, pd_pos)
 

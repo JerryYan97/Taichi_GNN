@@ -1,26 +1,4 @@
-**Taichi Projective Dynamic**
-
-## Current Result
-
-### Demo 3
-
-![gif](./results/PJD_demo3_v0.2.gif)
-
-### Demo 2
-
-![gif](./results/PJD_demo2_v0.4.gif)
-
-## Blooper
-
-![gif](./results/PJD_demo1_v0.1.gif)
-
-## TODO
-
-* Diagionalize the solving lhs matrix
-
-## Acknowledgement
-
-* [UPenn CG Lab](http://cg.cis.upenn.edu/)
+**Non-linear Dynamics -- GNN PDPN**
 
 ## how to use network
 
@@ -38,5 +16,7 @@
 
 * pn_test.py is the file that I use to visualize the effect of network. I use green(pn), yellow(pd) and red(network) to represent 3 different results. 
 
+## Acknowledgement
 
+* [UPenn CG Lab](http://cg.cis.upenn.edu/)
 
