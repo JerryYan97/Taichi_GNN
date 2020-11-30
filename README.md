@@ -2,6 +2,8 @@
 
 ## how to use network
 
+* This project depends on two pre-compiled platform dependent files: src/Utils/a.so and src/Utils/JGSL_WATER.xxx.so. Please remember to replace them with your own version if current ones are not work.
+
 * pdfix.py is the file that I use to genertae pd data, be careful to set the max iteration to be 50 and the self.m_weight_positional = 10000000.0
 
 * pn2.py is the file that I use to genertae data, you can set the 'animation frame(current: 50)' and animation series(current: 20). There is a boolean variable to control where to put into the output file (Outputs for training data, Outputs_T for testing data).

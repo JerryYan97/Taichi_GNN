@@ -6,8 +6,8 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.nn as nn
-from utils_gcn import *
-from GCN_net import *
+from src.Utils.utils_gcn import *
+from src.NeuralNetworks.GCN_net import *
 import math
 from torch.utils.data import DataLoader
 
@@ -33,7 +33,7 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Specify a path
-PATH = "models/state_dict_model_zero_loss_1k.pt"
+PATH = "TrainedNN/state_dict_model_zero_loss_1k.pt"
 dim = 2
 
 # Model and optimizer

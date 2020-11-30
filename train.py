@@ -136,7 +136,10 @@ print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
 
 ################################## savehe network #################################
 # Specify a path
-PATH = "models/state_dict_model_zero_loss_1k.pt"
+if not os.path.exists("./TrainedNN/"):
+    os.mkdir("./TrainedNN/")
+
+PATH = "TrainedNN/state_dict_model_zero_loss_1k.pt"
 # Save
 torch.save(model.state_dict(), PATH)
 

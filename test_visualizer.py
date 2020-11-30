@@ -1,10 +1,8 @@
 import sys, os, time
-sys.path.insert(0, "../../build")
-from JGSL_WATER import *
 import taichi as ti
 import numpy as np
 import pymesh
-from pdfix import*
+from src.Utils.reader import *
 
 ##############################################################################
 

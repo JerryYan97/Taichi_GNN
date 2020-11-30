@@ -7,6 +7,9 @@
 *.pyc
 build
 output
+Outputs
+runs
+TestResult
 Outputs_T
 results
 src/Utils/__pycache__
