@@ -18,7 +18,7 @@ elif visualMode is 2:
     directory = os.getcwd() + '/output/' + '_'.join(os.path.basename(sys.argv[0])+"_pd") + '/'
 elif visualMode is 3:
     directory = os.getcwd() + '/output/' + '_'.join(os.path.basename(sys.argv[0]) + "_combined") + '/'
-os.makedirs(directory + 'images/', exist_ok=True)
+
 print('output directory:', directory)
 video_manager = ti.VideoManager(output_dir=directory + 'images/', framerate=24, automatic_build=False)
 
@@ -93,7 +93,7 @@ def write_combined_image(f, pn_x, corrected_pd_x, pd_x):
             #          radius=1,
             #          color=0x0000FF)
     video_manager.write_frame(gui.get_image())
-    gui.show(directory + f'images/{f:06d}.png')
+    gui.show()
 
 
 if __name__ == "__main__":
@@ -195,7 +195,9 @@ if __name__ == "__main__":
         # Init pos:
         pn_pos, corrected_pd_pos, pd_pos = mesh.vertices[:, 0:2], mesh.vertices[:, 0:2], mesh.vertices[:, 0:2]
         for f in range(len(TestResults_Files)):
-            test_file = np.genfromtxt("{}{}".format(testpath + "/", TestResults_Files[f]), delimiter=' ')
+            # test_file = np.genfromtxt("{}{}".format(testpath + "/", TestResults_Files[f]), delimiter=' ')
+            test_file = np.genfromtxt(testpath + "/" + TestResults_Files[f], delimiter=',')
+
             # test_file = np.genfromtxt("{}{}".format(realpath + "/", TestResults_Files[f]), delimiter=' ')
             pd_pos_delta = test_file[:, 0:2]
             corrected_pd_pos_delta = test_file[:, 2:4]

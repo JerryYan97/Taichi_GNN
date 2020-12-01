@@ -59,7 +59,7 @@ def AAA():
     with torch.no_grad():
         for i, (inputs, outs) in enumerate(test_loader):
             ii = str(i).zfill(2)
-            outname = "TestResult/frame" + ii + ".txt"
+            outname = "TestResult/frame" + ii + ".csv"
             inputs = torch.reshape(inputs, (node_num, -1)).float()
             inputs = inputs.to(device)
             outs = torch.reshape(outs, (node_num, -1)).float()
@@ -82,9 +82,7 @@ def AAA():
             outfinal = np.hstack((dis, npouts))
             outfinal = np.hstack((outfinal, after_add))
             outfinal = np.hstack((outfinal, outs.cpu().detach().numpy()))
-            np.savetxt(outname, outfinal)
-            if i == 30:
-                print("checkpoint")
+            np.savetxt(outname, outfinal, delimiter=',')
 
 
 if __name__ == '__main__':

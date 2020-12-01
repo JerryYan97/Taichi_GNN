@@ -1,6 +1,7 @@
 import taichi as ti
 import numpy as np
 import sys, os, time
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 import csv
 from scipy import sparse
@@ -15,7 +16,6 @@ from scipy.linalg import sqrtm
 from numpy import linalg as LA
 import matplotlib.pyplot as plt
 
-
 ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
 real = ti.f64
 
@@ -25,6 +25,7 @@ def calcR(A_pq):
     # print("S: \n", S)
     R = np.dot(A_pq, inv(S))
     return R
+
 
 @ti.data_oriented
 class PDSimulation:
@@ -40,8 +41,8 @@ class PDSimulation:
         self.rho = 100
         self.E = 1e4
         self.nu = 0.4
-        self.mu = self.E / (2*(1+self.nu))
-        self.lam = self.E * self.nu / ((1+self.nu)*(1-2*self.nu))
+        self.mu = self.E / (2 * (1 + self.nu))
+        self.lam = self.E * self.nu / ((1 + self.nu) * (1 - 2 * self.nu))
 
         ################################ field ######################################
         self.volume = ti.field(real, self.NF)
@@ -57,18 +58,18 @@ class PDSimulation:
         self.last_pos_new = ti.Vector.field(2, ti.f64, self.NV)
         self.boundary_labels = ti.field(int, self.NV)
 
-        self.pos_delta = ti.var(real, shape=2*self.NV)
+        self.pos_delta = ti.var(real, shape=2 * self.NV)
         self.pos_delta2 = ti.Vector.field(2, real, self.NV)
 
         self.vel = ti.Vector.field(2, ti.f64, self.NV)
         self.vel_last = ti.Vector.field(2, ti.f64, self.NV)
 
-        self.f2v = ti.Vector.field(3, int, self.NF)         # ids of three vertices of each face
-        self.B = ti.Matrix.field(2, 2, ti.f64, self.NF)     # The inverse of the init elements -- Dm
+        self.f2v = ti.Vector.field(3, int, self.NF)  # ids of three vertices of each face
+        self.B = ti.Matrix.field(2, 2, ti.f64, self.NF)  # The inverse of the init elements -- Dm
         self.F = ti.Matrix.field(2, 2, ti.f64, self.NF, needs_grad=True)
         self.A = ti.Matrix.field(4, 6, ti.f64, self.NF * 2)
         self.Bp = ti.Matrix.field(2, 2, ti.f64, self.NF * 2)
-        
+
         self.rhs_np = np.zeros(self.NV * 2, dtype=np.float64)
         self.Sn = ti.field(ti.f64, self.NV * 2)
 
@@ -97,7 +98,7 @@ class PDSimulation:
 
         ################################ force field ################################
         self.gravity = ti.Vector([0, 0])
-        self.exf_angle = np.arange(0, 2*np.pi, 30)
+        self.exf_angle = np.arange(0, 2 * np.pi, 30)
         self.exf_mag = np.arange(0, 10.0, 30)
         # print("angle: ", self.exf_angle, " mag: ", self.exf_mag)
         self.exf_ind = 0
@@ -128,14 +129,14 @@ class PDSimulation:
         self.rho = _rho
         self.E = _ym
         self.nu = _nu
-        self.mu = self.E / (2*(1+self.nu))
-        self.lam = self.E * self.nu / ((1+self.nu)*(1-2*self.nu))
+        self.mu = self.E / (2 * (1 + self.nu))
+        self.lam = self.E * self.nu / ((1 + self.nu) * (1 - 2 * self.nu))
 
     def set_force(self, ind, mag):
         self.exf_ind = ind
         self.mag_ind = mag
-        x = 0.3*mag * ti.sin(3.1415926/30.0*ind)
-        y = 0.3*mag * ti.cos(3.1415926/30.0*ind)
+        x = 0.3 * mag * ti.sin(3.1415926 / 30.0 * ind)
+        y = 0.3 * mag * ti.cos(3.1415926 / 30.0 * ind)
         self.ex_force[0] = ti.Vector([x, y])
 
     def init_mesh_obj(self):
@@ -167,9 +168,9 @@ class PDSimulation:
         dimp = self.dim + 1
         for e_it in range(self.NF):
             ia, ib, ic = self.f2v[e_it]
-            self.mass[ia] += self.volume[e_it]/dimp * self.rho
-            self.mass[ib] += self.volume[e_it]/dimp * self.rho
-            self.mass[ic] += self.volume[e_it]/dimp * self.rho
+            self.mass[ia] += self.volume[e_it] / dimp * self.rho
+            self.mass[ib] += self.volume[e_it] / dimp * self.rho
+            self.mass[ic] += self.volume[e_it] / dimp * self.rho
         # Construct A_i matrix for every element / Build A for all the constraints:
         # Strain constraints and area constraints
         for t in ti.static(range(2)):
@@ -180,32 +181,33 @@ class PDSimulation:
                 c = Dm_inv_i[1, 0]
                 d = Dm_inv_i[1, 1]
                 # Construct A_i:
-                self.A[t*self.NF+i][0, 0] = -a-c
-                self.A[t*self.NF+i][0, 2] = a
-                self.A[t*self.NF+i][0, 4] = c
-                self.A[t*self.NF+i][1, 0] = -b-d
-                self.A[t*self.NF+i][1, 2] = b
-                self.A[t*self.NF+i][1, 4] = d
-                self.A[t*self.NF+i][2, 1] = -a-c
-                self.A[t*self.NF+i][2, 3] = a
-                self.A[t*self.NF+i][2, 5] = c
-                self.A[t*self.NF+i][3, 1] = -b-d
-                self.A[t*self.NF+i][3, 3] = b
-                self.A[t*self.NF+i][3, 5] = d
+                self.A[t * self.NF + i][0, 0] = -a - c
+                self.A[t * self.NF + i][0, 2] = a
+                self.A[t * self.NF + i][0, 4] = c
+                self.A[t * self.NF + i][1, 0] = -b - d
+                self.A[t * self.NF + i][1, 2] = b
+                self.A[t * self.NF + i][1, 4] = d
+                self.A[t * self.NF + i][2, 1] = -a - c
+                self.A[t * self.NF + i][2, 3] = a
+                self.A[t * self.NF + i][2, 5] = c
+                self.A[t * self.NF + i][3, 1] = -b - d
+                self.A[t * self.NF + i][3, 3] = b
+                self.A[t * self.NF + i][3, 5] = d
 
         # Construct lhs matrix without constraints
         for i in range(self.NV):
             for d in ti.static(range(2)):
-                self.lhs_matrix[i*self.dim+d, i*self.dim+d] = (self.drag/self.dt) + self.mass[i]/(self.dt*self.dt)
+                self.lhs_matrix[i * self.dim + d, i * self.dim + d] = (self.drag / self.dt) + self.mass[i] / (
+                            self.dt * self.dt)
 
         # Add strain and area/volume constraints to the lhs matrix
         for t in ti.static(range(2)):
             for ele_idx in range(self.NF):
-                A_i = self.A[t*self.NF+ele_idx]
+                A_i = self.A[t * self.NF + ele_idx]
                 ia, ib, ic = self.f2v[ele_idx]
-                ia_x_idx, ia_y_idx = ia*2, ia*2+1
-                ib_x_idx, ib_y_idx = ib*2, ib*2+1
-                ic_x_idx, ic_y_idx = ic*2, ic*2+1
+                ia_x_idx, ia_y_idx = ia * 2, ia * 2 + 1
+                ib_x_idx, ib_y_idx = ib * 2, ib * 2 + 1
+                ic_x_idx, ic_y_idx = ic * 2, ic * 2 + 1
                 q_idx_vec = ti.Vector([ia_x_idx, ia_y_idx, ib_x_idx, ib_y_idx, ic_x_idx, ic_y_idx])
                 # AT_A = A_i.transpose() @ A_i
                 for A_row_idx in ti.static(range(6)):
@@ -218,14 +220,16 @@ class PDSimulation:
                                 weight = self.m_weight_strain[ele_idx]
                             else:
                                 weight = self.m_weight_volume[ele_idx]
-                            self.lhs_matrix[lhs_row_idx, lhs_col_idx] += (A_i[idx, A_row_idx]*A_i[idx, A_col_idx]*weight)
+                            self.lhs_matrix[lhs_row_idx, lhs_col_idx] += (
+                                        A_i[idx, A_row_idx] * A_i[idx, A_col_idx] * weight)
 
         # Add positional constraints to the lhs matrix
         for i in range(self.NV):
             if self.boundary_labels[i] == 1:
                 q_i_x_idx = i * 2
                 q_i_y_idx = i * 2 + 1
-                self.lhs_matrix[q_i_x_idx, q_i_x_idx] += self.m_weight_positional   # This is the weight of positional constraints
+                self.lhs_matrix[
+                    q_i_x_idx, q_i_x_idx] += self.m_weight_positional  # This is the weight of positional constraints
                 self.lhs_matrix[q_i_y_idx, q_i_y_idx] += self.m_weight_positional
 
     # NOTE: This function doesn't build all constraints
@@ -268,43 +272,45 @@ class PDSimulation:
             Bp_i_strain = self.Bp[i]
             Bp_i_volume = self.Bp[self.NF + i]
             F_i = self.F[i]
-            energy1 = self.mu*self.volume[i]*((F_i - Bp_i_strain).norm()**2)
-            energy2 = 0.5*self.lam*self.volume[i]*((F_i - Bp_i_volume).trace()**2)
+            energy1 = self.mu * self.volume[i] * ((F_i - Bp_i_strain).norm() ** 2)
+            energy2 = 0.5 * self.lam * self.volume[i] * ((F_i - Bp_i_volume).trace() ** 2)
             self.phi[i] = energy1 + energy2
 
     @ti.kernel
     def build_sn(self):
         for vert_idx in range(self.NV):  # number of vertices
-            Sn_idx1 = vert_idx*2  # m_sn
-            Sn_idx2 = vert_idx*2+1
+            Sn_idx1 = vert_idx * 2  # m_sn
+            Sn_idx2 = vert_idx * 2 + 1
             pos_i = self.pos[vert_idx]  # pos = m_x
             vel_i = self.vel[vert_idx]
-            self.Sn[Sn_idx1] = pos_i[0]+self.dt*vel_i[0]+(self.dt*self.dt)*(self.ex_force[0][0]/self.mass[vert_idx])  # x-direction;
-            self.Sn[Sn_idx2] = pos_i[1]+self.dt*vel_i[1]+(self.dt*self.dt)*(self.ex_force[0][1]/self.mass[vert_idx])  # y-direction;
+            self.Sn[Sn_idx1] = pos_i[0] + self.dt * vel_i[0] + (self.dt * self.dt) * (
+                        self.ex_force[0][0] / self.mass[vert_idx])  # x-direction;
+            self.Sn[Sn_idx2] = pos_i[1] + self.dt * vel_i[1] + (self.dt * self.dt) * (
+                        self.ex_force[0][1] / self.mass[vert_idx])  # y-direction;
 
     @ti.kernel
     def compute_x_xtilde(self):
         for i in range(self.n_particles):
-            self.x_xtilde[i][0] = self.pos[i][0] - self.Sn[i*2]
-            self.x_xtilde[i][1] = self.pos[i][1] - self.Sn[i*2+1]
+            self.x_xtilde[i][0] = self.pos[i][0] - self.Sn[i * 2]
+            self.x_xtilde[i][1] = self.pos[i][1] - self.Sn[i * 2 + 1]
             # print("x-xtilde: ", self.x_xtilde[i], " x: ", self.pos[i], " sn: ", self.Sn[i*2], ", ", self.Sn[i*2+1])
 
     @ti.kernel
     def build_rhs(self, rhs: ti.ext_arr()):
         one_over_dt2 = 1.0 / (self.dt ** 2)
         for i in range(self.NV * 2):  # Construct the first part of the rhs
-            pos_i = self.pos[i/2]
+            pos_i = self.pos[i / 2]
             p0 = pos_i[0]
             p1 = pos_i[1]
             if i % 2 == 0:
-                rhs[i] = one_over_dt2 * self.mass[i/2] * self.Sn[i] + (self.drag/self.dt*p0)  # 0.000061
+                rhs[i] = one_over_dt2 * self.mass[i / 2] * self.Sn[i] + (self.drag / self.dt * p0)  # 0.000061
             else:
-                rhs[i] = one_over_dt2 * self.mass[i/2] * self.Sn[i] + (self.drag/self.dt*p1)  # 0.000061
+                rhs[i] = one_over_dt2 * self.mass[i / 2] * self.Sn[i] + (self.drag / self.dt * p1)  # 0.000061
         # Add strain and volume/area constraints to the rhs
         for t in ti.static(range(2)):
             for ele_idx in range(self.NF):
                 ia, ib, ic = self.f2v[ele_idx]
-                Bp_i = self.Bp[t*self.NF+ele_idx]  # It is a 2x2 matrix now. We want it be a 4x1 vector.
+                Bp_i = self.Bp[t * self.NF + ele_idx]  # It is a 2x2 matrix now. We want it be a 4x1 vector.
                 Bp_i_vec = ti.Vector([Bp_i[0, 0], Bp_i[0, 1], Bp_i[1, 0], Bp_i[1, 1]])
                 A_i = self.A[ele_idx]
                 AT_Bp = A_i.transpose() @ Bp_i_vec  # AT_Bp is a 6x1 vector now.
@@ -315,18 +321,18 @@ class PDSimulation:
                     weight = self.m_weight_volume[ele_idx]
                 AT_Bp *= weight  # m_weight_strain
                 # Add AT_Bp back to rhs
-                q_ia_x_idx = ia*2
-                q_ia_y_idx = q_ia_x_idx+1
+                q_ia_x_idx = ia * 2
+                q_ia_y_idx = q_ia_x_idx + 1
                 rhs[q_ia_x_idx] += AT_Bp[0]
                 rhs[q_ia_y_idx] += AT_Bp[1]
 
-                q_ib_x_idx = ib*2
-                q_ib_y_idx = q_ib_x_idx+1
+                q_ib_x_idx = ib * 2
+                q_ib_y_idx = q_ib_x_idx + 1
                 rhs[q_ib_x_idx] += AT_Bp[2]
                 rhs[q_ib_y_idx] += AT_Bp[3]
 
-                q_ic_x_idx = ic*2
-                q_ic_y_idx = q_ic_x_idx+1
+                q_ic_x_idx = ic * 2
+                q_ic_y_idx = q_ic_x_idx + 1
                 rhs[q_ic_x_idx] += AT_Bp[4]
                 rhs[q_ic_y_idx] += AT_Bp[5]
         # Add positional constraints Bp to the rhs
@@ -352,7 +358,7 @@ class PDSimulation:
         for i in range(self.NV):
             if self.boundary_labels[i] == 0:
                 self.pos_delta[i] = self.pos_new[i][0] - self.pos[i][0]
-                self.pos_delta[i+1] = self.pos_new[i][1] - self.pos[i][1]
+                self.pos_delta[i + 1] = self.pos_new[i][1] - self.pos[i][1]
                 # self.pos_delta2[i] = self.pos_new[i] - self.pos[i]
 
     @ti.kernel
@@ -375,7 +381,7 @@ class PDSimulation:
     @ti.kernel
     def update_pos_new_from_numpy(self, sol: ti.ext_arr()):
         for pos_idx in range(self.NV):
-            sol_idx1, sol_idx2 = pos_idx*2, pos_idx*2+1
+            sol_idx1, sol_idx2 = pos_idx * 2, pos_idx * 2 + 1
             self.pos_new[pos_idx][0] = sol[sol_idx1]
             self.pos_new[pos_idx][1] = sol[sol_idx2]
 
@@ -395,8 +401,8 @@ class PDSimulation:
             sn_idx1, sn_idx2 = i * 2, i * 2 + 1
             sn_i = ti.Vector([self.Sn[sn_idx1], self.Sn[sn_idx2]])
             temp_diff = (self.pos_new[i] - sn_i) * ti.sqrt(self.mass[i])
-            T1 += (temp_diff[0]**2 + temp_diff[1]**2)
-        return T1 / (2.0 * self.dt**2)
+            T1 += (temp_diff[0] ** 2 + temp_diff[1] ** 2)
+        return T1 / (2.0 * self.dt ** 2)
 
     @ti.kernel
     def global_compute_T2_energy(self) -> ti.f64:
@@ -473,61 +479,9 @@ class PDSimulation:
 
     @ti.kernel
     def copy(self, x: ti.template(), y: ti.template()):
-         for i in x:
+        for i in x:
             y[i] = x[i]
 
-    def just_run(self):
-        self.init_mesh_obj()
-        self.init_mesh_B()
-        self.precomputation()
-        lhs_matrix_np = self.lhs_matrix.to_numpy()
-        s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
-        pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
-        print("sparse lhs matrix:\n", s_lhs_matrix_np)
-        self.initinfo()
-        gui = ti.GUI('Projective Dynamics Demo3 v0.2')
-        wait = input("PRESS ENTER TO CONTINUE.")
-        gui.circles(self.pos.to_numpy(), radius=2, color=0xffaa33)
-        filename = f'./results/frame_rest.png'
-        gui.show(filename)
-        frame_counter = 0
-        plot_array = []
-        while frame_counter < 50:
-            self.build_sn()
-            self.warm_up()
-            print("Frame ", frame_counter)
-            last_record_energy = 100000000000.0
-            for itr in range(self.solver_max_iteration):
-                self.local_solve_build_bp_for_all_constraints()
-                self.build_rhs(self.rhs_np)
-                local_step_energy = self.compute_local_step_energy()
-                # print("energy after local step:", local_step_energy)
-                if local_step_energy > last_record_energy:
-                    print("Energy Error: LOCAL; Error Amount:", (local_step_energy - last_record_energy) / local_step_energy)
-                    if (local_step_energy - last_record_energy) / local_step_energy > 0.01:
-                        print("Large Error: LOCAL")
-                last_record_energy = local_step_energy
-                pos_new_np = pre_fact_lhs_solve(self.rhs_np)
-                self.update_pos_new_from_numpy(pos_new_np)
-                global_step_energy = self.compute_global_step_energy()
-                # print("energy after global step:", global_step_energy)
-                plot_array.append([itr, global_step_energy])
-                if global_step_energy > last_record_energy:
-                    print("Energy Error: GLOBAL; Error Amount:", (global_step_energy - last_record_energy) / global_step_energy)
-                    if (global_step_energy - last_record_energy) / global_step_energy > 0.01:
-                        print("Large Error: GLOBAL")
-                last_record_energy = global_step_energy
-            # Update velocity and positions
-            self.update_velocity_pos()
-            self.paint_phi(gui)
-            # print(self.pos.to_numpy())
-            gui.circles(self.pos.to_numpy(), radius=2, color=0xd1d1d1)
-            frame_counter += 1
-            filename = f'./results/frame_{frame_counter:05d}.png'
-            gui.show(filename)
-
-    ################################### K means part #####################################
-    ################################### K means part #####################################
     ################################### K means part #####################################
     def get_mesh_map(self, mesh):
         map = np.zeros((mesh.num_vertices, mesh.num_vertices))
@@ -574,7 +528,7 @@ class PDSimulation:
         whole_list = [n for n in range(0, mesh.num_vertices)]
         parent_list = random.sample(range(0, mesh.num_vertices), k)
         child_list = [x for x in whole_list if x not in parent_list]
-        belonging = [None]*len(child_list)  # length: child
+        belonging = [None] * len(child_list)  # length: child
         for p in parent_list:
             center_pos.append(self.init_pos[p, :])
         norm_d = 10000.0
@@ -610,7 +564,8 @@ class PDSimulation:
 
     def draw_graph(self, k):
         _, child_list, parent_list, belonging = self.K_means(self.mesh, k)
-        color_tab = ['tab:blue', 'tab:orange', 'tab:green', 'tab:purple', 'tab:olive', 'tab:gray', 'tab:cyan', 'tab:pink', 'tab:red', 'tab:brown']
+        color_tab = ['tab:blue', 'tab:orange', 'tab:green', 'tab:purple', 'tab:olive', 'tab:gray', 'tab:cyan',
+                     'tab:pink', 'tab:red', 'tab:brown']
         for i in range(k):
             posidx = np.where(np.asarray(belonging) == parent_list[i])[0]
             pos = self.init_pos[np.asarray(child_list)[posidx]]
@@ -621,13 +576,11 @@ class PDSimulation:
             plt.scatter(x, y, label="stars", color=color_tab[i], marker="*", s=30)
         plt.xlabel('x - axis')  # x-axis label
         plt.ylabel('y - axis')  # frequency label
-        plt.title('K-means result plot!')   # plot title
-        plt.legend()    # showing legend
-        plt.show()      # function to show the plot
+        plt.title('K-means result plot!')  # plot title
+        plt.legend()  # showing legend
+        plt.show()  # function to show the plot
         plt.savefig('kmeans_result.png')
 
-    ################################### spe matching#####################################
-    ################################### shape matching #####################################
     ################################### shape matching #####################################
     def calcCenterOfMass(self, vind):
         sum = ti.Vector([0.0, 0.0])
@@ -639,7 +592,6 @@ class PDSimulation:
         sum[0] /= summ
         sum[1] /= summ
         return sum
-
 
     def calcA_qq(self, q_i):
         sum = np.zeros((2, 2))
@@ -667,7 +619,7 @@ class PDSimulation:
             result[t, 0] = nparr[p, 0]
             result[t, 1] = nparr[p, 1]
             result_pos[t, :] = rel_pos[p, :]
-            t = t+1
+            t = t + 1
         return result, result_pos
 
     def data_one_frame(self, input_p, input_v):
@@ -684,7 +636,8 @@ class PDSimulation:
             self.build_rhs(self.rhs_np)
             local_step_energy = self.compute_local_step_energy()
             if local_step_energy > last_record_energy:
-                print("Energy Error: LOCAL; Error Amount:", (local_step_energy - last_record_energy) / local_step_energy)
+                print("Energy Error: LOCAL; Error Amount:",
+                      (local_step_energy - last_record_energy) / local_step_energy)
                 if (local_step_energy - last_record_energy) / local_step_energy > 0.01:
                     print("Large Error: LOCAL")
             last_record_energy = local_step_energy
@@ -692,7 +645,8 @@ class PDSimulation:
             self.update_pos_new_from_numpy(pos_new_np)
             global_step_energy = self.compute_global_step_energy()
             if global_step_energy > last_record_energy:
-                print("Energy Error: GLOBAL; Error Amount:", (global_step_energy - last_record_energy) / global_step_energy)
+                print("Energy Error: GLOBAL; Error Amount:",
+                      (global_step_energy - last_record_energy) / global_step_energy)
                 if (global_step_energy - last_record_energy) / global_step_energy > 0.01:
                     print("Large Error: GLOBAL")
             last_record_energy = global_step_energy
@@ -731,13 +685,13 @@ class PDSimulation:
     def output_all(self, pd_dis, pn_dis, grad_E, frame, T):
         frame = str(frame).zfill(2)
         if T == 0:
-            out_name = "Outputs/output"+str(self.exf_ind)+"_"+str(self.mag_ind)+"_"+frame+".txt"
+            out_name = "Outputs/output" + str(self.exf_ind) + "_" + str(self.mag_ind) + "_" + frame + ".csv"
         else:
-            out_name = "Outputs_T/output"+str(self.exf_ind)+"_"+str(self.mag_ind)+"_"+frame+".txt"
+            out_name = "Outputs_T/output" + str(self.exf_ind) + "_" + str(self.mag_ind) + "_" + frame + ".csv"
         if not os.path.exists(out_name):
             file = open(out_name, 'w+')
             file.close()
-        ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim # pd pos + pn pos + local transform + residual + force
+        ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim  # pd pos + pn pos + local transform + residual + force
         out = np.ones([self.n_particles, ele_count], dtype=float)
         self.mesh.enable_connectivity()
         for i in range(self.n_particles):
@@ -761,8 +715,8 @@ class PDSimulation:
             out[i, 5] = A_final[0, 1]
             out[i, 6] = A_final[1, 0]
             out[i, 7] = A_final[1, 1]
-            out[i, 8] = grad_E[i*2]
-            out[i, 9] = grad_E[i*2+1]
+            out[i, 8] = grad_E[i * 2]
+            out[i, 9] = grad_E[i * 2 + 1]
             out[i, 10] = self.ex_force[0][0]
             out[i, 11] = self.ex_force[0][1]
             # temp_f = np.array([self.mass[i] * self.x_xtilde[i][0], self.mass[i] * self.x_xtilde[i][1]])
@@ -774,7 +728,7 @@ class PDSimulation:
             out[i, 13] = self.vel[i][1]
             out[i, 14] = self.pos_init[i][0]  # rest shape
             out[i, 15] = self.pos_init[i][1]
-        np.savetxt(out_name, out)
+        np.savetxt(out_name, out, delimiter=',')
 
     def Run(self, pn, is_test, frame_count):
         self.init_mesh_obj()
@@ -810,7 +764,8 @@ class PDSimulation:
                 local_step_energy = self.compute_local_step_energy()
                 # print("energy after local step:", local_step_energy)
                 if local_step_energy > last_record_energy:
-                    print("Energy Error: LOCAL; Error Amount:", (local_step_energy - last_record_energy) / local_step_energy)
+                    print("Energy Error: LOCAL; Error Amount:",
+                          (local_step_energy - last_record_energy) / local_step_energy)
                     if (local_step_energy - last_record_energy) / local_step_energy > 0.01:
                         print("Large Error: LOCAL")
                 last_record_energy = local_step_energy
@@ -820,7 +775,8 @@ class PDSimulation:
                 # print("energy after global step:", global_step_energy)
                 plot_array.append([itr, global_step_energy])
                 if global_step_energy > last_record_energy:
-                    print("Energy Error: GLOBAL; Error Amount:", (global_step_energy - last_record_energy) / global_step_energy)
+                    print("Energy Error: GLOBAL; Error Amount:",
+                          (global_step_energy - last_record_energy) / global_step_energy)
                     if (global_step_energy - last_record_energy) / global_step_energy > 0.01:
                         print("Large Error: GLOBAL")
                 last_record_energy = global_step_energy
@@ -840,71 +796,71 @@ if __name__ == "__main__":
     pd = PDSimulation(int(1), 2)
     init_rel_pos = np.array(
         [[4.00000007e+00, -1.07179634e-08],
-        [3.80422614e+00,  1.23606795e+00],
-        [3.23606807e+00,  2.35114096e+00],
-        [2.35114113e+00,  3.23606793e+00],
-        [1.23606813e+00,  3.80422603e+00],
-        [1.74850114e-07,  3.99999999e+00],
-        [-1.23606779e+00,  3.80422609e+00],
-        [-2.35114082e+00,  3.23606805e+00],
-        [-3.23606781e+00,  2.35114114e+00],
-        [-3.80422594e+00,  1.23606815e+00],
-        [-3.99999993e+00,  2.03641209e-07],
-        [-3.80422607e+00, -1.23606776e+00],
-        [-3.23606806e+00, -2.35114081e+00],
-        [-2.35114117e+00, -3.23606782e+00],
-        [-1.23606820e+00, -3.80422598e+00],
-        [-2.53868231e-07, -4.00000001e+00],
-        [1.23606772e+00, -3.80422618e+00],
-        [2.35114078e+00, -3.23606820e+00],
-        [3.23606782e+00, -2.35114133e+00],
-        [3.80422601e+00, -1.23606838e+00]])
+         [3.80422614e+00, 1.23606795e+00],
+         [3.23606807e+00, 2.35114096e+00],
+         [2.35114113e+00, 3.23606793e+00],
+         [1.23606813e+00, 3.80422603e+00],
+         [1.74850114e-07, 3.99999999e+00],
+         [-1.23606779e+00, 3.80422609e+00],
+         [-2.35114082e+00, 3.23606805e+00],
+         [-3.23606781e+00, 2.35114114e+00],
+         [-3.80422594e+00, 1.23606815e+00],
+         [-3.99999993e+00, 2.03641209e-07],
+         [-3.80422607e+00, -1.23606776e+00],
+         [-3.23606806e+00, -2.35114081e+00],
+         [-2.35114117e+00, -3.23606782e+00],
+         [-1.23606820e+00, -3.80422598e+00],
+         [-2.53868231e-07, -4.00000001e+00],
+         [1.23606772e+00, -3.80422618e+00],
+         [2.35114078e+00, -3.23606820e+00],
+         [3.23606782e+00, -2.35114133e+00],
+         [3.80422601e+00, -1.23606838e+00]])
 
     curr_rel_pos = np.array(
         [[4.00000007e+00, - 1.07179670e-08],
-        [3.80422614e+00,  1.23606795e+00],
-        [3.23606807e+00, 2.35114096e+00],
-        [2.35114113e+00,  3.23606793e+00],
-        [1.23606813e+00, 3.80422603e+00],
-        [1.74850114e-07, 3.99999999e+00],
-        [-1.23606779e+00, 3.80422609e+00],
-        [-2.35114082e+00,  3.23606805e+00],
-        [-3.23606781e+00, 2.35114114e+00],
-        [-3.80422594e+00,  1.23606815e+00],
-        [-3.99999993e+00, 2.03641205e-07],
-        [-3.80422607e+00, - 1.23606776e+00],
-        [-3.23606806e+00, - 2.35114081e+00],
-        [-2.35114117e+00, - 3.23606782e+00],
-        [-1.23606820e+00, - 3.80422598e+00],
-        [-2.53868231e-07, - 4.00000001e+00],
-        [1.23606772e+00, - 3.80422618e+00],
-        [2.35114078e+00, - 3.23606820e+00],
-        [3.23606782e+00, - 2.35114133e+00],
-        [3.80422601e+00, - 1.23606838e+00]])
+         [3.80422614e+00, 1.23606795e+00],
+         [3.23606807e+00, 2.35114096e+00],
+         [2.35114113e+00, 3.23606793e+00],
+         [1.23606813e+00, 3.80422603e+00],
+         [1.74850114e-07, 3.99999999e+00],
+         [-1.23606779e+00, 3.80422609e+00],
+         [-2.35114082e+00, 3.23606805e+00],
+         [-3.23606781e+00, 2.35114114e+00],
+         [-3.80422594e+00, 1.23606815e+00],
+         [-3.99999993e+00, 2.03641205e-07],
+         [-3.80422607e+00, - 1.23606776e+00],
+         [-3.23606806e+00, - 2.35114081e+00],
+         [-2.35114117e+00, - 3.23606782e+00],
+         [-1.23606820e+00, - 3.80422598e+00],
+         [-2.53868231e-07, - 4.00000001e+00],
+         [1.23606772e+00, - 3.80422618e+00],
+         [2.35114078e+00, - 3.23606820e+00],
+         [3.23606782e+00, - 2.35114133e+00],
+         [3.80422601e+00, - 1.23606838e+00]])
 
     pos = np.array(
-        [[4.00000000e+00,  1.49972778e+01],
-        [3.80422607e+00,  1.62333457e+01],
-        [3.23606800e+00, 1.73484188e+01],
-        [2.35114106e+00,  1.82333457e+01],
-        [1.23606806e+00, 1.88015038e+01],
-        [1.07179586e-07,  1.89972778e+01],
-        [-1.23606786e+00, 1.88015039e+01],
-        [-2.35114089e+00,  1.82333458e+01],
-        [-3.23606788e+00, 1.73484189e+01],
-        [-3.80422601e+00,  1.62333459e+01],
-        [-4.00000000e+00, 1.49972780e+01],
-        [-3.80422614e+00,  1.37612100e+01],
-        [-3.23606813e+00, 1.26461370e+01],
-        [-2.35114123e+00,  1.17612100e+01],
-        [-1.23606826e+00, 1.11930518e+01],
-        [-3.21538759e-07,  1.09972778e+01],
-        [1.23606765e+00, 1.11930516e+01],
-        [2.35114071e+00,  1.17612096e+01],
-        [3.23606775e+00, 1.26461365e+01],
-        [3.80422594e+00,  1.37612094e+01]])
+        [[4.00000000e+00, 1.49972778e+01],
+         [3.80422607e+00, 1.62333457e+01],
+         [3.23606800e+00, 1.73484188e+01],
+         [2.35114106e+00, 1.82333457e+01],
+         [1.23606806e+00, 1.88015038e+01],
+         [1.07179586e-07, 1.89972778e+01],
+         [-1.23606786e+00, 1.88015039e+01],
+         [-2.35114089e+00, 1.82333458e+01],
+         [-3.23606788e+00, 1.73484189e+01],
+         [-3.80422601e+00, 1.62333459e+01],
+         [-4.00000000e+00, 1.49972780e+01],
+         [-3.80422614e+00, 1.37612100e+01],
+         [-3.23606813e+00, 1.26461370e+01],
+         [-2.35114123e+00, 1.17612100e+01],
+         [-1.23606826e+00, 1.11930518e+01],
+         [-3.21538759e-07, 1.09972778e+01],
+         [1.23606765e+00, 1.11930516e+01],
+         [2.35114071e+00, 1.17612096e+01],
+         [3.23606775e+00, 1.26461365e+01],
+         [3.80422594e+00, 1.37612094e+01]])
 
-    curr_com = np.array([-6.76705279e-08,  1.49972778e+01])
+    curr_com = np.array([-6.76705279e-08, 1.49972778e+01])
     A_pq = pd.calcA_pq(curr_rel_pos, init_rel_pos)
     print("Apq: \n", A_pq)
     R = calcR(A_pq)

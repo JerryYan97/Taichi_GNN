@@ -63,14 +63,14 @@ class SIM_Data(Dataset):
     def __init__(self, filepath, transform=None):
         Files_Global = []
         for _, _, files in os.walk(filepath):
-            Files_Global.append(files)
-        Files_Global = Files_Global[0]
+            Files_Global.extend(files)
         Files_Global.sort()
         inputs = np.zeros((0, 0))
         outputs = np.zeros((0, 0))
 
         for f in range(len(Files_Global)):  # the data in each frame
-            fperframe = np.genfromtxt("{}{}".format(filepath + "/", Files_Global[f]), dtype=np.dtype(str))
+            # fperframe = np.genfromtxt("{}{}".format(filepath + "/", Files_Global[f]), dtype=np.dtype(str))
+            fperframe = np.genfromtxt(filepath + "/" + Files_Global[f], delimiter=',')
             other = fperframe[:, 4:].astype(float)
             pn_dis = fperframe[:, 2:4].astype(float)
             pd_dis = fperframe[:, 0:2].astype(float)  # a[start:stop] items start through stop-1
