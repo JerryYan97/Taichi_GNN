@@ -4,6 +4,8 @@
 
 * Environment: Ubuntu 18/20
 
+* Outs change to (PD_dis - PN_dis)
+
 * This project depends on two pre-compiled platform dependent files: src/Utils/a.so and src/Utils/JGSL_WATER.xxx.so. Please remember to replace them with your own version if current ones do not work.
 
 * The running process: run.py (In training data generating mode) -> train.py -> run.py (In testing data generating mode) -> Get_A.py -> test_visualizer.py.
