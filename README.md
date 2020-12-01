@@ -2,6 +2,8 @@
 
 ## how to use network
 
+* Environment: Ubuntu 18/20
+
 * This project depends on two pre-compiled platform dependent files: src/Utils/a.so and src/Utils/JGSL_WATER.xxx.so. Please remember to replace them with your own version if current ones are not work.
 
 * pdfix.py is the file that I use to genertae pd data, be careful to set the max iteration to be 50 and the self.m_weight_positional = 10000000.0
