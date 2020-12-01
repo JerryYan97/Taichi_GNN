@@ -79,12 +79,12 @@ class SIM_Data(Dataset):
             withoutpn = np.hstack((pd_dis, other)).reshape((1, -1))
             if f == 0:
                 inputs = withoutpn  # .reshape((1, -1))
-                # outputs = pos_delta  # .reshape((1, -1))
-                outputs = pn_dis
+                outputs = pos_delta  # .reshape((1, -1))
+                # outputs = pn_dis
             else:
                 inputs = np.vstack((inputs, withoutpn))
-                # outputs = np.vstack((outputs, pos_delta))
-                outputs = np.vstack((outputs, pn_dis))
+                outputs = np.vstack((outputs, pos_delta))
+                # outputs = np.vstack((outputs, pn_dis))
 
         self.n_samples = inputs.shape[0]
         self.x_data = inputs

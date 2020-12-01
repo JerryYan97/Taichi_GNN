@@ -77,21 +77,21 @@ def write_combined_image(f, pn_x, corrected_pd_x, pd_x):
     for i in range(n_elements):
         for j in range(3):
             a, b = vertices_[i, j], vertices_[i, (j + 1) % 3]
-            # # PD
-            # gui.line((particle_pos_pd[a][0], particle_pos_pd[a][1]),
-            #          (particle_pos_pd[b][0], particle_pos_pd[b][1]),
-            #          radius=1,
-            #          color=0xFF0000)
+            # PD
+            gui.line((particle_pos_pd[a][0], particle_pos_pd[a][1]),
+                     (particle_pos_pd[b][0], particle_pos_pd[b][1]),
+                     radius=1,
+                     color=0xFF0000)
             # Corrected PD
             gui.line((particle_pos_cor_pd[a][0], particle_pos_cor_pd[a][1]),
                      (particle_pos_cor_pd[b][0], particle_pos_cor_pd[b][1]),
                      radius=1,
                      color=0x00FF00)
-            # PN
-            gui.line((particle_pos_pn[a][0], particle_pos_pn[a][1]),
-                     (particle_pos_pn[b][0], particle_pos_pn[b][1]),
-                     radius=1,
-                     color=0x0000FF)
+            # # PN
+            # gui.line((particle_pos_pn[a][0], particle_pos_pn[a][1]),
+            #          (particle_pos_pn[b][0], particle_pos_pn[b][1]),
+            #          radius=1,
+            #          color=0x0000FF)
     video_manager.write_frame(gui.get_image())
     gui.show()
 
@@ -200,8 +200,8 @@ if __name__ == "__main__":
 
             # test_file = np.genfromtxt("{}{}".format(realpath + "/", TestResults_Files[f]), delimiter=' ')
             pd_pos_delta = test_file[:, 0:2]
-            corrected_pd_pos_delta = test_file[:, 2:4]
-            pn_pos_delta = test_file[:, 6:8]
+            corrected_pd_pos_delta = test_file[:, 2:4] + pd_pos_delta
+            pn_pos_delta = test_file[:, 6:8] + pd_pos_delta
             # pn_pos_delta = test_file[:, 2:4]
 
             # PN -> PD: pd_pos[n+1] is calculated by pn_pos[n] + pd_dis.
