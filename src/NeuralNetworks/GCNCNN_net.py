@@ -7,9 +7,7 @@ class GCN(nn.Module):
     def __init__(self, nfeat, nhid, nclass, gcnout, cnnout, dropout):
         super(GCN, self).__init__()
         self.GCN1 = GCNConv(nfeat, nhid)
-        self.GCN2 = GCNConv(nhid*2, nclass)
-        self.GCN3 = GCNConv(nhid, nhid)        # middle layers
-        self.GCN4 = GCNConv(nhid, nhid*2)
+        self.GCN3 = GCNConv(nhid, nhid)     # middle layers
         self.GCN5 = GCNConv(nhid, gcnout)   # output channel is a int number
 
         self.CNN1 = nn.Conv2d(1, 6, 5)  # in_channels, out_channels, kernel_size
@@ -29,7 +27,6 @@ class GCN(nn.Module):
         x = torch.tanh(x)
         x = self.GCN3(x, adj)
         x = torch.tanh(x)
-        # x = F.dropout(x, self.dropout, training=self.training)
         x = self.GCN5(x, adj)
         x = (x.unsqueeze(0)).unsqueeze(0)
 

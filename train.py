@@ -8,6 +8,7 @@ import torch.optim as optim
 import torch.nn as nn
 from src.Utils.utils_gcn import *
 from src.NeuralNetworks.GCN_net import *
+from src.NeuralNetworks.GCNCNN_net import *
 import math
 from torch.utils.data import Dataset, DataLoader
 
@@ -79,7 +80,8 @@ for epoch in range(num_epochs):
 node_num = mesh.num_vertices
 input_features = 14
 output_features = dim
-model = GCN(nfeat=input_features, nhid=args.hidden, nclass=output_features, dropout=args.dropout).to(device)
+# model = GCN(nfeat=input_features, nhid=args.hidden, nclass=output_features, dropout=args.dropout).to(device)
+model = GCN(nfeat=input_features, nhid=args.hidden, nclass=output_features, gcnout=20, cnnout=node_num*dim,  dropout=args.dropout).to(device)
 mse = nn.MSELoss(reduction='sum').to(device)
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
@@ -102,7 +104,17 @@ def Sim_train():
             zero_torch = torch.from_numpy(np.zeros((node_num, 2))).float().to(device)
             output = model(inputs, edge_index)
             # out = torch.true_divide(output - outs, outs).float()
-            loss_train = mse(output, outs)
+            output = torch.reshape(output, (node_num, -1))
+            l1_loss = torch.zeros(1).to(device)
+            reg = 1e-6
+            with torch.enable_grad():
+                for name, param in model.named_parameters():
+                    if 'bias' not in name:
+                        if 'GCN' in name:
+                            l1_loss = l1_loss + (reg * torch.sum(torch.abs(param.to(device))))
+
+            loss_train = mse(output, outs) + l1_loss
+            # loss_train = mse(output, outs)
             # loss_train = mse(out, zero_torch)
             optimizer.zero_grad()
             loss_train.backward()

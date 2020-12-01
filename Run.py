@@ -10,7 +10,7 @@ pd = PDSimulation(1, 2)
 pn = PNSimulation(int(1), 2)
 
 running_times = 1
-is_test = 1
+is_test = 0
 frame_count = 50
 
 if is_test == 0:
