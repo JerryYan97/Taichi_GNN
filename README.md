@@ -1,28 +1,8 @@
-**Taichi Projective Dynamic**
-
-## Current Result
-
-### Demo 3
-
-![gif](./results/PJD_demo3_v0.2.gif)
-
-### Demo 2
-
-![gif](./results/PJD_demo2_v0.4.gif)
-
-## Blooper
-
-![gif](./results/PJD_demo1_v0.1.gif)
-
-## TODO
-
-* Diagionalize the solving lhs matrix
-
-## Acknowledgement
-
-* [UPenn CG Lab](http://cg.cis.upenn.edu/)
+**Non-linear Dynamics -- GNN PDPN**
 
 ## how to use network
+
+* This project depends on two pre-compiled platform dependent files: src/Utils/a.so and src/Utils/JGSL_WATER.xxx.so. Please remember to replace them with your own version if current ones are not work.
 
 * pdfix.py is the file that I use to genertae pd data, be careful to set the max iteration to be 50 and the self.m_weight_positional = 10000000.0
 
@@ -38,5 +18,7 @@
 
 * pn_test.py is the file that I use to visualize the effect of network. I use green(pn), yellow(pd) and red(network) to represent 3 different results. 
 
+## Acknowledgement
 
+* [UPenn CG Lab](http://cg.cis.upenn.edu/)
 
