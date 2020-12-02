@@ -8,6 +8,7 @@ from scipy import sparse
 from scipy.sparse.linalg import spsolve
 from scipy.sparse.linalg import factorized
 from Utils.reader import *
+from Utils.utils_visualization import draw_pd_pn_image
 import pymesh
 import math
 from .PN import *
@@ -135,8 +136,8 @@ class PDSimulation:
     def set_force(self, ind, mag):
         self.exf_ind = ind
         self.mag_ind = mag
-        x = 0.3 * mag * ti.sin(3.1415926 / 30.0 * ind)
-        y = 0.3 * mag * ti.cos(3.1415926 / 30.0 * ind)
+        x = mag * ti.cos(3.1415926 / 180.0 * ind)
+        y = mag * ti.sin(3.1415926 / 180.0 * ind)
         self.ex_force[0] = ti.Vector([x, y])
 
     def init_mesh_obj(self):
@@ -719,11 +720,6 @@ class PDSimulation:
             out[i, 9] = grad_E[i * 2 + 1]
             out[i, 10] = self.ex_force[0][0]
             out[i, 11] = self.ex_force[0][1]
-            # temp_f = np.array([self.mass[i] * self.x_xtilde[i][0], self.mass[i] * self.x_xtilde[i][1]])
-            # self.npex_f[0] = self.ex_force[0][0]
-            # self.npex_f[1] = self.ex_force[0][1]
-            # out[i, 10] = self.npex_f[0] + temp_f[0]  # output_deformation_gradient
-            # out[i, 11] = self.npex_f[1] + temp_f[1]
             out[i, 12] = self.vel[i][0]  # velocity
             out[i, 13] = self.vel[i][1]
             out[i, 14] = self.pos_init[i][0]  # rest shape
@@ -739,12 +735,11 @@ class PDSimulation:
         lhs_matrix_np = self.lhs_matrix.to_numpy()
         s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
         pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
-        gui = ti.GUI('Projective Dynamics Demo3 v0.2')
-        gui.circles(self.pos.to_numpy(), radius=2, color=0xffaa33)
+        gui = ti.GUI('Projective Dynamics Demo3 v0.2', background_color=0xf7f7f7)
         if not os.path.exists("./results/"):
             os.mkdir("./results/")
         filename = f'./results/frame_rest.png'
-        gui.show(filename)
+        draw_pd_pn_image(gui, filename, self.pos.to_numpy(), self.pos.to_numpy(), 0.0, 1.0, self.f2v.to_numpy(), self.NF)
         frame_counter = 0
         plot_array = []
         self.initial_com = self.calcCenterOfMass(np.arange(self.n_particles))  # this is right
@@ -755,14 +750,13 @@ class PDSimulation:
             print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
             last_record_energy = 100000000000.0
             self.copy(self.pos, self.input_xn)
-            # print("lhs_matrix_np: \n", lhs_matrix_np)
             self.copy(self.vel, self.input_vn)
             pn_v, pn_dis = pn.data_one_frame(self.input_xn, self.input_vn)
+            pn_pos = pn_dis.to_numpy() + self.pos.to_numpy()
             for itr in range(self.solver_max_iteration):
                 self.local_solve_build_bp_for_all_constraints()
                 self.build_rhs(self.rhs_np)
                 local_step_energy = self.compute_local_step_energy()
-                # print("energy after local step:", local_step_energy)
                 if local_step_energy > last_record_energy:
                     print("Energy Error: LOCAL; Error Amount:",
                           (local_step_energy - last_record_energy) / local_step_energy)
@@ -772,7 +766,6 @@ class PDSimulation:
                 pos_new_np = pre_fact_lhs_solve(self.rhs_np)
                 self.update_pos_new_from_numpy(pos_new_np)
                 global_step_energy = self.compute_global_step_energy()
-                # print("energy after global step:", global_step_energy)
                 plot_array.append([itr, global_step_energy])
                 if global_step_energy > last_record_energy:
                     print("Energy Error: GLOBAL; Error Amount:",
@@ -782,14 +775,12 @@ class PDSimulation:
                 last_record_energy = global_step_energy
             # Update velocity and positions
             self.update_velocity_pos()
-            self.paint_phi(gui)
             self.compute_x_xtilde()
             self.gradE, _ = pn.get_gradE_from_pd(self.pos)
-            gui.circles(self.pos.to_numpy(), radius=2, color=0xd1d1d1)
             self.output_all(self.pos_delta2.to_numpy(), pn_dis.to_numpy(), self.gradE, frame_counter, is_test)
             frame_counter += 1
             filename = f'./results/frame_{frame_counter:05d}.png'
-            gui.show(filename)
+            draw_pd_pn_image(gui, filename, self.pos.to_numpy(), pn_pos, 0.0, 1.0, self.f2v.to_numpy(), self.NF)
 
 
 if __name__ == "__main__":

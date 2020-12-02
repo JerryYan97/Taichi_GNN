@@ -160,8 +160,8 @@ class PNSimulation:
     def set_force(self, ind, mag):
         self.exf_ind = ind
         self.mag_ind = mag
-        x = 0.3 * mag * ti.sin(3.1415926 / 30.0 * ind)
-        y = 0.3 * mag * ti.cos(3.1415926 / 30.0 * ind)
+        x = mag * ti.cos(3.1415926 / 180.0 * ind)
+        y = mag * ti.sin(3.1415926 / 180.0 * ind)
         self.ex_force[0] = ti.Vector([x, y])
 
     @ti.func

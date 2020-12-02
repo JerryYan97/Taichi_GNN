@@ -101,4 +101,7 @@ def AAA():
 if __name__ == '__main__':
     if not os.path.exists("TestResult"):
         os.makedirs("TestResult")
+    for root, dirs, files in os.walk("TestResult/"):
+        for name in files:
+            os.remove(os.path.join(root, name))
     AAA()

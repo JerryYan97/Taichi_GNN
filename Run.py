@@ -10,24 +10,26 @@ pd = PDSimulation(1, 2)
 pn = PNSimulation(int(1), 2)
 
 running_times = 1
-is_test = 0
 frame_count = 50
-
-if is_test == 0:
-    if not os.path.exists("Outputs"):
-        os.makedirs("Outputs")
-else:
-    if not os.path.exists("Outputs_T"):
-        os.makedirs("Outputs_T")
 
 # pd->pn
 if __name__ == '__main__':
+
+    is_test = int(input("Data generation mode [0 -- training data /1 -- test data]:"))
+
+    if is_test == 0:
+        if not os.path.exists("Outputs"):
+            os.makedirs("Outputs")
+    else:
+        if not os.path.exists("Outputs_T"):
+            os.makedirs("Outputs_T")
+
     for i in range(running_times):
         # pn.generate_exforce()
         # pn.compute_exforce(pn.exf_ind, pn.mag_ind)
         # pd.set_force(pn.exf_ind, pn.mag_ind)
-        pn.set_force(10, 12)
-        pd.set_force(10, 12)
+        pn.set_force(0, 3)
+        pd.set_force(0, 3)
 
         pd.set_material(rho, E, nu, dt)
         pn.set_material(rho, E, nu, dt)
