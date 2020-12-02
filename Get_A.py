@@ -50,7 +50,6 @@ model = GCN(nfeat=input_features, nhid=args.hidden, nclass=output_features, gcno
 
 # Load
 model.load_state_dict(torch.load(PATH))
-model.eval()
 mse = nn.MSELoss(reduction='sum').to(device)
 
 if args.cuda:
@@ -58,6 +57,7 @@ if args.cuda:
     mse = mse.to(device)
 
 def AAA():
+    model.eval()
     with torch.no_grad():
         for i, (inputs, outs) in enumerate(test_loader):
             ii = str(i).zfill(2)
@@ -66,7 +66,6 @@ def AAA():
             inputs = inputs.to(device)
             outs = torch.reshape(outs, (node_num, -1)).float()
             outs = outs.to(device)
-            model.train()
 
             output = model(inputs, edge_index)
             output = torch.reshape(output, (node_num, -1))
