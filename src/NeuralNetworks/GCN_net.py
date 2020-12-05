@@ -1,16 +1,16 @@
 import torch
 import torch.nn as nn
+from torch.nn import Linear
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv
+from torch_geometric.nn import global_mean_pool
 
 class GCN(nn.Module):
     def __init__(self, nfeat, nhid, nclass, dropout):
         super(GCN, self).__init__()
         self.conv1 = GCNConv(nfeat, nhid)
-        # self.conv2 = GCNConv(nhid*2, nclass)
         # middle layers
         self.conv3 = GCNConv(nhid, nhid)
-        # self.conv4 = GCNConv(nhid, nhid*2)
         self.conv5 = GCNConv(nhid, nclass)
         # self.dropout = dropout
 
@@ -39,6 +39,7 @@ class GCN(nn.Module):
         # x = self.conv4(x, adj)
         # x = F.dropout(x, self.dropout, training=self.training)
         x = self.conv5(x, adj)
+        x = F.dropout(x, p=0.5, training=self.training)
         return x
 
     # def forward(self, x, adj):

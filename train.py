@@ -7,14 +7,16 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.nn as nn
 from src.Utils.utils_gcn import *
-from src.NeuralNetworks.GCN_net import *
 from src.NeuralNetworks.GCNCNN_net import *
 import math
-from torch.utils.data import Dataset, DataLoader
+from torch_geometric.data import DataLoader
 
 ############## TENSORBOARD ########################
 import sys
 from torch.utils.tensorboard import SummaryWriter
+for root, dirs, files in os.walk("runs/"):
+    for name in files:
+        os.remove(os.path.join(root, name))
 writer = SummaryWriter('runs/GCNJiarui-60_10_100')  # default `log_dir` is "runs" - we'll be more specific here
 ###################################################
 
@@ -27,12 +29,10 @@ parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
 # parser.add_argument('--epochs', type=int, default=500, help='Number of epochs to train.')
 # PD -> PN:
 parser.add_argument('--epochs', type=int, default=500, help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.0002, help='Initial learning rate.')
+parser.add_argument('--lr', type=float, default=0.0001, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=2e-3, help='Weight decay (L2 loss on parameters).')
 parser.add_argument('--hidden', type=int, default=32, help='Number of hidden units.')
 parser.add_argument('--dropout', type=float, default=0.3, help='Dropout rate (1 - keep probability).')
-parser.add_argument('--input_n', type=int, default=10, help='input feature length.')
-parser.add_argument('--output_n', type=int, default=2, help='output feature length.')
 
 # get parameters and check the cuda
 args = parser.parse_args()
@@ -48,63 +48,40 @@ if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
 dim = 2
-# Load data
-mesh, adj, edge_index, simdatasets = load_txt_data2(1)
 
 # Load whole dataset with DataLoader
-train_loader = DataLoader(dataset=simdatasets, batch_size=1, shuffle=True, num_workers=0)
-# test loader from 1 to 50 frame
-test_loader = DataLoader(dataset=simdatasets, batch_size=1, shuffle=False)
+simDataset = load_txt_data(1, "/Outputs")
+train_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=True)
 
-# convert to an iterator and look at one random sample
-dataiter = iter(train_loader)
-data = dataiter.next()
-inp, outp = data
-print(len(simdatasets))
-# print(inp, outp)
-
-# Dummy Training loop
-num_epochs = 2
-len_data = len(simdatasets)
-total_samples = len(simdatasets)
-n_iterations = math.ceil(total_samples / 1)
-print(total_samples, n_iterations)
-for epoch in range(num_epochs):
-    for i, (inputs, labels) in enumerate(train_loader):
-        # here: 178 samples, batch_size = 4, n_iters=178/4=44.5 -> 45 iterations, Run your training process
-        if (i + 1) % 5 == 0:
-            pass
-
+# For the purpose of dataset validation:
+# for step, data in enumerate(train_loader):
+#     print(f'Step {step + 1}:')
+#     print('=======')
+#     print(f'Number of graphs in the current batch: {data.num_graphs}')
+#     print(data)
+#     print()
 
 # Model and optimizer
-node_num = mesh.num_vertices
-input_features = 14
-output_features = dim
-# model = GCN(nfeat=input_features, nhid=args.hidden, nclass=output_features, dropout=args.dropout).to(device)
-model = GCN(nfeat=input_features, nhid=args.hidden, nclass=output_features, gcnout=20, cnnout=node_num*dim,  dropout=args.dropout).to(device)
+model = GCN_CNN(nfeat=simDataset.input_features_num,
+                nhid=args.hidden,
+                nnode=simDataset.node_num,
+                gcnout=20,
+                cnnout=simDataset.node_num * dim,
+                dropout=args.dropout).to(device)
 mse = nn.MSELoss(reduction='sum').to(device)
+criterion = torch.nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
 
-if args.cuda:
-    adj = adj.to(device)
-    edge_index = edge_index.to(device)
-    mse = mse.to(device)
-
 def Sim_train():
     t = time.time()
+    model.train()
     for epoch in range(args.epochs):
-        for i, (inputs, outs) in enumerate(train_loader):
-            inputs = torch.reshape(inputs, (node_num, -1)).float()
-            inputs = inputs.to(device)
-            outs = torch.reshape(outs, (node_num, -1)).float()
-            outs = outs.to(device)
-            model.train()
+        for data in train_loader:  # Iterate in batches over the training dataset.
+            output = model(data.x.float().to(device),
+                           data.edge_index.to(device),
+                           data.num_graphs).reshape(data.num_graphs * simDataset.node_num, -1)
 
-            zero_torch = torch.from_numpy(np.zeros((node_num, 2))).float().to(device)
-            output = model(inputs, edge_index)
-            # out = torch.true_divide(output - outs, outs).float()
-            output = torch.reshape(output, (node_num, -1))
             l1_loss = torch.zeros(1).to(device)
             reg = 1e-6
             with torch.enable_grad():
@@ -113,30 +90,22 @@ def Sim_train():
                         if 'GCN' in name:
                             l1_loss = l1_loss + (reg * torch.sum(torch.abs(param.to(device))))
 
-            loss_train = mse(output, outs) + l1_loss
-            # loss_train = mse(output, outs)
-            # loss_train = mse(out, zero_torch)
+            loss_train = mse(output, data.y.float().to(device)) + l1_loss
+
             optimizer.zero_grad()
             loss_train.backward()
             optimizer.step()
-
-            # Evaluate validation set performance separately, deactivates dropout during validation run.
-            # if not args.fastmode:
-            #     model.eval()
-            #     output = model(inputs, edge_index)
-
-            print("Epoch:", i+1,
+            # NOTE: The scale of loss_train is different from our previous training.
+            # Here, it represents the total loss added by 'batch_size' graphs.
+            print("Epoch:", epoch + 1,
                   "loss_train: ", loss_train.cpu().detach().numpy(),
-                  # 'acc_train: {:.4f}'.format(acc_train.item()),
-                  # "loss_val: ", loss_val.cpu().detach().numpy(),
-                  # 'acc_val: {:.4f}'.format(acc_val),
                   "time: ", time.time() - t,
                   "s")
-            if (i + 1) % 10 == 0:
+            if (epoch + 1) % 10 == 0:
                 ############## TENSORBOARD ########################
-                writer.add_scalar('training loss', loss_train, (epoch*len_data)+i)
+                writer.add_scalar('training loss', loss_train, (epoch * len(simDataset)) + epoch)
                 writer.close()
-                ###################################################
+                ##################################################
 
 
 # Train model
@@ -146,7 +115,7 @@ Sim_train()
 print("Optimization Finished!")
 print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
 
-################################## savehe network #################################
+################################## save the network #################################
 # Specify a path
 if not os.path.exists("./TrainedNN/"):
     os.mkdir("./TrainedNN/")
@@ -154,15 +123,3 @@ if not os.path.exists("./TrainedNN/"):
 PATH = "TrainedNN/state_dict_model_zero_loss_1k.pt"
 # Save
 torch.save(model.state_dict(), PATH)
-
-################################## save the state dict #################################
-# Print model's state_dict
-# print("Model's state_dict:")
-# for param_tensor in model.state_dict():
-#     print(param_tensor, "\t", model.state_dict()[param_tensor].size())
-# print()
-# # Print optimizer's state_dict
-# print("Optimizer's state_dict:")
-# for var_name in optimizer.state_dict():
-#     print(var_name, "\t", optimizer.state_dict()[var_name])
-

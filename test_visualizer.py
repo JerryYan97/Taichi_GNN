@@ -56,11 +56,11 @@ def write_combined_image(pn_x, corrected_pd_x, pd_x):
                      (particle_pos_cor_pd[b][0], particle_pos_cor_pd[b][1]),
                      radius=1,
                      color=0x00FF00)
-            # # PN
-            gui.line((particle_pos_pn[a][0], particle_pos_pn[a][1]),
-                     (particle_pos_pn[b][0], particle_pos_pn[b][1]),
-                     radius=1,
-                     color=0x0000FF)
+            # PN
+            # gui.line((particle_pos_pn[a][0], particle_pos_pn[a][1]),
+            #          (particle_pos_pn[b][0], particle_pos_pn[b][1]),
+            #          radius=1,
+            #          color=0x0000FF)
     video_manager.write_frame(gui.get_image())
     gui.show()
 

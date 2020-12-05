@@ -32,16 +32,14 @@ if __name__ == '__main__':
             for name in files:
                 os.remove(os.path.join(root, name))
 
-
-
     for i in range(running_times):
         # pn.generate_exforce()
         # pn.compute_exforce(pn.exf_ind, pn.mag_ind)
         # pd.set_force(pn.exf_ind, pn.mag_ind)
-        # pn.set_force(0, 3)
-        # pd.set_force(0, 3)
-        pn.set_force(-45, 3)
-        pd.set_force(-45, 3)
+        pn.set_force(0, 3)
+        pd.set_force(0, 3)
+        # pn.set_force(45, 3)
+        # pd.set_force(45, 3)
 
         pd.set_material(rho, E, nu, dt)
         pn.set_material(rho, E, nu, dt)
