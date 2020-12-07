@@ -18,13 +18,10 @@ from scipy.linalg import sqrtm
 from numpy import linalg as LA
 import matplotlib.pyplot as plt
 
-directory = 'output/' + '_'.join(sys.argv) + '/'
-os.makedirs(directory + 'images/', exist_ok=True)
-print('output directory:', directory)
+directory = ''
 
 ##############################################################################
 
-ti.init(arch=ti.cpu)
 real = ti.f64
 scalar = lambda: ti.field(real)
 vec = lambda: ti.Vector(2, dt=real)
@@ -759,94 +756,3 @@ class PNSimulation:
             total_time += time.time()
             self.write_image(f + 1)
 
-
-if __name__ == "__main__":
-    pd = PDSimulation(1, 2)
-    pn = PNSimulation(1, 2)
-    rho = 1e2
-    E = 1e4
-    nu = 0.4
-    dt = 0.01
-    # pn.draw_graph(10)
-    pd.set_material(rho, E, nu, dt)
-    pd.compute_restT_and_m()
-    pn.set_material(rho, E, nu, dt)
-    pn.x.from_numpy(pn.mesh.vertices.astype(np.float32))
-    pn.v.fill(0)
-    pn.vertices.from_numpy(pn.mesh.faces)
-    pn.compute_restT_and_m()
-    pn.gui = ti.GUI("MPM", (1024, 1024), background_color=0x112F41)
-    pn.vertices_ = pn.vertices.to_numpy()
-    pn.zero.fill(0)
-    pn.write_image(0)
-    total_time = 0.0
-    # for output
-    istest = 0
-    if istest == 0:
-        if not os.path.exists("Outputs"):
-            os.makedirs("Outputs")
-    else:
-        if not os.path.exists("Outputs_T"):
-            os.makedirs("Outputs_T")
-    # extreme_test()
-    pn.initial_com = pn.calcCenterOfMass(np.arange(pn.n_particles))
-    pn.initial_rel_pos = pn.x.to_numpy() - pn.initial_com
-    print("init center of mass: ", pn.initial_com)
-    for forceid in range(1):
-        # pn.generate_exforce()
-        # pn.compute_exforce(pn.exf_ind, pn.mag_ind)
-        pn.set_force(23, 12)
-        print(pn.exf_ind, " -- ", pn.mag_ind, "  ", pn.ex_force[0][0], " -- ", pn.ex_force[0][1])
-        pn.npex_f[0] = pn.ex_force[0][0]
-        pn.npex_f[1] = pn.ex_force[0][1]
-        print("npex_f: ", pn.npex_f[0], " ", pn.npex_f[1])
-        # npex_f = (ex_force[0]).to_numpy() # update the exf force
-        pn.x.from_numpy(pn.mesh.vertices.astype(np.float32))
-        pn.v.fill(0)
-        # pd.set_force(pn.exf_ind, pn.mag_ind)
-        pd.set_force(23, 12)
-        for f in range(6):
-            total_time -= time.time()
-            print("==================== Frame: ", f, " ====================")
-            pn.compute_xn_and_xTilde()
-            # Here PD moves forward one frame
-            pn.copy(pn.xn, pn.input_xn)
-            pn.copy(pn.v, pn.input_vn)
-            pos_result2, pd_pos_new, pd_vel_new = pd.data_one_frame(pn.input_xn, pn.input_vn)
-            # Compute residual/Grad(E) for the PD in PN:
-            pn.data_mat.fill(0)
-            pn.data_rhs.fill(0)
-            pn.data_sol.fill(0)
-            pn.copy(pd_pos_new, pn.grad_x)
-            pn.compute_pd_gradient()
-            pn.copy(pn.data_rhs, pn.gradE)
-            pn.data_mat.fill(0)
-            pn.data_rhs.fill(0)
-            pn.data_sol.fill(0)
-            # pn to solve
-            ttt = 0
-            while True:
-                pn.data_mat.fill(0)
-                pn.data_rhs.fill(0)
-                pn.data_sol.fill(0)
-                pn.compute_hessian_and_gradient()
-                pn.data_sol.from_numpy(solve_linear_system(pn.data_mat.to_numpy(), pn.data_rhs.to_numpy(),
-                                                           pn.n_particles * pn.dim, np.array([i for i in range(11)]),
-                                                           pn.zero.to_numpy(), False, 0, pn.cnt[None]))
-                if pn.output_residual() < 1e-2 * pn.dt:
-                    break
-                E0 = pn.compute_energy()
-                pn.save_xPrev()
-                alpha = 1.0
-                pn.apply_sol(alpha)
-                E = pn.compute_energy()
-                while E > E0:
-                    alpha *= 0.5
-                    pn.apply_sol(alpha)
-                    E = pn.compute_energy()
-            pn.compute_v()
-            pn.compute_x_xtilde()
-            print("after x: \n", pn.x.to_numpy())
-            pn.output_all(pos_result2.to_numpy(), pn.del_p.to_numpy(), pn.gradE.to_numpy(), f, istest)
-            total_time += time.time()
-            pn.write_image(f + 1)

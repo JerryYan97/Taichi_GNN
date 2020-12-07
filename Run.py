@@ -1,13 +1,12 @@
 from src.Simulators.PN import *
 from src.Simulators.PD import *
 
+ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
+
 rho = 1e2
 E = 1e4
 nu = 0.4
 dt = 0.01
-
-pd = PDSimulation(1, 2)
-pn = PNSimulation(int(1), 2)
 
 running_times = 1
 frame_count = 50
@@ -32,14 +31,59 @@ if __name__ == '__main__':
             for name in files:
                 os.remove(os.path.join(root, name))
 
+    # Large scale data generation
+    # sampled_angle_num = 16
+    # sampled_mag_num = 8
+    #
+    # for angle_idx in range(sampled_angle_num):
+    #     for mag_idx in range(sampled_mag_num):
+    #         ti.reset()
+    #         pd = PDSimulation(1, 2)
+    #         pn = PNSimulation(int(1), 2)
+    #
+    #         pn.set_force(angle_idx * (360.0 / sampled_angle_num), (mag_idx + 1))
+    #         pd.set_force(angle_idx * (360.0 / sampled_angle_num), (mag_idx + 1))
+    #
+    #         pd.set_material(rho, E, nu, dt)
+    #         pn.set_material(rho, E, nu, dt)
+    #         pn.compute_restT_and_m()
+    #         pn.zero.fill(0)
+    #         pd.Run(pn, is_test, frame_count)
+
+    # Debug test
+    # for i in range(2):
+    #     ti.reset()
+    #     pd = PDSimulation(1, 2)
+    #     pn = PNSimulation(int(1), 2)
+    #     # pn.set_force(0, 3)
+    #     # pd.set_force(0, 3)
+    #     #
+    #     # pd.set_material(rho, E, nu, dt)
+    #     # pn.set_material(rho, E, nu, dt)
+    #     # pn.compute_restT_and_m()
+    #     # pn.zero.fill(0)
+    #     # pd.Run(pn, is_test, frame_count)
+    #
+    #     pn.set_force(0, 8)
+    #     pd.set_force(0, 8)
+    #
+    #     pd.set_material(rho, E, nu, dt)
+    #     pn.set_material(rho, E, nu, dt)
+    #     pn.compute_restT_and_m()
+    #     pn.zero.fill(0)
+    #     pd.Run(pn, is_test, frame_count)
+
+
     for i in range(running_times):
+        pd = PDSimulation(1, 2)
+        pn = PNSimulation(int(1), 2)
         # pn.generate_exforce()
         # pn.compute_exforce(pn.exf_ind, pn.mag_ind)
         # pd.set_force(pn.exf_ind, pn.mag_ind)
-        pn.set_force(0, 3)
-        pd.set_force(0, 3)
-        # pn.set_force(45, 3)
-        # pd.set_force(45, 3)
+        pn.set_force(-45, 3)
+        pd.set_force(-45, 3)
+        # pn.set_force(12.3, 6.6)
+        # pd.set_force(12.3, 6.6)
 
         pd.set_material(rho, E, nu, dt)
         pn.set_material(rho, E, nu, dt)

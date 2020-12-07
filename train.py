@@ -51,7 +51,7 @@ dim = 2
 
 # Load whole dataset with DataLoader
 simDataset = load_txt_data(1, "/Outputs")
-train_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=True)
+train_loader = DataLoader(dataset=simDataset, batch_size=64, shuffle=True)
 
 # For the purpose of dataset validation:
 # for step, data in enumerate(train_loader):
@@ -69,7 +69,6 @@ model = GCN_CNN(nfeat=simDataset.input_features_num,
                 cnnout=simDataset.node_num * dim,
                 dropout=args.dropout).to(device)
 mse = nn.MSELoss(reduction='sum').to(device)
-criterion = torch.nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
 
