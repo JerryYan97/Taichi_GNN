@@ -17,7 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 for root, dirs, files in os.walk("runs/"):
     for name in files:
         os.remove(os.path.join(root, name))
-writer = SummaryWriter('runs/GCNJiarui-60_10_100')  # default `log_dir` is "runs" - we'll be more specific here
+# writer = SummaryWriter('runs/GCNJiarui-60_10_100')  # default `log_dir` is "runs" - we'll be more specific here
 ###################################################
 
 # Training settings
@@ -51,7 +51,7 @@ dim = 2
 
 # Load whole dataset with DataLoader
 simDataset = load_txt_data(1, "/Outputs")
-train_loader = DataLoader(dataset=simDataset, batch_size=128, shuffle=True, num_workers=8)
+train_loader = DataLoader(dataset=simDataset, batch_size=128, shuffle=True, num_workers=8, pin_memory=True)
 
 # For the purpose of dataset validation:
 # for step, data in enumerate(train_loader):
@@ -102,11 +102,11 @@ def Sim_train():
                   "loss_train: ", loss_train.cpu().detach().numpy(),
                   "time: ", time.time() - t,
                   "s")
-            if (epoch + 1) % 10 == 0:
-                ############## TENSORBOARD ########################
-                writer.add_scalar('training loss', loss_train, (epoch * len(simDataset)) + epoch)
-                writer.close()
-                ##################################################
+            # if (epoch + 1) % 10 == 0:
+            #     ############## TENSORBOARD ########################
+            #     writer.add_scalar('training loss', loss_train, (epoch * len(simDataset)) + epoch)
+            #     writer.close()
+            #     ##################################################
 
 
 # Train model
