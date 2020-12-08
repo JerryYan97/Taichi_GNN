@@ -4,10 +4,10 @@ import torch
 from .reader import *
 import os
 from collections import defaultdict
-from torch_geometric.data import Dataset, Data
+from torch_geometric.data import InMemoryDataset, Data
 
 
-class SIM_Data_Geo(Dataset):
+class SIM_Data_Geo(InMemoryDataset):
     def __init__(self, filepath, mesh_edge_idx, i_features_num, o_features_num, node_num, transform=None,
                  pre_transform=None):
         super(SIM_Data_Geo, self).__init__(None, transform, pre_transform)
@@ -20,6 +20,21 @@ class SIM_Data_Geo(Dataset):
         self._input_features_num = i_features_num
         self._node_num = node_num
         self._output_features_num = o_features_num
+
+        sample_list = []
+        for idx in range(self.len()):
+            fperframe = np.genfromtxt(self._filepath + "/" + self._files[idx], delimiter=',')
+            other = fperframe[:, 4:]
+            pn_dis = fperframe[:, 2:4]
+            pd_dis = fperframe[:, 0:2]  # a[start:stop] items start through stop-1
+            y_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((self.node_num, -1)))
+            x_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((self.node_num, -1)))
+            sample = Data(x=x_data, edge_index=self._edge_idx, y=y_data)
+            if self.transform:
+                sample = self.transform(sample)
+            sample_list.append(sample)
+
+        self.data, self.slices = self.collate(sample_list)
 
     @property
     def raw_file_names(self):
@@ -39,18 +54,6 @@ class SIM_Data_Geo(Dataset):
 
     def len(self):
         return len(self.raw_file_names)
-
-    def get(self, idx):
-        fperframe = np.genfromtxt(self._filepath + "/" + self._files[idx], delimiter=',')
-        other = fperframe[:, 4:]
-        pn_dis = fperframe[:, 2:4]
-        pd_dis = fperframe[:, 0:2]  # a[start:stop] items start through stop-1
-        y_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((self.node_num, -1)))
-        x_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((self.node_num, -1)))
-        sample = Data(x=x_data, edge_index=self._edge_idx, y=y_data)
-        if self.transform:
-            sample = self.transform(sample)
-        return sample
 
 
 def load_txt_data(objpath, path="/Outputs"):
