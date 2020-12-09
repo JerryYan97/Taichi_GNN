@@ -20,6 +20,8 @@
 
 * test_visualizer.py is the file used to visualize the data generated previously by other applications. It now ,in mode 3, can visualize data produced by Get_A.py and show PD, PN and PD-NN results. 
 
+* In the ```/tools``` folder, I put some tools that maybe helpful to develop this project.
+
 ## Acknowledgement
 
 * [UPenn CG Lab](http://cg.cis.upenn.edu/)

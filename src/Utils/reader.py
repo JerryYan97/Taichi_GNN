@@ -5,14 +5,18 @@ import os
 
 def read(testcase):
     if testcase == 1:
-        # mesh = pymesh.load_mesh("input/cubes.obj")
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/demo3_mesh.obj")
-        # dirichlet = np.array([1, 2])
         dirichlet = np.array([i for i in range(11)])
         mesh_scale= 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.6
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 0.9
         shesh_scale, mesh_offset = 0.6, 0.4
         return mesh, dirichlet, shesh_scale, mesh_offset
+    elif testcase == 2:
+        mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/Sharkey.obj")
+        dirichlet = np.array([i for i in range(12)])
+        mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.4
+        mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 1.3
+        return mesh, dirichlet, mesh_scale, mesh_offset
 
 
 def get_routine(v1, v2, v3):

@@ -11,6 +11,8 @@ dt = 0.01
 running_times = 1
 frame_count = 50
 
+test_case = 2
+
 # NOTE: Please remember to save your data. It will delete all files in Outputs/ or Outputs_T/ when you exe Run.py.
 
 # pd->pn
@@ -75,13 +77,13 @@ if __name__ == '__main__':
 
 
     for i in range(running_times):
-        pd = PDSimulation(1, 2)
-        pn = PNSimulation(int(1), 2)
+        pd = PDSimulation(test_case, 2)
+        pn = PNSimulation(int(test_case), 2)
         # pn.generate_exforce()
         # pn.compute_exforce(pn.exf_ind, pn.mag_ind)
         # pd.set_force(pn.exf_ind, pn.mag_ind)
-        pn.set_force(-45, 3)
-        pd.set_force(-45, 3)
+        pn.set_force(-45, 1)
+        pd.set_force(-45, 1)
         # pn.set_force(12.3, 6.6)
         # pd.set_force(12.3, 6.6)
 

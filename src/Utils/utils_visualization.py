@@ -1,7 +1,12 @@
 
 # PN result: Red (Top Layer)
 # PD result: Blue (Bottom Layer)
-def draw_pd_pn_image(gui, file_name_path, pd_x, pn_x, mesh_offset, mesh_scale, vertices, n_elements):
+def draw_pd_pn_image(gui, file_name_path,
+                     pd_x, pn_x,
+                     mesh_offset, mesh_scale,
+                     vertices, n_elements,
+                     use_video_manager=False,
+                     video_manager=None):
     particle_pos_pn = (pn_x + mesh_offset) * mesh_scale
     particle_pos_pd = (pd_x + mesh_offset) * mesh_scale
 
@@ -18,4 +23,8 @@ def draw_pd_pn_image(gui, file_name_path, pd_x, pn_x, mesh_offset, mesh_scale, v
                      (particle_pos_pn[b][0], particle_pos_pn[b][1]),
                      radius=1,
                      color=0x0000FF)
-    gui.show(file_name_path)
+    if not use_video_manager:
+        gui.show(file_name_path)
+    else:
+        video_manager.write_frame(gui.get_image())
+        gui.show()

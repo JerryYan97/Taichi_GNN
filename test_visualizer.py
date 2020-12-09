@@ -17,23 +17,9 @@ video_manager = ti.VideoManager(output_dir=directory + 'images/', framerate=24, 
 
 ti.init(arch=ti.gpu, default_fp=ti.f64)
 
-real = ti.f64
-dim = 2
-
-scalar = lambda: ti.var(dt=real)
-vec = lambda: ti.Vector(dim, dt=real)
-
 n_particles = mesh.num_vertices
 n_elements = mesh.num_faces
 
-x = vec()
-
-deltap = ti.Vector.field(dim, real, n_particles)
-
-vertices = ti.var(ti.i32)
-ti.root.dense(ti.k, n_particles).place(x)
-
-ti.root.dense(ti.ij, (n_elements, 3)).place(vertices)
 
 # PN result: Red (Top Layer)
 # Corrected PD result: Green (Second Layer)
@@ -45,7 +31,7 @@ def write_combined_image(pn_x, corrected_pd_x, pd_x):
 
     for i in range(n_elements):
         for j in range(3):
-            a, b = vertices_[i, j], vertices_[i, (j + 1) % 3]
+            a, b = mesh.faces[i, j], mesh.faces[i, (j + 1) % 3]
             # PD
             gui.line((particle_pos_pd[a][0], particle_pos_pd[a][1]),
                      (particle_pos_pd[b][0], particle_pos_pd[b][1]),
@@ -69,10 +55,7 @@ if __name__ == "__main__":
     testpath = "TestResult"
     realpath = "Outputs_T"
 
-    x.from_numpy(mesh.vertices.astype(np.float64))
-    vertices.from_numpy(mesh.faces)
     gui = ti.GUI("Test Visualizer", (1024, 1024), background_color=0xf7f7f7)
-    vertices_ = vertices.to_numpy()
 
     write_combined_image(mesh.vertices, mesh.vertices, mesh.vertices)
 
@@ -82,17 +65,6 @@ if __name__ == "__main__":
         TestResults_Files.extend(files)
     TestResults_Files.sort()
     print("TestResults_Files:", TestResults_Files)
-
-    # TestResults_Files = []
-    # if visualMode is 3:
-    #     for _, _, files in os.walk(realpath):
-    #         TestResults_Files.extend(files)
-    #     TestResults_Files.sort()
-    #     print("TestResults_Files:", TestResults_Files)
-
-    ff = 0
-    origin = x.to_numpy().reshape((mesh.num_vertices, 2)).astype(np.float32)
-
 
     # Init pos:
     pn_pos, corrected_pd_pos, pd_pos = mesh.vertices[:, 0:2], mesh.vertices[:, 0:2], mesh.vertices[:, 0:2]

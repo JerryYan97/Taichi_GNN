@@ -51,7 +51,7 @@ dim = 2
 
 # Load whole dataset with DataLoader
 simDataset = load_txt_data(1, "/Outputs")
-train_loader = DataLoader(dataset=simDataset, batch_size=128, shuffle=True, num_workers=8, pin_memory=True)
+train_loader = DataLoader(dataset=simDataset, batch_size=64, shuffle=True, num_workers=8, pin_memory=True)
 
 # For the purpose of dataset validation:
 # for step, data in enumerate(train_loader):

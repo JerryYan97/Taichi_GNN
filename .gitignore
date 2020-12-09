@@ -15,6 +15,9 @@ results
 src/Utils/__pycache__
 src/Simulators/__pycache__
 src/NeuralNetworks/__pycache__
+src/tools/backup
+src/tools/modelVisualization
+src/tools/PD_PN_Compare
 
 # Created by https://www.gitignore.io/api/linux,osx,sublimetext,windows,jetbrains,vim,emacs,cmake,c++,cuda,visualstudio,webstorm,eclipse,xcode
 

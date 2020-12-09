@@ -35,7 +35,7 @@ class PDSimulation:
         self.dt = 0.01
 
         ################################ mesh ######################################
-        self.mesh, _, _, _ = read(int(obj_file))
+        self.mesh, _, self.mesh_scale, self.mesh_offset = read(int(obj_file))
         self.NV, self.NF, _ = self.mesh.num_vertices, self.mesh.num_faces, self.mesh.num_voxels
         self.n_particles = self.NV
         ################################ material ######################################
@@ -136,8 +136,8 @@ class PDSimulation:
     def set_force(self, ind, mag):
         self.exf_ind = ind
         self.mag_ind = mag
-        x = mag * ti.cos(3.1415926 / 180.0 * ind)
-        y = mag * ti.sin(3.1415926 / 180.0 * ind)
+        x = float(mag) * ti.cos(3.1415926 / 180.0 * ind)
+        y = float(mag) * ti.sin(3.1415926 / 180.0 * ind)
         self.ex_force[0] = ti.Vector([x, y])
 
     def init_mesh_obj(self):
@@ -739,7 +739,10 @@ class PDSimulation:
         if not os.path.exists("./results/"):
             os.mkdir("./results/")
         filename = f'./results/frame_rest.png'
-        draw_pd_pn_image(gui, filename, self.pos.to_numpy(), self.pos.to_numpy(), 0.0, 1.0, self.f2v.to_numpy(), self.NF)
+        draw_pd_pn_image(gui, filename,
+                         self.pos.to_numpy(), self.pos.to_numpy(),
+                         self.mesh_offset, self.mesh_scale,
+                         self.f2v.to_numpy(), self.NF)
         frame_counter = 0
         plot_array = []
         self.initial_com = self.calcCenterOfMass(np.arange(self.n_particles))  # this is right
@@ -751,7 +754,7 @@ class PDSimulation:
             last_record_energy = 100000000000.0
             self.copy(self.pos, self.input_xn)
             self.copy(self.vel, self.input_vn)
-            pn_v, pn_dis = pn.data_one_frame(self.input_xn, self.input_vn)
+            pn_dis, _pn_pos, pn_v = pn.data_one_frame(self.input_xn, self.input_vn)
             pn_pos = pn_dis.to_numpy() + self.pos.to_numpy()
             for itr in range(self.solver_max_iteration):
                 self.local_solve_build_bp_for_all_constraints()
@@ -780,5 +783,47 @@ class PDSimulation:
             self.output_all(self.pos_delta2.to_numpy(), pn_dis.to_numpy(), self.gradE, frame_counter, is_test)
             frame_counter += 1
             filename = f'./results/frame_{frame_counter:05d}.png'
-            draw_pd_pn_image(gui, filename, self.pos.to_numpy(), pn_pos, 0.0, 1.0, self.f2v.to_numpy(), self.NF)
+            draw_pd_pn_image(gui, filename,
+                             self.pos.to_numpy(), pn_pos,
+                             self.mesh_offset, self.mesh_scale,
+                             self.f2v.to_numpy(), self.NF)
+
+    # def runPDStandAlone(self, frame_count):
+    #     self.init_mesh_obj()
+    #     self.init_mesh_B()
+    #     self.mass.fill(0.0)
+    #     self.lhs_matrix.fill(0.0)
+    #     self.precomputation()
+    #     lhs_matrix_np = self.lhs_matrix.to_numpy()
+    #     s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
+    #     pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
+    #     frame_counter = 0
+    #     while frame_counter < frame_count:
+    #         self.build_sn()
+    #         self.warm_up()  # Warm up:
+    #         print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
+    #         last_record_energy = 100000000000.0
+    #         for itr in range(self.solver_max_iteration):
+    #             self.local_solve_build_bp_for_all_constraints()
+    #             self.build_rhs(self.rhs_np)
+    #             local_step_energy = self.compute_local_step_energy()
+    #             if local_step_energy > last_record_energy:
+    #                 print("Energy Error: LOCAL; Error Amount:",
+    #                       (local_step_energy - last_record_energy) / local_step_energy)
+    #                 if (local_step_energy - last_record_energy) / local_step_energy > 0.01:
+    #                     print("Large Error: LOCAL")
+    #             last_record_energy = local_step_energy
+    #             pos_new_np = pre_fact_lhs_solve(self.rhs_np)
+    #             self.update_pos_new_from_numpy(pos_new_np)
+    #             global_step_energy = self.compute_global_step_energy()
+    #             if global_step_energy > last_record_energy:
+    #                 print("Energy Error: GLOBAL; Error Amount:",
+    #                       (global_step_energy - last_record_energy) / global_step_energy)
+    #                 if (global_step_energy - last_record_energy) / global_step_energy > 0.01:
+    #                     print("Large Error: GLOBAL")
+    #             last_record_energy = global_step_energy
+    #         # Update velocity and positions
+    #         self.update_velocity_pos()
+    #         self.compute_x_xtilde()
+    #         frame_counter += 1
 

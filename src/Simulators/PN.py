@@ -698,7 +698,7 @@ class PNSimulation:
                 self.apply_sol(alpha)
                 E = self.compute_energy()
         self.compute_v()
-        return self.v, self.del_p
+        return self.del_p, self.x, self.v
 
     def Run(self, pd, is_test, frame_count):
         self.x.from_numpy(self.mesh.vertices.astype(np.float32))
