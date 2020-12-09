@@ -735,14 +735,21 @@ class PDSimulation:
         lhs_matrix_np = self.lhs_matrix.to_numpy()
         s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
         pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
-        gui = ti.GUI('Projective Dynamics Demo3 v0.2', background_color=0xf7f7f7)
+        gui = ti.GUI('Projective Dynamics Demo3 v0.2', (1024, 1024), background_color=0xf7f7f7)
+        video_manager = ti.VideoManager(output_dir='results/', framerate=24, automatic_build=False)
+
         if not os.path.exists("./results/"):
             os.mkdir("./results/")
+        for root, dirs, files in os.walk("results/"):
+            for name in files:
+                os.remove(os.path.join(root, name))
+
         filename = f'./results/frame_rest.png'
         draw_pd_pn_image(gui, filename,
                          self.pos.to_numpy(), self.pos.to_numpy(),
                          self.mesh_offset, self.mesh_scale,
-                         self.f2v.to_numpy(), self.NF)
+                         self.f2v.to_numpy(), self.NF,
+                         True, video_manager)
         frame_counter = 0
         plot_array = []
         self.initial_com = self.calcCenterOfMass(np.arange(self.n_particles))  # this is right
@@ -786,44 +793,6 @@ class PDSimulation:
             draw_pd_pn_image(gui, filename,
                              self.pos.to_numpy(), pn_pos,
                              self.mesh_offset, self.mesh_scale,
-                             self.f2v.to_numpy(), self.NF)
-
-    # def runPDStandAlone(self, frame_count):
-    #     self.init_mesh_obj()
-    #     self.init_mesh_B()
-    #     self.mass.fill(0.0)
-    #     self.lhs_matrix.fill(0.0)
-    #     self.precomputation()
-    #     lhs_matrix_np = self.lhs_matrix.to_numpy()
-    #     s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
-    #     pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
-    #     frame_counter = 0
-    #     while frame_counter < frame_count:
-    #         self.build_sn()
-    #         self.warm_up()  # Warm up:
-    #         print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
-    #         last_record_energy = 100000000000.0
-    #         for itr in range(self.solver_max_iteration):
-    #             self.local_solve_build_bp_for_all_constraints()
-    #             self.build_rhs(self.rhs_np)
-    #             local_step_energy = self.compute_local_step_energy()
-    #             if local_step_energy > last_record_energy:
-    #                 print("Energy Error: LOCAL; Error Amount:",
-    #                       (local_step_energy - last_record_energy) / local_step_energy)
-    #                 if (local_step_energy - last_record_energy) / local_step_energy > 0.01:
-    #                     print("Large Error: LOCAL")
-    #             last_record_energy = local_step_energy
-    #             pos_new_np = pre_fact_lhs_solve(self.rhs_np)
-    #             self.update_pos_new_from_numpy(pos_new_np)
-    #             global_step_energy = self.compute_global_step_energy()
-    #             if global_step_energy > last_record_energy:
-    #                 print("Energy Error: GLOBAL; Error Amount:",
-    #                       (global_step_energy - last_record_energy) / global_step_energy)
-    #                 if (global_step_energy - last_record_energy) / global_step_energy > 0.01:
-    #                     print("Large Error: GLOBAL")
-    #             last_record_energy = global_step_energy
-    #         # Update velocity and positions
-    #         self.update_velocity_pos()
-    #         self.compute_x_xtilde()
-    #         frame_counter += 1
-
+                             self.f2v.to_numpy(), self.NF,
+                             True, video_manager)
+        video_manager.make_video(gif=True, mp4=True)
