@@ -7,7 +7,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torch.nn as nn
 from src.Utils.utils_gcn import *
-from src.NeuralNetworks.GCNCNN_net import *
+# from src.NeuralNetworks.GCNCNN_net import *
+from src.NeuralNetworks.GCN_net_Dec9 import *
 import math
 from torch_geometric.data import DataLoader
 
@@ -37,11 +38,21 @@ dim = 2
 # Model and optimizer
 simDataset = load_txt_data(1, "/Outputs_T")  # load test data
 test_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=False)
-model = GCN_CNN(nfeat=simDataset.input_features_num,
-                nhid=args.hidden,
-                nnode=simDataset.node_num,
-                gcnout=20,
-                cnnout=simDataset.node_num * dim,
+# model = GCN_CNN(nfeat=simDataset.input_features_num,
+#                 nhid=args.hidden,
+#                 nnode=simDataset.node_num,
+#                 gcnout=20,
+#                 cnnout=simDataset.node_num * dim,
+#                 dropout=args.dropout).to(device)
+model = GCN_net_Dec9(
+                nfeat=simDataset.input_features_num,
+                graph_node_num=simDataset.node_num,
+                gcn_hid1=32,
+                gcn_out=48,
+                unet_hid=8,
+                unet_out=16,
+                fc_hid=60,
+                fc_out=2,
                 dropout=args.dropout).to(device)
 model.load_state_dict(torch.load(PATH))
 mse = nn.MSELoss(reduction='sum').to(device)
@@ -57,7 +68,8 @@ def RunNN():
             outname = "TestResult/frame" + ii + ".csv"
             output = model(data.x.float().to(device),
                            data.edge_index.to(device),
-                           data.num_graphs).reshape(data.num_graphs * simDataset.node_num, -1)
+                           data.num_graphs,
+                           data.batch.to(device)).reshape(data.num_graphs * simDataset.node_num, -1)
             npinputs = data.x.cpu().detach().numpy()
             npouts = output.cpu().detach().numpy()
             l1_loss = torch.zeros(1).to(device)

@@ -11,7 +11,7 @@ dt = 0.01
 running_times = 1
 frame_count = 50
 
-test_case = 2
+test_case = 1
 
 # NOTE: Please remember to save your data. It will delete all files in Outputs/ or Outputs_T/ when you exe Run.py.
 
