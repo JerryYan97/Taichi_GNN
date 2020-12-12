@@ -18,8 +18,9 @@ class GCN_net_Dec9(nn.Module):
         self.GCN3 = GCNConv(gcn_hid1, gcn_out1)
 
         self.bn = BatchNorm(gcn_out1)
-
-        self.GCN4 = GCNConv(gcn_out1, gcn_hid2)
+        self.fc_Temp1 = nn.Linear(gcn_out1, 32)
+        self.fc_Temp2 = nn.Linear(32, 128)
+        self.GCN4 = GCNConv(128, gcn_hid2)
         self.GCN5 = GCNConv(gcn_hid2, gcn_out2)
 
         self.fc1 = nn.Linear(gcn_out2, graph_node_num)
@@ -44,18 +45,25 @@ class GCN_net_Dec9(nn.Module):
 
         y = self.bn(x)
 
+        transformed_batch = in_batch * (self._graph_node_num + 1)
+
         input_graph = Data(x=y, edge_index=adj, batch=in_batch)
-        avg_pool(cluster, input_graph)
-
-        z = self.GCN4(input_graph.x, input_graph.edge_index)
-        z = self.GCN5(z, input_graph.edge_index)
-
-        z = self.fc1(z)
+        compressed_graph = avg_pool(cluster + transformed_batch, input_graph)
+        z = self.fc_Temp1(compressed_graph.x)
+        z = self.ELU(z)
+        z = self.fc_Temp2(z)
+        z = self.ELU(z)
+        z = self.GCN4(z, compressed_graph.edge_index)
+        z = self.ELU(z)
+        z = self.GCN5(z, compressed_graph.edge_index)
         z = self.ELU(z)
 
-        z = z.view(-1, self._cluster_num)
+        z = self.fc1(z)
 
-        z = self.fc2(z)
-        z = self.fc3(z)
+        k = z.view(-1, self._cluster_num)
 
-        return z
+        k = self.fc2(k)
+        k = self.ELU(k)
+        k = self.fc3(k)
+
+        return k

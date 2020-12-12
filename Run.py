@@ -1,5 +1,8 @@
 from src.Simulators.PN import *
 from src.Simulators.PD import *
+from src.Utils.reader import read
+from src.Utils.utils_gcn import K_means
+import torch
 
 ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
 
@@ -12,6 +15,7 @@ running_times = 1
 frame_count = 50
 
 test_case = 1
+cluster_num = 10
 
 # NOTE: Please remember to save your data. It will delete all files in Outputs/ or Outputs_T/ when you exe Run.py.
 
@@ -32,6 +36,23 @@ if __name__ == '__main__':
         for root, dirs, files in os.walk("Outputs_T/"):
             for name in files:
                 os.remove(os.path.join(root, name))
+
+    # Generate cluster
+    if not os.path.exists("Saved_Cluster"):
+        os.makedirs("Saved_Cluster")
+    for root, dirs, files in os.walk("Saved_Cluster/"):
+        for name in files:
+            os.remove(os.path.join(root, name))
+
+    mesh, _, _, _ = read(int(test_case))
+    _, child_list, parent_list, belonging = K_means(mesh, cluster_num)
+    cluster = np.zeros(len(mesh.vertices) + 1, dtype=int)
+    for i in parent_list:
+        cluster[i] = i
+    for i in range(len(child_list)):
+        cluster[child_list[i]] = belonging[i]
+    cluster[len(mesh.vertices)] = cluster_num
+    np.savetxt("Saved_Cluster/cluster.csv", cluster, delimiter=',', fmt='%d')
 
     # Large scale data generation
     # sampled_angle_num = 16
@@ -82,10 +103,10 @@ if __name__ == '__main__':
         # pn.generate_exforce()
         # pn.compute_exforce(pn.exf_ind, pn.mag_ind)
         # pd.set_force(pn.exf_ind, pn.mag_ind)
-        pn.set_force(-45, 1)
-        pd.set_force(-45, 1)
-        # pn.set_force(12.3, 6.6)
-        # pd.set_force(12.3, 6.6)
+        # pn.set_force(-45, 3)
+        # pd.set_force(-45, 3)
+        pn.set_force(12.3, 6.6)
+        pd.set_force(12.3, 6.6)
 
         pd.set_material(rho, E, nu, dt)
         pn.set_material(rho, E, nu, dt)

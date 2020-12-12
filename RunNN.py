@@ -47,10 +47,11 @@ test_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=False)
 model = GCN_net_Dec9(
                 nfeat=simDataset.input_features_num,
                 graph_node_num=simDataset.node_num,
+                cluster_num=simDataset.cluster_num,
                 gcn_hid1=32,
-                gcn_out=48,
-                unet_hid=8,
-                unet_out=16,
+                gcn_out1=48,
+                gcn_hid2=98,
+                gcn_out2=128,
                 fc_hid=60,
                 fc_out=2,
                 dropout=args.dropout).to(device)
@@ -69,7 +70,8 @@ def RunNN():
             output = model(data.x.float().to(device),
                            data.edge_index.to(device),
                            data.num_graphs,
-                           data.batch.to(device)).reshape(data.num_graphs * simDataset.node_num, -1)
+                           data.batch.to(device),
+                           data.cluster.to(device)).reshape(data.num_graphs * simDataset.node_num, -1)
             npinputs = data.x.cpu().detach().numpy()
             npouts = output.cpu().detach().numpy()
             l1_loss = torch.zeros(1).to(device)

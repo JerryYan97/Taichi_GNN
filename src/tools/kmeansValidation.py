@@ -9,7 +9,7 @@ from Utils.reader import read
 
 
 if __name__ == "__main__":
-    k = 10
+    k = 2
     mesh, dirichlet, mesh_scale, mesh_offset = read(1)
     _, child_list, parent_list, belonging = K_means(mesh, k)
     color_tab = ['tab:blue', 'tab:orange', 'tab:green', 'tab:purple', 'tab:olive', 'tab:gray', 'tab:cyan', 'tab:pink',

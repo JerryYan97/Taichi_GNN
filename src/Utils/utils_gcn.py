@@ -14,7 +14,7 @@ from numpy import linalg as LA
 class SIM_Data_Geo(InMemoryDataset):
     def __init__(self, filepath, mesh_edge_idx,
                  i_features_num, o_features_num,
-                 mesh, clusters_num,
+                 mesh, cluster, clusters_num,
                  transform=None, pre_transform=None):
         super(SIM_Data_Geo, self).__init__(None, transform, pre_transform)
         self._files = []
@@ -27,14 +27,8 @@ class SIM_Data_Geo(InMemoryDataset):
         self._node_num = mesh.num_vertices
         self._output_features_num = o_features_num
 
-        # Generate cluster
-        _, child_list, parent_list, belonging = K_means(mesh, clusters_num)
-        cluster = np.zeros(self._node_num, dtype=int)
-        for i in parent_list:
-            cluster[i] = i
-        for i in range(len(child_list)):
-            cluster[child_list[i]] = belonging[i]
-        self._cluster = torch.from_numpy(cluster)
+        self._cluster = cluster
+        self._cluster_num = clusters_num
 
         sample_list = []
         for idx in range(self.len()):
@@ -56,6 +50,10 @@ class SIM_Data_Geo(InMemoryDataset):
         return self._cluster
 
     @property
+    def cluster_num(self):
+        return self._cluster_num
+
+    @property
     def raw_file_names(self):
         return self._files
 
@@ -73,6 +71,13 @@ class SIM_Data_Geo(InMemoryDataset):
 
     def len(self):
         return len(self.raw_file_names)
+
+
+def load_cluster(file_dir):
+    cluster = np.genfromtxt(file_dir + "/Saved_Cluster/cluster.csv", delimiter=',', dtype=int)
+    cluster_num = cluster[len(cluster) - 1]
+    cluster = torch.tensor(cluster[:len(cluster) - 1])
+    return cluster, cluster_num
 
 
 def load_txt_data(objpath, path="/Outputs"):
@@ -97,7 +102,8 @@ def load_txt_data(objpath, path="/Outputs"):
             edge_index = np.hstack((edge_index, [[k], [i]]))
             edge_index = np.hstack((edge_index, [[i], [k]]))
     edge_index = torch.LongTensor(edge_index)
-    dataset = SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, 10)
+    cluster, cluster_num = load_cluster(os.getcwd())
+    dataset = SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, cluster, cluster_num)
     return dataset
 
 
@@ -196,7 +202,8 @@ def get_mesh_map(mesh):
 def K_means(mesh, k):
     center_pos = []
     whole_list = [n for n in range(0, mesh.num_vertices)]
-    parent_list = random.sample(range(0, mesh.num_vertices), k)
+    # parent_list = random.sample(range(0, mesh.num_vertices), k)
+    parent_list = [i for i in range(0, mesh.num_vertices, (mesh.num_vertices // k) + 1)]
     child_list = [x for x in whole_list if x not in parent_list]
     belonging = [None] * len(child_list)  # length: child
     for p in parent_list:

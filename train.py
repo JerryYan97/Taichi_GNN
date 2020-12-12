@@ -18,7 +18,7 @@ from torch.utils.tensorboard import SummaryWriter
 for root, dirs, files in os.walk("runs/"):
     for name in files:
         os.remove(os.path.join(root, name))
-# writer = SummaryWriter('runs/GCNJiarui-60_10_100')  # default `log_dir` is "runs" - we'll be more specific here
+writer = SummaryWriter('runs/GCNJiarui-60_10_100')  # default `log_dir` is "runs" - we'll be more specific here
 ###################################################
 
 # Training settings
@@ -30,7 +30,7 @@ parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
 # parser.add_argument('--epochs', type=int, default=500, help='Number of epochs to train.')
 # PD -> PN:
 parser.add_argument('--epochs', type=int, default=500, help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.0001, help='Initial learning rate.')
+parser.add_argument('--lr', type=float, default=0.0005, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=2e-3, help='Weight decay (L2 loss on parameters).')
 parser.add_argument('--hidden', type=int, default=32, help='Number of hidden units.')
 parser.add_argument('--dropout', type=float, default=0.3, help='Dropout rate (1 - keep probability).')
@@ -52,7 +52,7 @@ dim = 2
 
 # Load whole dataset with DataLoader
 simDataset = load_txt_data(1, "/Outputs")
-train_loader = DataLoader(dataset=simDataset, batch_size=64, shuffle=True, num_workers=8, pin_memory=True)
+train_loader = DataLoader(dataset=simDataset, batch_size=64, shuffle=True, num_workers=8, pin_memory=False)
 # train_loader = DataLoader(dataset=simDataset, batch_size=64, shuffle=True, num_workers=1)
 
 # For the purpose of dataset validation:
@@ -73,11 +73,11 @@ train_loader = DataLoader(dataset=simDataset, batch_size=64, shuffle=True, num_w
 model = GCN_net_Dec9(
                 nfeat=simDataset.input_features_num,
                 graph_node_num=simDataset.node_num,
-                cluster_num=len(simDataset.cluster),
+                cluster_num=simDataset.cluster_num,
                 gcn_hid1=32,
                 gcn_out1=48,
-                gcn_hid2=8,
-                gcn_out2=16,
+                gcn_hid2=98,
+                gcn_out2=128,
                 fc_hid=60,
                 fc_out=2,
                 dropout=args.dropout).to(device)
@@ -117,11 +117,11 @@ def Sim_train():
                   "loss_train: ", loss_train.cpu().detach().numpy(),
                   "time: ", time.time() - t,
                   "s")
-            # if (epoch + 1) % 10 == 0:
-            #     ############## TENSORBOARD ########################
-            #     writer.add_scalar('training loss', loss_train, (epoch * len(simDataset)) + epoch)
-            #     writer.close()
-            #     ##################################################
+            if (epoch + 1) % 10 == 0:
+                ############## TENSORBOARD ########################
+                writer.add_scalar('training loss', loss_train, (epoch * len(simDataset)) + epoch)
+                writer.close()
+                ##################################################
 
 
 # Train model
