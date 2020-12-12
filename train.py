@@ -73,10 +73,11 @@ train_loader = DataLoader(dataset=simDataset, batch_size=64, shuffle=True, num_w
 model = GCN_net_Dec9(
                 nfeat=simDataset.input_features_num,
                 graph_node_num=simDataset.node_num,
+                cluster_num=len(simDataset.cluster),
                 gcn_hid1=32,
-                gcn_out=48,
-                unet_hid=8,
-                unet_out=16,
+                gcn_out1=48,
+                gcn_hid2=8,
+                gcn_out2=16,
                 fc_hid=60,
                 fc_out=2,
                 dropout=args.dropout).to(device)
@@ -94,7 +95,8 @@ def Sim_train():
             output = model(data.x.float().to(device),
                            data.edge_index.to(device),
                            data.num_graphs,
-                           data.batch.to(device)).reshape(data.num_graphs * simDataset.node_num, -1)
+                           data.batch.to(device),
+                           data.cluster.to(device)).reshape(data.num_graphs * simDataset.node_num, -1)
 
             l1_loss = torch.zeros(1).to(device)
             reg = 1e-6

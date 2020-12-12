@@ -11,10 +11,11 @@ import random
 from numpy import linalg as LA
 
 
-
 class SIM_Data_Geo(InMemoryDataset):
-    def __init__(self, filepath, mesh_edge_idx, i_features_num, o_features_num, node_num, transform=None,
-                 pre_transform=None):
+    def __init__(self, filepath, mesh_edge_idx,
+                 i_features_num, o_features_num,
+                 mesh, clusters_num,
+                 transform=None, pre_transform=None):
         super(SIM_Data_Geo, self).__init__(None, transform, pre_transform)
         self._files = []
         for _, _, files in os.walk(filepath):
@@ -23,8 +24,17 @@ class SIM_Data_Geo(InMemoryDataset):
         self._edge_idx = mesh_edge_idx
         self._filepath = filepath
         self._input_features_num = i_features_num
-        self._node_num = node_num
+        self._node_num = mesh.num_vertices
         self._output_features_num = o_features_num
+
+        # Generate cluster
+        _, child_list, parent_list, belonging = K_means(mesh, clusters_num)
+        cluster = np.zeros(self._node_num, dtype=int)
+        for i in parent_list:
+            cluster[i] = i
+        for i in range(len(child_list)):
+            cluster[child_list[i]] = belonging[i]
+        self._cluster = torch.from_numpy(cluster)
 
         sample_list = []
         for idx in range(self.len()):
@@ -34,12 +44,16 @@ class SIM_Data_Geo(InMemoryDataset):
             pd_dis = fperframe[:, 0:2]  # a[start:stop] items start through stop-1
             y_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((self.node_num, -1)))
             x_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((self.node_num, -1)))
-            sample = Data(x=x_data, edge_index=self._edge_idx, y=y_data)
+            sample = Data(x=x_data, edge_index=self._edge_idx, y=y_data, cluster=self._cluster)
             if self.transform:
                 sample = self.transform(sample)
             sample_list.append(sample)
 
         self.data, self.slices = self.collate(sample_list)
+
+    @property
+    def cluster(self):
+        return self._cluster
 
     @property
     def raw_file_names(self):
@@ -83,7 +97,7 @@ def load_txt_data(objpath, path="/Outputs"):
             edge_index = np.hstack((edge_index, [[k], [i]]))
             edge_index = np.hstack((edge_index, [[i], [k]]))
     edge_index = torch.LongTensor(edge_index)
-    dataset = SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh.num_vertices)
+    dataset = SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, 10)
     return dataset
 
 
@@ -133,7 +147,9 @@ def buildGraph(mesh, edge):
     print(generate_edges(graph))    # Driver Function call， to print generated graph
     return graph
 
+
 ################################### K means part #####################################
+
 
 def update_centers(mesh, center_pos, parent_list, child_list, belonging):
     delta_list = []
