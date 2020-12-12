@@ -14,12 +14,12 @@ class GCN_net_Dec9(nn.Module):
         super(GCN_net_Dec9, self).__init__()
         self.GCN1 = GCNConv(nfeat, gcn_hid1)
         self.GCN2 = GCNConv(gcn_hid1, gcn_hid1)
-        self.GCN3 = GCNConv(gcn_hid1, gcn_out)
+        self.GCN3 = GCNConv(gcn_hid1, unet_out)
 
-        self.bn = BatchNorm(gcn_out)
+        self.bn = BatchNorm(unet_out)
 
         # NOTE: According to UNet paper, the depth of 4 can bring better performance than other cases.
-        self.GraphUNet = GraphUNet(gcn_out, unet_hid, unet_out, 4)
+        # self.GraphUNet = GraphUNet(gcn_out, unet_hid, unet_out, 4)
 
         self.fc1 = nn.Linear(unet_out, fc_hid)
         self.fc2 = nn.Linear(fc_hid, fc_hid)
@@ -42,9 +42,9 @@ class GCN_net_Dec9(nn.Module):
 
         y = self.bn(x)
 
-        unet_res = self.GraphUNet(y, adj, in_batch)
+        # unet_res = self.GraphUNet(y, adj, in_batch)
 
-        z = self.fc1(unet_res)
+        z = self.fc1(y)
         z = self.ELU(z)
         z = self.fc2(z)
         z = self.fc3(z)

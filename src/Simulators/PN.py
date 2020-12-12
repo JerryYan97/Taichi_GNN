@@ -9,14 +9,11 @@ from Utils.neo_hookean import *
 from Utils.math_tools import *
 from Utils.reader import *
 from .PD import*
-import scipy as sp
-import random
 from Utils.Dijkstra import *
 
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
 from numpy import linalg as LA
-import matplotlib.pyplot as plt
 
 directory = ''
 
@@ -568,104 +565,6 @@ class PNSimulation:
             out[i, 4] = delta_pos[i, 0]
             out[i, 5] = delta_pos[i, 1]
         np.savetxt(out_name, out)
-
-    def get_mesh_map(self, mesh):
-        map = np.zeros((mesh.num_vertices, mesh.num_vertices))
-        mesh.enable_connectivity()
-        for p in range(mesh.num_vertices):
-            adj_v = mesh.get_vertex_adjacent_vertices(p)
-            for j in range(adj_v.shape[0]):
-                n1 = p
-                n2 = adj_v[j]
-                p1 = self.init_pos[n1, :]
-                p2 = self.init_pos[n2, :]
-                dp = LA.norm(p1 - p2)
-                map[n1][n2] = map[n2][n1] = dp
-        map_list = map.tolist()
-        return map_list
-
-    def update_centers(self, center_pos, parent_list, child_list, belonging):
-        delta_list = []
-        for p in range(len(center_pos)):
-            c_pos = center_pos[p]
-            c_id_list = [i for i, x in enumerate(belonging) if x == parent_list[p]]
-            count = belonging.count(parent_list[p]) + 1
-            sum = c_pos
-            for c in c_id_list:
-                sum = np.add(sum, self.init_pos[child_list[c], :])
-            sum = sum / (1.0 * count)
-            min_dis = 100000.0
-            new_c = -1
-            for c in child_list:
-                dis = np.linalg.norm(np.subtract(sum, self.init_pos[c, :]))
-                if dis < min_dis:
-                    min_dis = dis
-                    new_c = c
-            dis2 = np.linalg.norm(np.subtract(sum, c_pos))
-            if min_dis < dis2:
-                center_pos[p] = self.init_pos[new_c, :]
-                parent_list[p] = new_c
-            delta = np.linalg.norm(np.subtract(center_pos[p], c_pos))
-            delta_list.append(delta)
-        return center_pos, np.linalg.norm(delta_list), parent_list
-
-    def K_means(self, mesh, k):
-        center_pos = []
-        whole_list = [n for n in range(0, mesh.num_vertices)]
-        parent_list = random.sample(range(0, mesh.num_vertices), k)
-        child_list = [x for x in whole_list if x not in parent_list]
-        belonging = [None]*len(child_list)  # length: child
-        for p in parent_list:
-            center_pos.append(self.init_pos[p, :])
-        norm_d = 10000.0
-        map_list = self.get_mesh_map(mesh)
-        Graph = Dijkstra(mesh.num_vertices, map_list, False)
-        while norm_d > 1.0:
-            t = 0
-            for item1 in child_list:
-                min_dis = 100000.0
-                parent_id = -1
-                for p in parent_list:
-                    dis = Graph.dijkstra2node(item1, p)
-                    if dis < min_dis:
-                        parent_id = p
-                        min_dis = dis
-                belonging[t] = parent_id
-                t = t + 1
-            center_pos, norm_d, parent_list = self.update_centers(center_pos, parent_list, child_list, belonging)
-            child_list = [x for x in whole_list if x not in parent_list]  # update child
-        t = 0
-        for item1 in child_list:
-            min_dis = 100000.0
-            parent_id = -1
-            for p in parent_list:
-                dis = Graph.dijkstra2node(item1, p)
-                if dis < min_dis:
-                    parent_id = p
-                    min_dis = dis
-            belonging[t] = parent_id
-            t = t + 1
-
-        return center_pos, child_list, parent_list, belonging
-
-    def draw_graph(self, k):
-        _, child_list, parent_list, belonging = self.K_means(self.mesh, k)
-        color_tab = ['tab:blue', 'tab:orange', 'tab:green', 'tab:purple', 'tab:olive', 'tab:gray', 'tab:cyan', 'tab:pink', 'tab:red', 'tab:brown']
-        for i in range(k):
-            posidx = np.where(np.asarray(belonging) == parent_list[i])[0]
-            pos = self.init_pos[np.asarray(child_list)[posidx]]
-            x = [item[0] for item in pos]
-            x.append(self.init_pos[parent_list[i], 0])
-            y = [item[1] for item in pos]
-            y.append(self.init_pos[parent_list[i], 1])
-            plt.scatter(x, y, label="stars", color=color_tab[i], marker="*", s=30)
-
-        plt.xlabel('x - axis')  # x-axis label
-        plt.ylabel('y - axis')  # frequency label
-        plt.title('K-means result plot!')   # plot title
-        plt.legend()    # showing legend
-        plt.show()      # function to show the plot
-        plt.savefig('kmeans_result.png')
 
     def data_one_frame(self, input_p, input_v):
         self.copy(input_p, self.x)
