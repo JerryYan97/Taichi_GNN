@@ -30,24 +30,6 @@ class PNSimulation:
         self.gui = ti.GUI("MPM", (1024, 1024), background_color=0x112F41)
         ################################ mesh ######################################
         self.mesh, self.dirichlet, self.mesh_scale, self.mesh_offset = read(objfilenum)
-        edges = set()
-        for [i, j, k] in self.mesh.faces:
-            edges.add((i, j))
-            edges.add((j, k))
-            edges.add((k, i))
-        self.boundary_points_ = set()
-        self.boundary_edges_ = np.zeros(shape=(0, 2), dtype=np.int32)
-        for [i, j, k] in self.mesh.faces:
-            if (j, i) not in edges:
-                self.boundary_points_.update([j, i])
-                self.boundary_edges_ = np.vstack((self.boundary_edges_, [j, i]))
-            if (k, j) not in edges:
-                self.boundary_points_.update([k, j])
-                self.boundary_edges_ = np.vstack((self.boundary_edges_, [k, j]))
-            if (i, k) not in edges:
-                self.boundary_points_.update([i, k])
-                self.boundary_edges_ = np.vstack((self.boundary_edges_, [i, k]))
-        print("boundary points:", self.boundary_points_)
 
         ################################ material ######################################
         self.dim = _dim
@@ -61,10 +43,6 @@ class PNSimulation:
         ################################ field ######################################
         self.n_particles = self.mesh.num_vertices
         self.n_elements = self.mesh.num_faces
-        self.n_boundary_points = len(self.boundary_points_)
-        self.n_boundary_edges = len(self.boundary_edges_)
-
-        # self.x, self.xPrev, self.xTilde, self.xn, self.v, self.m = vec(), vec(), vec(), vec(), vec(), scalar()
 
         self.x = ti.Vector.field(self.dim, real, self.n_particles)
         self.xPrev = ti.Vector.field(self.dim, real, self.n_particles)
@@ -81,28 +59,14 @@ class PNSimulation:
         self.input_vn = ti.Vector.field(self.dim, real, self.n_particles)
         self.del_p = ti.Vector.field(self.dim, real, self.n_particles)
 
-        # self.F = mat()
-        # self.RR = mat()
-        # self.zero = vec()
-        # self.restT = mat()
-
         self.F = ti.Matrix.field(self.dim, self.dim, real, self.n_elements)
         self.RR = ti.Matrix.field(self.dim, self.dim, real, self.n_particles)
         self.zero = ti.Vector.field(self.dim, real, self.n_particles)
         self.restT = ti.Matrix.field(self.dim, self.dim, real, self.n_elements)
 
         self.vertices = ti.field(ti.i32)
-        self.boundary_points = ti.field(ti.i32)
-        self.boundary_edges = ti.field(ti.i32)
 
-        # ti.root.dense(ti.k, self.n_particles).place(self.x, self.xPrev, self.xTilde, self.xn, self.v, self.m)
-        # ti.root.dense(ti.k, self.n_particles).place(self.zero)
-        # ti.root.dense(ti.i, self.n_elements).place(self.restT)
-        # ti.root.dense(ti.i, self.n_elements).place(self.F)
-        # ti.root.dense(ti.i, self.n_particles).place(self.RR)
         ti.root.dense(ti.ij, (self.n_elements, 3)).place(self.vertices)
-        ti.root.dense(ti.i, self.n_boundary_points).place(self.boundary_points)
-        ti.root.dense(ti.ij, (self.n_boundary_edges, 2)).place(self.boundary_edges)
 
         self.data_rhs = ti.field(real, shape=2000)
         self.data_mat = ti.field(real, shape=(3, 100000))
@@ -112,51 +76,37 @@ class PNSimulation:
         self.cnt = ti.field(ti.i32, shape=())
 
         ################################ external force ######################################
-        self.exf_angle = np.arange(0, 2*np.pi, 30)
-        self.exf_mag = np.arange(0, 10.0, 30)
-        # print("angle: ", exf_angle, " mag: ", exf_mag)
-        self.exf_ind = self.mag_ind = 0
+        self.exf_ind = self.mag_ind = 0  # Used to label output .csv files.
         self.ex_force = ti.Vector.field(self.dim, real, 1)
-        self.npex_f = np.zeros((2, 1))
 
         ################################ shape matching ######################################
         self.initial_com = ti.Vector([0.0, 0.0])
         self.initial_rel_pos = np.array([self.n_particles, 2])
         self.pi = ti.Vector.field(self.dim, real, self.n_particles)
         self.qi = ti.Vector.field(self.dim, real, self.n_particles)
-        self.init_pos = self.mesh.vertices.astype(np.float32)
-        self.init_pos = self.init_pos[:, :2]
-
+        self.init_pos = self.mesh.vertices.astype(np.float64)[:, :2]
 
         ################################ initial ######################################
-        self.x.from_numpy(self.mesh.vertices.astype(np.float32))
+        self.x.from_numpy(self.mesh.vertices.astype(np.float64))
         self.vertices.from_numpy(self.mesh.faces)
-
-    def generate_exforce(self):
-        self.exf_ind = np.random.randint(30)
-        self.mag_ind = np.random.randint(30)
-        # print(exf_ind, " -- ", mag_ind)
-
-    @ti.kernel
-    def compute_exforce(self, exf_ind: ti.i32, mag_ind: ti.i32):
-        x = 0.3*mag_ind * ti.sin(3.1415926/30.0 * exf_ind)
-        y = 0.3*mag_ind * ti.cos(3.1415926/30.0 * exf_ind)
-        self.ex_force[0] = ti.Vector([x, y])
+        self.vertices_ = self.mesh.faces
 
     def set_material(self, _rho, _ym, _nu, _dt):
         self.dt = _dt
         self.density = _rho
         self.E = _ym
         self.nu = _nu
-        self.mu = self.E / (2 * (1 + self.nu))
-        self.la = self.E * self.nu / ((1 + self.nu) * (1 - 2 * self.nu))
+        self.mu = self.E / (2.0 * (1.0 + self.nu))
+        self.la = self.E * self.nu / ((1.0 + self.nu) * (1.0 - 2.0 * self.nu))
 
     def set_force(self, ind, mag):
         self.exf_ind = ind
         self.mag_ind = mag
         x = mag * ti.cos(3.1415926 / 180.0 * ind)
         y = mag * ti.sin(3.1415926 / 180.0 * ind)
-        self.ex_force[0] = ti.Vector([x, y])
+        self.ex_force[0][0], self.ex_force[0][1] = x, y
+        print("ex_force:", self.ex_force)
+
 
     @ti.func
     def compute_T(self, i):
@@ -322,31 +272,6 @@ class PNSimulation:
             for d in ti.static(range(2)):
                 self.data_sol[i*2+d] = sol[i*2+d]
 
-    def print_sol(self):
-        data = self.data_sol.to_numpy()
-        for i in range(2000):
-            print('%.9f' % data[i])
-        print(self.cnt[None])
-
-    def print_rhs(self):
-        data = self.data_rhs.to_numpy()
-        for i in range(2000):
-            print(data[i])
-        print(self.cnt[None])
-
-    def print_mat(self):
-        data = self.data_mat.to_numpy()  # (3, 100000)
-        times = 0
-        for i in range(3):
-            for j in range(100000):
-                if data[i, j] != 0.0:
-                    print(data[i, j], end=' ')
-                    times = times+1
-                if times == 6:
-                    print('')
-                    times = 0
-        print(self.cnt[None])
-
     @ti.kernel
     def compute_v(self):
         for i in range(self.n_particles):
@@ -359,7 +284,7 @@ class PNSimulation:
         for i in range(self.n_particles):
             for d in ti.static(range(2)):
                 residual = ti.max(residual, ti.abs(self.data_sol[i * 2 + d]))
-        # print("Search Direction Residual : ", residual / self.dt)
+        print("Search Direction Residual : ", residual / self.dt)
         return residual
 
     def write_image(self, f):
@@ -373,49 +298,7 @@ class PNSimulation:
                          color=0x4FB99F)
         for i in self.dirichlet:
             self.gui.circle(particle_pos[i], radius=3, color=0x44FFFF)
-        self.gui.show(directory + f'images/{f:06d}.png')
-
-    def output_pos(self, displacement, i):
-        out_name = "Output_PN/output"+str(self.exf_ind)+"_"+str(self.exf_mag)+"_"+str(i)+".txt"
-        if not os.path.exists(out_name):
-            file = open(out_name, 'w+')
-            file.close()
-        np.savetxt(out_name, displacement)
-
-    def output_pos_pd(self, displacement, i):
-        out_name = "Output_PD/output"+str(self.exf_ind)+"_"+str(self.exf_mag)+"_"+str(i)+".txt"
-        if not os.path.exists(out_name):
-            file = open(out_name, 'w+')
-            file.close()
-        np.savetxt(out_name, displacement)
-
-    def output_deformation_gradient(self, F, i):
-        out_name = "Output_PN/outputF" + str(i) + ".txt"
-        if not os.path.exists(out_name):
-            file = open(out_name, 'w+')
-            file.close()
-        out = np.ones([self.n_elements, self.dim * self.dim], dtype=float)
-        for e in range(self.n_elements):
-            temp = F[e]
-            out[e, 0] = temp[0, 0]
-            out[e, 1] = temp[0, 1]
-            out[e, 2] = temp[1, 0]
-            out[e, 3] = temp[1, 1]
-        np.savetxt(out_name, out)
-
-    def output_gradE(self, grad_E, f):
-        gradE_sum = 0.0
-        for i in grad_E:
-            gradE_sum += ti.abs(i)
-        out_name = "Output_PN/outputR"+str(self.exf_ind)+"_"+str(self.exf_mag)+"_"+str(f)+".txt"
-        if not os.path.exists(out_name):
-            file = open(out_name, 'w+')
-            file.close()
-        out = np.ones([self.n_elements, self.dim], dtype=float)
-        for e in range(self.n_elements):
-            out[e, 0] = grad_E[0]
-            out[e, 1] = grad_E[1]
-        np.savetxt(out_name, grad_E)
+        self.gui.show()
 
     # @ti.func
     def calcCenterOfMass(self, vind):
@@ -460,31 +343,6 @@ class PNSimulation:
             t = t+1
         return result, result_pos
 
-    def get_local_transform(self, scale, f):
-        outname = "Output_PN/outputF" + str(self.exf_ind) + "_"+str(self.exf_mag) + "_" + str(f) + ".txt"
-        if not os.path.exists(outname):
-            file = open(outname, 'w+')
-            file.close()
-        out = np.ones([self.n_elements, self.dim * self.dim], dtype=float)
-        if scale == 1:
-            self.mesh.enable_connectivity()
-            for i in range(self.n_particles):
-                adjv = self.mesh.get_vertex_adjacent_vertices(i)
-                adjv = np.append(adjv, i)
-                adjv = np.sort(adjv)
-                new_pos, init_rel_pos = self.build_pos_arr(adjv, self.x, self.initial_rel_pos)
-                com = self.calcCenterOfMass(adjv).to_numpy()
-                curr_rel_pos = np.zeros((adjv.shape[0], self.dim))
-                for j in range(new_pos.shape[0]):
-                    curr_rel_pos[j, :] = new_pos[j, :] - com
-                A_pq = self.calcA_pq(curr_rel_pos, init_rel_pos)
-                R = self.calcR(A_pq)
-                out[i, 0] = R[0, 0]
-                out[i, 1] = R[0, 1]
-                out[i, 2] = R[1, 0]
-                out[i, 3] = R[1, 1]
-        np.savetxt(outname, out)
-
     # @ti.kernel
     def extreme_test(self):
         for i in range(11, self.n_particles):
@@ -492,20 +350,11 @@ class PNSimulation:
                 pd = np.random.rand()
                 self.x(d)[i] = 0.2 + (pd-0.5)
 
+    # copy x to y
     @ti.kernel
     def copy(self, x: ti.template(), y: ti.template()):
         for i in x:
             y[i] = x[i]
-
-    def output_PN(self, F, disp, frame):
-        self.output_deformation_gradient(F, frame)
-        self.output_pos(disp, frame)
-        self.get_local_transform(1, frame)
-
-    def calculate_(self, F, disp, frame):
-        self.output_deformation_gradient(F, frame)
-        self.output_pos(disp, frame)
-        self.get_local_transform(1, frame)
 
     def output_all(self, pd_dis, pn_dis, grad_E, frame, T):
         frame = str(frame).zfill(2)
@@ -540,37 +389,15 @@ class PNSimulation:
             out[i, 7] = R[1, 1]
             out[i, 8] = grad_E[i*2]
             out[i, 9] = grad_E[i*2+1]
+            # out[i, 10] = self.ex_force[0]
+            # out[i, 11] = self.ex_force[1]
             out[i, 10] = self.ex_force[0][0]
             out[i, 11] = self.ex_force[0][1]
-        np.savetxt(out_name, out)
-
-    def output_p(self, pd_dis, pn_dis, frame, T):
-        frame = str(frame).zfill(2)
-        if T == 0:
-            out_name = "Outputs/output"+str(self.exf_ind)+"_"+str(self.mag_ind)+"_dp_"+frame+".txt"
-        else:
-            out_name = "Outputs_T/output" + str(self.exf_ind) + "_" + str(self.mag_ind) + "_dp_" + frame + ".txt"
-        if not os.path.exists(out_name):
-            file = open(out_name, 'w+')
-            file.close()
-        ele_count = self.dim+self.dim+self.dim  # pd pos + pn pos + local transform + residual + force
-        out = np.ones([self.n_particles, ele_count], dtype=float)
-        self.mesh.enable_connectivity()
-        delta_pos = np.subtract(pn_dis, pd_dis)
-        for i in range(self.n_particles):
-            out[i, 0] = pd_dis[i, 0]  # pd pos
-            out[i, 1] = pd_dis[i, 1]
-            out[i, 2] = pn_dis[i, 0]  # pn pos
-            out[i, 3] = pn_dis[i, 1]
-            out[i, 4] = delta_pos[i, 0]
-            out[i, 5] = delta_pos[i, 1]
         np.savetxt(out_name, out)
 
     def data_one_frame(self, input_p, input_v):
         self.copy(input_p, self.x)
         self.copy(input_v, self.v)
-        self.boundary_points.from_numpy(np.array(list(self.boundary_points_)))
-        self.boundary_edges.from_numpy(self.boundary_edges_)
         self.initial_com = self.calcCenterOfMass(np.arange(self.n_particles))
         self.initial_rel_pos = self.x.to_numpy() - self.initial_com
         # print("init center of mass: ", self.initial_com)
@@ -582,9 +409,9 @@ class PNSimulation:
             self.data_rhs.fill(0)
             self.data_sol.fill(0)
             self.compute_hessian_and_gradient()
-            self.data_sol.from_numpy(solve_linear_system(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
-                                                         self.n_particles * self.dim, np.array([i for i in range(11)]),
-                                                         self.zero.to_numpy(), False, 0, self.cnt[None]))
+            self.data_sol.from_numpy(
+                solve_linear_system(self.data_mat.to_numpy(), self.data_rhs.to_numpy(), self.n_particles * self.dim,
+                                    self.dirichlet, self.zero.to_numpy(), False, 0, self.cnt[None]))
             if self.output_residual() < 1e-2 * self.dt:
                 break
             E0 = self.compute_energy()
@@ -599,35 +426,20 @@ class PNSimulation:
         self.compute_v()
         return self.del_p, self.x, self.v
 
-    def Run(self, pd, is_test, frame_count):
-        self.x.from_numpy(self.mesh.vertices.astype(np.float32))
+    def Run(self, is_test, frame_count):
         self.v.fill(0)
-        self.vertices.from_numpy(self.mesh.faces)
+        self.m.fill(0)
         self.compute_restT_and_m()
-        self.vertices_ = self.vertices.to_numpy()
         self.zero.fill(0)
         self.write_image(0)
         total_time = 0.0
         self.initial_com = self.calcCenterOfMass(np.arange(self.n_particles))
         self.initial_rel_pos = self.x.to_numpy() - self.initial_com
+
         for f in range(frame_count):
             total_time -= time.time()
             print("==================== Frame: ", f, " ====================")
             self.compute_xn_and_xTilde()
-            # Here PD moves forward one frame
-            self.copy(self.xn, self.input_xn)
-            self.copy(self.v, self.input_vn)
-            pd_dis, pd_pos_n1, pd_vel_n1 = pd.data_one_frame(self.input_xn, self.input_vn)
-            # Compute residual/Grad(E) for the PD in PN:
-            self.data_mat.fill(0)
-            self.data_rhs.fill(0)
-            self.data_sol.fill(0)
-            self.copy(pd_pos_n1, self.grad_x)
-            self.compute_pd_gradient()
-            self.copy(self.data_rhs, self.gradE)
-            self.data_mat.fill(0)
-            self.data_rhs.fill(0)
-            self.data_sol.fill(0)
             # pn to solve
             while True:
                 self.data_mat.fill(0)
@@ -635,7 +447,7 @@ class PNSimulation:
                 self.data_sol.fill(0)
                 self.compute_hessian_and_gradient()
                 self.data_sol.from_numpy(solve_linear_system(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
-                                                             self.n_particles * self.dim, np.array([i for i in range(11)]),
+                                                             self.n_particles * self.dim, self.dirichlet,
                                                              self.zero.to_numpy(), False, 0, self.cnt[None]))
                 if self.output_residual() < 1e-2 * self.dt:
                     break
@@ -648,10 +460,10 @@ class PNSimulation:
                     alpha *= 0.5
                     self.apply_sol(alpha)
                     E = self.compute_energy()
+                    print(alpha, E)
             # update
             self.compute_v()
             self.compute_x_xtilde()
-            self.output_all(pd_dis.to_numpy(), self.del_p.to_numpy(), self.gradE.to_numpy(), f, is_test)
             total_time += time.time()
             self.write_image(f + 1)
 
