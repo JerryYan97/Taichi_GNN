@@ -66,8 +66,8 @@ gradE = ti.var(real, shape=2000)
 cnt = ti.var(dt=ti.i32, shape=())
 
 # external force -- Angle: from [1, 0] -- counter-clock wise
-exf_angle = -90.0
-exf_mag = 0.5
+exf_angle = -45.0
+exf_mag = 1
 ex_force = ti.Vector.field(dim, real, 1)
 
 
@@ -263,7 +263,7 @@ if __name__ == "__main__":
             data_sol.from_numpy(
                 solve_linear_system(data_mat.to_numpy(), data_rhs.to_numpy(), n_particles * 2, dirichlet,
                                     zero.to_numpy(), False, 0, cnt[None]))
-            if output_residual() < 1e-2 * dt:
+            if output_residual() < 1e-4 * dt:
                 break
             E0 = compute_energy()
             save_xPrev()

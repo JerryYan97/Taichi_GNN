@@ -412,7 +412,7 @@ class PNSimulation:
             self.data_sol.from_numpy(
                 solve_linear_system(self.data_mat.to_numpy(), self.data_rhs.to_numpy(), self.n_particles * self.dim,
                                     self.dirichlet, self.zero.to_numpy(), False, 0, self.cnt[None]))
-            if self.output_residual() < 1e-2 * self.dt:
+            if self.output_residual() < 1e-4 * self.dt:
                 break
             E0 = self.compute_energy()
             self.save_xPrev()
@@ -449,7 +449,7 @@ class PNSimulation:
                 self.data_sol.from_numpy(solve_linear_system(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
                                                              self.n_particles * self.dim, self.dirichlet,
                                                              self.zero.to_numpy(), False, 0, self.cnt[None]))
-                if self.output_residual() < 1e-2 * self.dt:
+                if self.output_residual() < 1e-4 * self.dt:
                     break
                 E0 = self.compute_energy()
                 self.save_xPrev()
