@@ -8,7 +8,7 @@ from Utils.utils_visualization import draw_pd_pn_image
 
 ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
 
-mesh, dirichlet, mesh_scale, mesh_offset = read(2)
+mesh, dirichlet, mesh_scale, mesh_offset = read(4)
 n_particles = mesh.num_vertices
 n_elements = mesh.num_faces
 

@@ -12,7 +12,7 @@ from scipy.linalg import sqrtm
 ##############################################################################
 
 # mesh, dirichlet, mesh_scale, mesh_offset = read(int(sys.argv[1]))
-mesh, dirichlet, mesh_scale, mesh_offset = read(2)
+mesh, dirichlet, mesh_scale, mesh_offset = read(4)
 
 print("dirichlet: \n", dirichlet)
 ##############################################################################
@@ -20,7 +20,7 @@ print("dirichlet: \n", dirichlet)
 directory = os.getcwd() + '/output/'
 video_manager = ti.VideoManager(output_dir=directory + 'images/', framerate=24, automatic_build=False)
 
-ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
+ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
 
 real = ti.f64
 scalar = lambda: ti.var(dt=real)
@@ -67,7 +67,7 @@ cnt = ti.var(dt=ti.i32, shape=())
 
 # external force -- Angle: from [1, 0] -- counter-clock wise
 exf_angle = -45.0
-exf_mag = 1
+exf_mag = 6
 ex_force = ti.Vector.field(dim, real, 1)
 
 
@@ -250,7 +250,7 @@ if __name__ == "__main__":
     total_time = 0.0
     set_exforce()
 
-    for f in range(1, 50):
+    for f in range(1, 500):
         total_time -= time.time()
         print("==================== Frame: ", f, " ====================")
         compute_xn_and_xTilde()

@@ -12,9 +12,9 @@ nu = 0.4
 dt = 0.01
 
 running_times = 1
-frame_count = 50
+frame_count = 200
 
-test_case = 1
+test_case = 3
 cluster_num = 10
 
 # NOTE: Please remember to save your data. It will delete all files in Outputs/ or Outputs_T/ when you exe Run.py.
@@ -73,40 +73,11 @@ if __name__ == '__main__':
     #         pn.zero.fill(0)
     #         pd.Run(pn, is_test, frame_count)
 
-    # Debug test
-    # for i in range(2):
-    #     ti.reset()
-    #     pd = PDSimulation(1, 2)
-    #     pn = PNSimulation(int(1), 2)
-    #     # pn.set_force(0, 3)
-    #     # pd.set_force(0, 3)
-    #     #
-    #     # pd.set_material(rho, E, nu, dt)
-    #     # pn.set_material(rho, E, nu, dt)
-    #     # pn.compute_restT_and_m()
-    #     # pn.zero.fill(0)
-    #     # pd.Run(pn, is_test, frame_count)
-    #
-    #     pn.set_force(0, 8)
-    #     pd.set_force(0, 8)
-    #
-    #     pd.set_material(rho, E, nu, dt)
-    #     pn.set_material(rho, E, nu, dt)
-    #     pn.compute_restT_and_m()
-    #     pn.zero.fill(0)
-    #     pd.Run(pn, is_test, frame_count)
-
-
     for i in range(running_times):
         pd = PDSimulation(test_case, 2)
         pn = PNSimulation(int(test_case), 2)
-        # pn.generate_exforce()
-        # pn.compute_exforce(pn.exf_ind, pn.mag_ind)
-        # pd.set_force(pn.exf_ind, pn.mag_ind)
-        pn.set_force(-45, 3)
-        pd.set_force(-45, 3)
-        # pn.set_force(12.3, 6.6)
-        # pd.set_force(12.3, 6.6)
+        pn.set_force(25, 6)
+        pd.set_force(25, 6)
 
         pd.set_material(rho, E, nu, dt)
         pn.set_material(rho, E, nu, dt)

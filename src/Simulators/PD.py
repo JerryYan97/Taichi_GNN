@@ -35,7 +35,7 @@ class PDSimulation:
         self.dt = 0.01
 
         ################################ mesh ######################################
-        self.mesh, _, self.mesh_scale, self.mesh_offset = read(int(obj_file))
+        self.mesh, self.dirichlet, self.mesh_scale, self.mesh_offset = read(int(obj_file))
         self.NV, self.NF, _ = self.mesh.num_vertices, self.mesh.num_faces, self.mesh.num_voxels
         self.n_particles = self.NV
         ################################ material ######################################
@@ -107,21 +107,6 @@ class PDSimulation:
         self.ex_force = ti.Vector.field(self.dim, real, 1)
         self.npex_f = np.zeros((2, 1))
 
-        ################################ boundary setting ################################
-        edges = set()
-        for [i, j, k] in self.mesh.faces:
-            edges.add((i, j))
-            edges.add((j, k))
-            edges.add((k, i))
-        self.boundary_points_ = set()
-        for [i, j, k] in self.mesh.faces:
-            if (j, i) not in edges:
-                self.boundary_points_.update([j, i])
-            if (k, j) not in edges:
-                self.boundary_points_.update([k, j])
-            if (i, k) not in edges:
-                self.boundary_points_.update([i, k])
-
         self.input_xn = ti.Vector.field(self.dim, real, self.NV)
         self.input_vn = ti.Vector.field(self.dim, real, self.NV)
 
@@ -148,7 +133,7 @@ class PDSimulation:
             self.pos_init[i] = ti.Vector([self.mesh.vertices[i][0], self.mesh.vertices[i][1]])
             self.vel[i] = ti.Vector([0, 0])
             self.vel_last[i] = ti.Vector([0, 0])
-            if i in self.boundary_points_ and i <= 10:
+            if i in self.dirichlet:
                 self.boundary_labels[i] = 1
             else:
                 self.boundary_labels[i] = 0
