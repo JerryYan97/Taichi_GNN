@@ -73,7 +73,7 @@ class SIM_Data_Geo(InMemoryDataset):
         return len(self.raw_file_names)
 
 
-# file_dir: Current working path.
+# file_dir: Top folder path.
 def load_cluster(file_dir, test_case):
     cluster = np.genfromtxt(file_dir + "/MeshModels/SavedClusters/" + f"test_case{test_case}_cluster.csv",
                             delimiter=',', dtype=int)

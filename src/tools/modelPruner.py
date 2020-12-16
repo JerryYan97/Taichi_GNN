@@ -3,19 +3,25 @@ from torch import nn
 import os, sys
 from torch_geometric.nn import GCNConv
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
-from NeuralNetworks.GCN_net_Dec9 import*
+from NeuralNetworks.GCN_net_Dec9 import GCN_net_Dec9
+from Utils.reader import read
+from Utils.utils_gcn import load_cluster
 
-# test class
-model = GCN_net_Dec9(nfeat=14, graph_node_num=231,
-                     gcn_hid1=32, gcn_out=48,
-                     unet_hid=8, unet_out=16,
-                     fc_hid=60, fc_out=2, dropout=0.3)
+
+def load_prune_mesh_info(test_case):
+    input_features_num = 14
+    mesh, dirichlet, mesh_scale, mesh_offset = read(test_case)
+    node_num = mesh.num_vertices
+    _, cluster_num = load_cluster(os.path.dirname(os.path.abspath(__file__)) + "/../..", test_case)
+    return input_features_num, node_num, cluster_num
+
 
 def showParams(model):
     for name, param in model.named_parameters():
         print(name, ", shape: ", param.shape)
         if name.find('weight') != -1 and name.find('GCN') != -1:
             print("weight: ", param)
+
 
 def weightPrune(model, threshold, model_name):
     old_params = {}
@@ -44,8 +50,25 @@ def weightPrune(model, threshold, model_name):
 
 
 if __name__ == '__main__':
-    PATH = "../../TrainedNN/state_dict_model_zero_loss_1k_prune.pt"
+    # test class
+    test_case = 4
+
+    input_features_num, node_num, cluster_num = load_prune_mesh_info(test_case)
+
+    model = GCN_net_Dec9(
+        nfeat=input_features_num,
+        graph_node_num=node_num,
+        cluster_num=cluster_num,
+        gcn_hid1=32,
+        gcn_out1=48,
+        gcn_hid2=98,
+        gcn_out2=128,
+        fc_hid=60,
+        fc_out=2,
+        dropout=0.3)
+    PATH = "../../TrainedNN/state_dict_model_zero_loss_1k.pt"
     print(sys.path)
     model.load_state_dict(torch.load(PATH))
     showParams(model)
-    weightPrune(model, 0.1, PATH)
+    # Note: Hammer case's threshold should be 0.01
+    weightPrune(model, 0.01, PATH)

@@ -33,6 +33,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Specify a path
 PATH = "TrainedNN/state_dict_model_zero_loss_1k.pt"
+# PATH = "TrainedNN/state_dict_model_zero_loss_1k_prune.pt"
 dim = 2
 
 # Model and optimizer
