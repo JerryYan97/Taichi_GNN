@@ -12,9 +12,9 @@ nu = 0.4
 dt = 0.01
 
 running_times = 1
-frame_count = 200
+frame_count = 150
 
-test_case = 3
+test_case = 4
 cluster_num = 10
 
 # NOTE: Please remember to save your data. It will delete all files in Outputs/ or Outputs_T/ when you exe Run.py.
@@ -37,13 +37,6 @@ if __name__ == '__main__':
             for name in files:
                 os.remove(os.path.join(root, name))
 
-    # Generate cluster
-    if not os.path.exists("Saved_Cluster"):
-        os.makedirs("Saved_Cluster")
-    for root, dirs, files in os.walk("Saved_Cluster/"):
-        for name in files:
-            os.remove(os.path.join(root, name))
-
     mesh, _, _, _ = read(int(test_case))
     _, child_list, parent_list, belonging = K_means(mesh, cluster_num)
     cluster = np.zeros(len(mesh.vertices) + 1, dtype=int)
@@ -56,13 +49,13 @@ if __name__ == '__main__':
 
     # Large scale data generation
     # sampled_angle_num = 16
-    # sampled_mag_num = 8
+    # sampled_mag_num = 9
     #
     # for angle_idx in range(sampled_angle_num):
     #     for mag_idx in range(sampled_mag_num):
     #         ti.reset()
-    #         pd = PDSimulation(1, 2)
-    #         pn = PNSimulation(int(1), 2)
+    #         pd = PDSimulation(test_case, 2)
+    #         pn = PNSimulation(test_case, 2)
     #
     #         pn.set_force(angle_idx * (360.0 / sampled_angle_num), (mag_idx + 1))
     #         pd.set_force(angle_idx * (360.0 / sampled_angle_num), (mag_idx + 1))
@@ -76,8 +69,10 @@ if __name__ == '__main__':
     for i in range(running_times):
         pd = PDSimulation(test_case, 2)
         pn = PNSimulation(int(test_case), 2)
-        pn.set_force(25, 6)
-        pd.set_force(25, 6)
+        # pn.set_force(25, 6)
+        # pd.set_force(25, 6)
+        pn.set_force(12.3, 6.6)
+        pd.set_force(12.3, 6.6)
 
         pd.set_material(rho, E, nu, dt)
         pn.set_material(rho, E, nu, dt)

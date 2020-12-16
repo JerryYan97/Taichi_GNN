@@ -570,7 +570,7 @@ class PDSimulation:
         return out
 
     def output_all(self, pd_dis, pn_dis, grad_E, frame, T):
-        frame = str(frame).zfill(2)
+        frame = str(frame).zfill(5)
         if T == 0:
             out_name = "Outputs/output" + str(self.exf_ind) + "_" + str(self.mag_ind) + "_" + frame + ".csv"
         else:

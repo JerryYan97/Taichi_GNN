@@ -51,7 +51,7 @@ if args.cuda:
 dim = 2
 
 # Load whole dataset with DataLoader
-simDataset = load_txt_data(1, "/Outputs")
+simDataset = load_txt_data(4, "/Outputs")
 train_loader = DataLoader(dataset=simDataset, batch_size=64, shuffle=True, num_workers=8, pin_memory=False)
 # train_loader = DataLoader(dataset=simDataset, batch_size=64, shuffle=True, num_workers=1)
 
@@ -91,6 +91,7 @@ def Sim_train():
     t = time.time()
     model.train()
     for epoch in range(args.epochs):
+        record_flag = False
         for data in train_loader:  # Iterate in batches over the training dataset.
             output = model(data.x.float().to(device),
                            data.edge_index.to(device),
@@ -117,10 +118,11 @@ def Sim_train():
                   "loss_train: ", loss_train.cpu().detach().numpy(),
                   "time: ", time.time() - t,
                   "s")
-            if (epoch + 1) % 10 == 0:
+            if not record_flag:
                 ############## TENSORBOARD ########################
                 writer.add_scalar('training loss', loss_train, (epoch * len(simDataset)) + epoch)
                 writer.close()
+                record_flag = True
                 ##################################################
 
 

@@ -73,18 +73,20 @@ class SIM_Data_Geo(InMemoryDataset):
         return len(self.raw_file_names)
 
 
-def load_cluster(file_dir):
-    cluster = np.genfromtxt(file_dir + "/Saved_Cluster/cluster.csv", delimiter=',', dtype=int)
+# file_dir: Current working path.
+def load_cluster(file_dir, test_case):
+    cluster = np.genfromtxt(file_dir + "/MeshModels/SavedClusters/" + f"test_case{test_case}_cluster.csv",
+                            delimiter=',', dtype=int)
     cluster_num = cluster[len(cluster) - 1]
     cluster = torch.tensor(cluster[:len(cluster) - 1])
     return cluster, cluster_num
 
 
-def load_txt_data(objpath, path="/Outputs"):
+def load_txt_data(test_case, path="/Outputs"):
     file_dir = os.getcwd()
     file_dir = file_dir + path
 
-    mesh, _, _, _ = read(int(objpath))
+    mesh, _, _, _ = read(int(test_case))
     edges = set()
     for [i, j, k] in mesh.faces:
         edges.add((i, j))
@@ -102,7 +104,7 @@ def load_txt_data(objpath, path="/Outputs"):
             edge_index = np.hstack((edge_index, [[k], [i]]))
             edge_index = np.hstack((edge_index, [[i], [k]]))
     edge_index = torch.LongTensor(edge_index)
-    cluster, cluster_num = load_cluster(os.getcwd())
+    cluster, cluster_num = load_cluster(os.getcwd(), test_case)
     dataset = SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, cluster, cluster_num)
     return dataset
 

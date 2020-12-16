@@ -36,7 +36,7 @@ PATH = "TrainedNN/state_dict_model_zero_loss_1k.pt"
 dim = 2
 
 # Model and optimizer
-simDataset = load_txt_data(1, "/Outputs_T")  # load test data
+simDataset = load_txt_data(4, "/Outputs_T")  # load test data
 test_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=False)
 # model = GCN_CNN(nfeat=simDataset.input_features_num,
 #                 nhid=args.hidden,
@@ -65,7 +65,7 @@ def RunNN():
     with torch.no_grad():
         i = 0
         for data in test_loader:
-            ii = str(i).zfill(2)
+            ii = str(i).zfill(5)
             outname = "TestResult/frame" + ii + ".csv"
             output = model(data.x.float().to(device),
                            data.edge_index.to(device),

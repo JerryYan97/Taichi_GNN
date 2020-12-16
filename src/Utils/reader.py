@@ -39,6 +39,8 @@ def read(testcase):
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
         return mesh, dirichlet, mesh_scale, mesh_offset
+    else:
+        assert True, "Invalid testcase selection."
 
 
 def get_routine(v1, v2, v3):
