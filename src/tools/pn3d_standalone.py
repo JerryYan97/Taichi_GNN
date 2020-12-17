@@ -17,7 +17,7 @@ print("dirichlet: \n", dirichlet)
 directory = os.getcwd() + '/output/'
 video_manager = ti.VideoManager(output_dir=directory + 'images/', framerate=24, automatic_build=False)
 
-ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
+ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
 
 real = ti.f64
 scalar = lambda: ti.var(dt=real)
