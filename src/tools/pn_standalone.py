@@ -278,4 +278,4 @@ if __name__ == "__main__":
         compute_v()
         total_time += time.time()
         write_image(f)
-    video_manager.make_video(gif=True, mp4=True)
+    # video_manager.make_video(gif=True, mp4=True)
