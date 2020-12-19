@@ -29,7 +29,11 @@ class PNSimulation:
     def __init__(self, objfilenum, _dim):
         self.gui = ti.GUI("MPM", (1024, 1024), background_color=0x112F41)
         ################################ mesh ######################################
-        self.mesh, self.dirichlet, self.mesh_scale, self.mesh_offset = read(objfilenum)
+        case_info = read(int(objfilenum))
+        self.mesh = case_info['mesh']
+        self.dirichlet = case_info['dirichlet']
+        self.mesh_scale = case_info['mesh_scale']
+        self.mesh_offset = case_info['mesh_offset']
 
         ################################ material ######################################
         self.dim = _dim

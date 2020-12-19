@@ -10,7 +10,10 @@ from Utils.utils_gcn import load_cluster
 
 def load_prune_mesh_info(test_case):
     input_features_num = 14
-    mesh, dirichlet, mesh_scale, mesh_offset = read(test_case)
+
+    case_info = read(test_case)
+    mesh = case_info['mesh']
+
     node_num = mesh.num_vertices
     _, cluster_num = load_cluster(os.path.dirname(os.path.abspath(__file__)) + "/../..", test_case)
     return input_features_num, node_num, cluster_num

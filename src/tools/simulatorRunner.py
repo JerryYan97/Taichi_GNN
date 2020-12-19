@@ -11,7 +11,12 @@ from Utils.utils_visualization import draw_pd_pn_image
 ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
 
 test_case = 2
-mesh, dirichlet, mesh_scale, mesh_offset = read(test_case)
+case_info = read(test_case)
+mesh = case_info['mesh']
+dirichlet = case_info['dirichlet']
+mesh_scale = case_info['mesh_scale']
+mesh_offset = case_info['mesh_offset']
+
 n_particles = mesh.num_vertices
 n_elements = mesh.num_faces
 

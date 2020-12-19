@@ -86,7 +86,9 @@ def load_txt_data(test_case, path="/Outputs"):
     file_dir = os.getcwd()
     file_dir = file_dir + path
 
-    mesh, _, _, _ = read(int(test_case))
+    case_info = read(test_case)
+    mesh = case_info['mesh']
+
     edges = set()
     for [i, j, k] in mesh.faces:
         edges.add((i, j))

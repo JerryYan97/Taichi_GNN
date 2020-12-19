@@ -111,7 +111,8 @@ def neo_hookean_hessian(sigma, la, mu):
 def fixed_corotated_first_piola_kirchoff_stress(F, la, mu):
     J = F.determinant()
     JFinvT = cofactor(F)
-    U, sig, V = svd(F)
+    # U, sig, V = svd(F)
+    U, sig, V = ti.svd(F)
     R = U @ V.transpose()
     return 2 * mu * (F - R) + la * (J - 1) * JFinvT
 
@@ -231,7 +232,8 @@ def fixed_corotated_first_piola_kirchoff_stress_derivative(F, la, mu):
 @ti.func
 def fixed_corotated_first_piola_kirchoff_stress_derivative(F, la, mu):
     if ti.static(F.n == 2):
-        U, sig, V = svd(F)
+        # U, sig, V = svd(F)
+        U, sig, V = ti.svd(F)
         sigma = ti.Vector([sig[0, 0], sig[1, 1]])
         dE_div_dsigma = fixed_corotated_gradient(sigma, la, mu)
         d2E_div_dsigma2 = project_pd(fixed_corotated_hessian(sigma, la, mu))
@@ -261,7 +263,8 @@ def fixed_corotated_first_piola_kirchoff_stress_derivative(F, la, mu):
                         dPdF[ij, rs] = M[0, 0] * U[i, 0] * V[j, 0] * U[r, 0] * V[s, 0] + M[0, 3] * U[i, 0] * V[j, 0] * U[r, 1] * V[s, 1] + M[1, 1] * U[i, 0] * V[j, 1] * U[r, 0] * V[s, 1] + M[1, 2] * U[i, 0] * V[j, 1] * U[r, 1] * V[s, 0] + M[2, 1] * U[i, 1] * V[j, 0] * U[r, 0] * V[s, 1] + M[2, 2] * U[i, 1] * V[j, 0] * U[r, 1] * V[s, 0] + M[3, 0] * U[i, 1] * V[j, 1] * U[r, 0] * V[s, 0] + M[3, 3] * U[i, 1] * V[j, 1] * U[r, 1] * V[s, 1]
         return dPdF
     else:
-        U, sig, V = svd(F)
+        # U, sig, V = svd(F)
+        U, sig, V = ti.svd(F)
         sigma = ti.Vector([sig[0, 0], sig[1, 1], sig[2, 2]])
         sigmaProd = sigma[0] * sigma[1] * sigma[2]
         dE_div_dsigma = fixed_corotated_gradient(sig, la, mu)

@@ -37,16 +37,6 @@ if __name__ == '__main__':
             for name in files:
                 os.remove(os.path.join(root, name))
 
-    mesh, _, _, _ = read(int(test_case))
-    _, child_list, parent_list, belonging = K_means(mesh, cluster_num)
-    cluster = np.zeros(len(mesh.vertices) + 1, dtype=int)
-    for i in parent_list:
-        cluster[i] = i
-    for i in range(len(child_list)):
-        cluster[child_list[i]] = belonging[i]
-    cluster[len(mesh.vertices)] = cluster_num
-    np.savetxt("Saved_Cluster/cluster.csv", cluster, delimiter=',', fmt='%d')
-
     # Large scale data generation
     # sampled_angle_num = 16
     # sampled_mag_num = 9

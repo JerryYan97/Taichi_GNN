@@ -6,7 +6,11 @@ from src.Utils.reader import *
 
 ##############################################################################
 
-mesh, dirichlet, mesh_scale, mesh_offset = read(4)
+case_info = read(4)
+mesh = case_info['mesh']
+dirichlet = case_info['dirichlet']
+mesh_scale = case_info['mesh_scale']
+mesh_offset = case_info['mesh_offset']
 
 directory = os.getcwd() + '/output/' + '_'.join(os.path.basename(sys.argv[0]) + "_combined") + '/'
 
@@ -69,14 +73,11 @@ if __name__ == "__main__":
     # Init pos:
     pn_pos, corrected_pd_pos, pd_pos = mesh.vertices[:, 0:2], mesh.vertices[:, 0:2], mesh.vertices[:, 0:2]
     for f in range(len(TestResults_Files)):
-        # test_file = np.genfromtxt("{}{}".format(testpath + "/", TestResults_Files[f]), delimiter=' ')
         test_file = np.genfromtxt(testpath + "/" + TestResults_Files[f], delimiter=',')
 
-        # test_file = np.genfromtxt("{}{}".format(realpath + "/", TestResults_Files[f]), delimiter=' ')
         pd_pos_delta = test_file[:, 0:2]
         corrected_pd_pos_delta = test_file[:, 2:4] + pd_pos_delta
         pn_pos_delta = test_file[:, 6:8] + pd_pos_delta
-        # pn_pos_delta = test_file[:, 2:4]
 
         # PN -> PD: pd_pos[n+1] is calculated by pn_pos[n] + pd_dis.
         # corrected_pd_pos = pn_pos + corrected_pd_pos_delta

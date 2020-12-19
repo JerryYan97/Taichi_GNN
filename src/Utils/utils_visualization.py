@@ -1,3 +1,6 @@
+import taichi as ti
+import taichi_glsl as ts
+
 
 # PN result: Red (Top Layer)
 # PD result: Blue (Bottom Layer)
@@ -28,3 +31,23 @@ def draw_pd_pn_image(gui, file_name_path,
     else:
         video_manager.write_frame(gui.get_image())
         gui.show()
+
+
+@ti.kernel
+def init_mesh(mesh: ti.template(), triangles: ti.ext_arr()):
+    for i in range(mesh.n_faces[None] / 2):
+        mesh.faces[2 * i] = [[triangles[i, 2], 0, 2 * i],
+                             [triangles[i, 1], 0, 2 * i],
+                             [triangles[i, 0], 0, 2 * i]]
+        mesh.faces[2 * i + 1] = [[triangles[i, 0], 0, 2 * i + 1],
+                                 [triangles[i, 1], 0, 2 * i + 1],
+                                 [triangles[i, 2], 0, 2 * i + 1]]
+
+
+@ti.kernel
+def update_mesh(mesh: ti.template()):
+    for i in range(mesh.n_faces[None] / 2):
+        pos1, pos2, pos3 = mesh.pos[mesh.faces[2 * i][0, 0]], mesh.pos[mesh.faces[2 * i][1, 0]], mesh.pos[mesh.faces[2 * i][2, 0]]
+        normal = -ts.cross(pos1 - pos2, pos1 - pos3).normalized()
+        mesh.nrm[2 * i] = normal
+        mesh.nrm[2 * i + 1] = -normal

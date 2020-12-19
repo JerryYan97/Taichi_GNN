@@ -35,7 +35,12 @@ class PDSimulation:
         self.dt = 0.01
 
         ################################ mesh ######################################
-        self.mesh, self.dirichlet, self.mesh_scale, self.mesh_offset = read(int(obj_file))
+        case_info = read(int(obj_file))
+        self.mesh = case_info['mesh']
+        self.dirichlet = case_info['dirichlet']
+        self.mesh_scale = case_info['mesh_scale']
+        self.mesh_offset = case_info['mesh_offset']
+
         self.NV, self.NF, _ = self.mesh.num_vertices, self.mesh.num_faces, self.mesh.num_voxels
         self.n_particles = self.NV
         ################################ material ######################################

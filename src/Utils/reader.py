@@ -2,22 +2,80 @@ import pymesh
 import numpy as np
 import sys
 import os
+import taichi_three as t3
+
+from .graph_tools import find_boundary
+
+# Old backup:
+# def read(testcase):
+#     if testcase == 1:
+#         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/demo3_mesh.obj")
+#         dirichlet = np.array([i for i in range(11)])
+#         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.6
+#         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 0.9
+#         shesh_scale, mesh_offset = 0.6, 0.4
+#         return mesh, dirichlet, shesh_scale, mesh_offset
+#     elif testcase == 2:
+#         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/Sharkey.obj")
+#         dirichlet = np.array([i for i in range(12)])
+#         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.4
+#         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 1.3
+#         return mesh, dirichlet, mesh_scale, mesh_offset
+#     elif testcase == 3:
+#         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/p_model_2D.obj")
+#         dirichlet_list = []
+#         for i in range(mesh.num_vertices):
+#             if mesh.vertices[i][0] == mesh.bbox[0][0]:
+#                 dirichlet_list.append(i)
+#         dirichlet = np.array(dirichlet_list)
+#
+#         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
+#         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
+#         return mesh, dirichlet, mesh_scale, mesh_offset
+#     elif testcase == 4:
+#         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/hammer_model_2D.obj")
+#         dirichlet_list = []
+#         for i in range(mesh.num_vertices):
+#             if mesh.vertices[i][0] == mesh.bbox[0][0]:
+#                 dirichlet_list.append(i)
+#         dirichlet = np.array(dirichlet_list)
+#         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
+#         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
+#         return mesh, dirichlet, mesh_scale, mesh_offset
+#     elif testcase == 5:
+#         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/box3D_v518_t2112.msh")
+#         dirichlet_list = []
+#         dirichlet = np.array(dirichlet_list)
+#         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
+#         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
+#         return mesh, dirichlet, mesh_scale, mesh_offset
+#     else:
+#         raise Exception("Invalid testcase selection.")
 
 
 def read(testcase):
+    case_info = {}
     if testcase == 1:
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/demo3_mesh.obj")
         dirichlet = np.array([i for i in range(11)])
-        mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.6
-        mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 0.9
-        shesh_scale, mesh_offset = 0.6, 0.4
-        return mesh, dirichlet, shesh_scale, mesh_offset
+        mesh_scale, mesh_offset = 0.6, 0.4
+        case_info['mesh'] = mesh
+        case_info['dim'] = 2
+        case_info['dirichlet'] = dirichlet
+        case_info['mesh_scale'] = mesh_scale
+        case_info['mesh_offset'] = mesh_offset
+        return case_info
     elif testcase == 2:
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/Sharkey.obj")
         dirichlet = np.array([i for i in range(12)])
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.4
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 1.3
-        return mesh, dirichlet, mesh_scale, mesh_offset
+        case_info['mesh'] = mesh
+        case_info['dim'] = 2
+        case_info['dirichlet'] = dirichlet
+        case_info['mesh_scale'] = mesh_scale
+        case_info['mesh_offset'] = mesh_offset
+        return case_info
     elif testcase == 3:
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/p_model_2D.obj")
         dirichlet_list = []
@@ -28,7 +86,13 @@ def read(testcase):
 
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
-        return mesh, dirichlet, mesh_scale, mesh_offset
+
+        case_info['mesh'] = mesh
+        case_info['dim'] = 2
+        case_info['dirichlet'] = dirichlet
+        case_info['mesh_scale'] = mesh_scale
+        case_info['mesh_offset'] = mesh_offset
+        return case_info
     elif testcase == 4:
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/hammer_model_2D.obj")
         dirichlet_list = []
@@ -36,12 +100,54 @@ def read(testcase):
             if mesh.vertices[i][0] == mesh.bbox[0][0]:
                 dirichlet_list.append(i)
         dirichlet = np.array(dirichlet_list)
-
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
-        return mesh, dirichlet, mesh_scale, mesh_offset
+        case_info['mesh'] = mesh
+        case_info['dim'] = 2
+        case_info['dirichlet'] = dirichlet
+        case_info['mesh_scale'] = mesh_scale
+        case_info['mesh_offset'] = mesh_offset
+        return case_info
+    elif testcase == 1001:
+        mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/box3D_v518_t2112.msh")
+        dirichlet_list = []
+        dirichlet = np.array(dirichlet_list)
+        mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
+        mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
+
+        case_info['mesh'] = mesh
+        case_info['dim'] = 3
+        case_info['dirichlet'] = dirichlet
+        case_info['mesh_scale'] = mesh_scale
+        case_info['mesh_offset'] = mesh_offset
+        case_info['boundary'] = find_boundary(mesh.elements)
+        case_info['init_transformation'] = t3.transform(t3.rotateY(45.0), [-0.2, -1.1, -2.0])
+        return case_info
     else:
-        assert True, "Invalid testcase selection."
+        raise Exception("Invalid testcase selection.")
+
+
+# Note: The original read() func will be deprecated and changed to the format below
+# def read_future(testcase):
+#     case_info = {}
+#     if testcase == 1001:
+#         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/box3D_v518_t2112.msh")
+#         dirichlet_list = []
+#         dirichlet = np.array(dirichlet_list)
+#         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
+#         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
+#
+#         case_info['mesh'] = mesh
+#         case_info['dirichlet'] = dirichlet
+#         case_info['mesh_scale'] = mesh_scale
+#         case_info['mesh_offset'] = mesh_offset
+#         case_info['boundary'] = find_boundary(mesh.elements)
+#         case_info['init_transformation'] = t3.transform(t3.rotateY(45.0), [-0.2, -1.1, -2.0])
+#         return case_info
+#     else:
+#         raise Exception("Invalid testcase selection.")
+
+
 
 
 def get_routine(v1, v2, v3):

@@ -11,7 +11,12 @@ cluster_num = 10
 test_case = 4
 
 if __name__ == "__main__":
-    mesh, dirichlet, mesh_scale, mesh_offset = read(test_case)
+    case_info = read(test_case)
+    mesh = case_info['mesh']
+    dirichlet = case_info['dirichlet']
+    mesh_scale = case_info['mesh_scale']
+    mesh_offset = case_info['mesh_offset']
+
     _, child_list, parent_list, belonging = K_means(mesh, cluster_num)
     color_tab = ['tab:blue', 'tab:orange', 'tab:green', 'tab:purple', 'tab:olive', 'tab:gray', 'tab:cyan', 'tab:pink',
                  'tab:red', 'tab:brown']
