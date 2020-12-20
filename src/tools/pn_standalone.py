@@ -11,7 +11,6 @@ from scipy.linalg import sqrtm
 
 ##############################################################################
 
-# mesh, dirichlet, mesh_scale, mesh_offset = read(int(sys.argv[1]))
 case_info = read(4)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']

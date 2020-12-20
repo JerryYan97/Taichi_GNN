@@ -290,13 +290,10 @@ class PDSimulation:
     def build_rhs(self, rhs: ti.ext_arr()):
         one_over_dt2 = 1.0 / (self.dt ** 2)
         for i in range(self.NV * 2):  # Construct the first part of the rhs
-            pos_i = self.pos[i / 2]
-            p0 = pos_i[0]
-            p1 = pos_i[1]
             if i % 2 == 0:
-                rhs[i] = one_over_dt2 * self.mass[i / 2] * self.Sn[i] + (self.drag / self.dt * p0)  # 0.000061
+                rhs[i] = one_over_dt2 * self.mass[i / 2] * self.Sn[i]
             else:
-                rhs[i] = one_over_dt2 * self.mass[i / 2] * self.Sn[i] + (self.drag / self.dt * p1)  # 0.000061
+                rhs[i] = one_over_dt2 * self.mass[i / 2] * self.Sn[i]
         # Add strain and volume/area constraints to the rhs
         for t in ti.static(range(2)):
             for ele_idx in range(self.NF):
@@ -358,16 +355,6 @@ class PDSimulation:
             sn_idx1, sn_idx2 = pos_idx * 2, pos_idx * 2 + 1
             self.pos_new[pos_idx][0] = self.Sn[sn_idx1]
             self.pos_new[pos_idx][1] = self.Sn[sn_idx2]
-
-    @ti.kernel
-    def initinfo(self):
-        for i in range(self.NV):
-            if (self.pos[i][0] > 0.401):
-                self.vel[i][0] = 5
-            elif (self.pos[i][0] < 0.399):
-                self.vel[i][0] = 0
-            else:
-                self.vel[i][0] = 0
 
     @ti.kernel
     def update_pos_new_from_numpy(self, sol: ti.ext_arr()):

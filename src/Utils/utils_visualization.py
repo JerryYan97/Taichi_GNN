@@ -33,6 +33,28 @@ def draw_pd_pn_image(gui, file_name_path,
         gui.show()
 
 
+def draw_image(gui, file_name_path,
+               input_x,
+               mesh_offset, mesh_scale,
+               vertices, n_elements,
+               use_video_manager=False,
+               video_manager=None,
+               line_color=0xFF0000):
+    particle_pos = (input_x + mesh_offset) * mesh_scale
+    for i in range(n_elements):
+        for j in range(3):
+            a, b = vertices[i, j], vertices[i, (j + 1) % 3]
+            gui.line((particle_pos[a][0], particle_pos[a][1]),
+                     (particle_pos[b][0], particle_pos[b][1]),
+                     radius=1,
+                     color=line_color)
+    if not use_video_manager:
+        gui.show(file_name_path)
+    else:
+        video_manager.write_frame(gui.get_image())
+        gui.show()
+
+
 @ti.kernel
 def init_mesh(mesh: ti.template(), triangles: ti.ext_arr()):
     for i in range(mesh.n_faces[None] / 2):
