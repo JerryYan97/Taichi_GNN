@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
-from Utils.utils_visualization import draw_pd_pn_image, init_mesh, update_mesh
+from Utils.utils_visualization import draw_pd_pn_image, set_3D_scene, update_mesh
 
 
 if __name__ == "__main__":
@@ -15,7 +15,7 @@ if __name__ == "__main__":
         for name in files:
             os.remove(os.path.join(root, name))
 
-    case_info = read(5)
+    case_info = read(1001)
     n_particles = case_info['mesh'].num_vertices
     n_elements = 0
     if case_info['dim'] == 2:
@@ -25,27 +25,19 @@ if __name__ == "__main__":
 
     gui = None
     camera = None
+    model = None
+    scene = None
 
     if case_info['dim'] == 2:
         gui = ti.GUI("Model Visualizer", (1024, 1024), background_color=0xf7f7f7)
     elif case_info['dim'] == 3:
         camera = t3.Camera()
-        amb_light = t3.AmbientLight(0.5)
-        dir_light = t3.Light(dir=[-0.8, -0.6, -1.0])
         scene = t3.Scene()
-        scene.add_camera(camera)
-        scene.add_light(amb_light)
-        scene.add_light(dir_light)
-
         boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
-
         model = t3.Model(t3.DynamicMesh(n_faces=len(boundary_triangles) * 2,
                                         n_pos=case_info['mesh'].num_vertices,
                                         n_nrm=len(boundary_triangles) * 2))
-        model.mesh.n_faces[None] = len(boundary_triangles) * 2
-        init_mesh(model.mesh, boundary_triangles)
-        model.L2W[None] = case_info['init_transformation']
-        scene.add_model(model)
+        set_3D_scene(scene, camera, model, case_info)
         gui = ti.GUI('Model Visualizer', camera.res)
 
     while True:

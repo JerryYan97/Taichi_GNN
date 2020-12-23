@@ -1,4 +1,5 @@
 import taichi as ti
+import taichi_three as t3
 import taichi_glsl as ts
 
 
@@ -55,6 +56,20 @@ def draw_image(gui, file_name_path,
         gui.show()
 
 
+def set_3D_scene(scene, camera, model, case_info):
+    amb_light = t3.AmbientLight(0.5)
+    dir_light = t3.Light(dir=[-0.8, -0.6, -1.0])
+    scene.add_camera(camera)
+    scene.add_light(amb_light)
+    scene.add_light(dir_light)
+    boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
+    model.mesh.n_faces[None] = len(boundary_triangles) * 2
+    init_mesh(model.mesh, boundary_triangles)
+    model.L2W[None] = case_info['init_transformation']
+    scene.add_model(model)
+
+
+
 @ti.kernel
 def init_mesh(mesh: ti.template(), triangles: ti.ext_arr()):
     for i in range(mesh.n_faces[None] / 2):
@@ -73,3 +88,5 @@ def update_mesh(mesh: ti.template()):
         normal = -ts.cross(pos1 - pos2, pos1 - pos3).normalized()
         mesh.nrm[2 * i] = normal
         mesh.nrm[2 * i + 1] = -normal
+
+
