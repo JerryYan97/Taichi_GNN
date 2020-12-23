@@ -19,7 +19,7 @@ real = ti.f64
 ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
 
 # Mesh load and test case selection:
-test_case = 3
+test_case = 1002
 case_info = read(int(test_case))
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -27,7 +27,7 @@ mesh_scale = case_info['mesh_scale']
 mesh_offset = case_info['mesh_offset']
 dim = case_info['dim']
 
-
+# 2D and 3D scene settings:
 if dim == 2:
     n_elements = mesh.num_faces
 else:
@@ -38,6 +38,7 @@ n_vertices = mesh.num_vertices
 # Material settings:
 rho = 100
 # rho = 1000
+# E, nu = 1e4, 0.4  # Young's modulus and Poisson's ratio
 E, nu = 1e4, 0.4  # Young's modulus and Poisson's ratio
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
 
@@ -77,6 +78,15 @@ ti_lhs_matrix = ti.field(real, shape=(n_vertices * dim, n_vertices * dim))
 ti_phi = ti.field(real, n_elements)
 ti_weight_strain = ti.field(real, n_elements)
 ti_weight_volume = ti.field(real, n_elements)
+
+
+camera = t3.Camera()
+scene = t3.Scene()
+boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
+model = t3.Model(t3.DynamicMesh(n_faces=len(boundary_triangles) * 2,
+                                n_pos=case_info['mesh'].num_vertices,
+                                n_nrm=len(boundary_triangles) * 2))
+set_3D_scene(scene, camera, model, case_info)
 
 
 def set_exforce(angle, mag):
@@ -216,6 +226,7 @@ def precomputation():
             ti_mass[idx_b] += ti_volume[e_it] / dimp * rho
             ti_mass[idx_c] += ti_volume[e_it] / dimp * rho
             ti_mass[idx_d] += ti_volume[e_it] / dimp * rho
+            print("ti_elements[e_it]:\n", ti_elements[e_it])
 
     # Construct A_i matrix for every element / Build A for all the constraints:
     # Strain constraints and area constraints
@@ -289,13 +300,7 @@ def precomputation():
                 set_ti_A_i(t * n_elements + i, 8, 8, e23)
                 set_ti_A_i(t * n_elements + i, 8, 11, e33)
 
-    print("lhs matrix starts")
-    # Construct lhs matrix without constraints
-    for i in range(n_vertices):
-        for d in ti.static(range(dim)):
-            ti_lhs_matrix[i * dim + d, i * dim + d] += ti_mass[i] / (dt * dt)
-
-    print("Constraints init starts")
+    # print("Constraints init starts")
     # # Add strain and area/volume constraints to the lhs matrix
     for ele_idx in range(n_elements):
         for t in range(2):
@@ -312,6 +317,13 @@ def precomputation():
                             weight = ti_weight_strain[ele_idx]
                         else:
                             weight = ti_weight_volume[ele_idx]
+                        if lhs_row_idx == 0 and lhs_col_idx == 0:
+                            print("original ti_lhs_mat[0, 0]:", ti_lhs_matrix[lhs_row_idx, lhs_col_idx])
+                            print("Added value:", ti_A[ele_idx, idx, A_row_idx] *
+                                                                    ti_A[ele_idx, idx, A_col_idx] * weight)
+                            print("After added:", ti_lhs_matrix[lhs_row_idx, lhs_col_idx] +
+                                                  ti_A[ele_idx, idx, A_row_idx] *
+                                                  ti_A[ele_idx, idx, A_col_idx] * weight)
                         ti_lhs_matrix[lhs_row_idx, lhs_col_idx] += (ti_A[ele_idx, idx, A_row_idx] *
                                                                     ti_A[ele_idx, idx, A_col_idx] * weight)
 
@@ -326,6 +338,14 @@ def precomputation():
             if ti.static(dim == 3):
                 q_i_z_idx = i * dim + 2
                 ti_lhs_matrix[q_i_z_idx, q_i_z_idx] += m_weight_positional
+
+    print("lhs matrix starts")
+    # Construct lhs matrix without constraints
+    for i in range(n_vertices):
+        for d in ti.static(range(dim)):
+            ti_lhs_matrix[i * dim + d, i * dim + d] += ti_mass[i] / (dt * dt)
+    # print("ti_lhs_mat: after add mass:")
+    # print(ti_lhs_matrix[None])
 
 
 @ti.func
@@ -620,7 +640,10 @@ if __name__ == "__main__":
     # print("Main starts")
     frame_counter = 0
     rhs_np = np.zeros(n_vertices * 2, dtype=np.float64)
-    ti_elements.from_numpy(mesh.faces)
+    if dim == 2:
+        ti_elements.from_numpy(mesh.faces)
+    else:
+        ti_elements.from_numpy(mesh.elements)
     ti_pos.from_numpy(mesh.vertices)
     ti_pos_init.from_numpy(mesh.vertices)
 
@@ -639,13 +662,12 @@ if __name__ == "__main__":
     precomputation()
     lhs_matrix_np = ti_lhs_matrix.to_numpy()
     s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
+    print("ti_mass:\n", ti_mass.to_numpy())
+    print("lhs matrix ti field:\n", lhs_matrix_np)
     print("sparse lhs matrix:\n", s_lhs_matrix_np)
     pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
     gui = None
-    camera = None
-    model = None
-    scene = None
     wait = input("PRESS ENTER TO CONTINUE.")
 
     if dim == 2:
@@ -654,13 +676,6 @@ if __name__ == "__main__":
         draw_image(gui, filename, ti_pos.to_numpy(), mesh_offset, mesh_scale, ti_elements.to_numpy(), n_elements)
     else:
         filename = f'./results/frame_rest.png'
-        camera = t3.Camera()
-        scene = t3.Scene()
-        boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
-        model = t3.Model(t3.DynamicMesh(n_faces=len(boundary_triangles) * 2,
-                                        n_pos=case_info['mesh'].num_vertices,
-                                        n_nrm=len(boundary_triangles) * 2))
-        set_3D_scene(scene, camera, model, case_info)
         gui = ti.GUI('Model Visualizer', camera.res)
         gui.set_image(camera.img)
         gui.show(filename)

@@ -125,7 +125,7 @@ def read(testcase):
         return case_info
     elif testcase == 1002:
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/tet.msh")
-        dirichlet_list = []
+        dirichlet_list = [0, 1, 2]
         dirichlet = np.array(dirichlet_list)
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
