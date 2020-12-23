@@ -50,7 +50,7 @@ solver_max_iteration = 10
 solver_stop_residual = 0.0001
 # external force -- counter-clock wise
 exf_angle = -45.0
-exf_mag = 6
+exf_mag = 600
 ti_ex_force = ti.Vector.field(dim, real, 1)
 
 
@@ -703,7 +703,7 @@ if __name__ == "__main__":
     sim_t = 0.0
     plot_array = []
 
-    while frame_counter < 150:
+    while frame_counter < 250:
         build_sn()
         # Warm up:
         warm_up()
@@ -743,7 +743,8 @@ if __name__ == "__main__":
             draw_image(gui, filename, ti_pos.to_numpy(), mesh_offset, mesh_scale, ti_elements.to_numpy(), n_elements)
         else:
             gui.get_event(None)
-            model.mesh.pos.from_numpy(case_info['mesh'].vertices.astype(np.float32))
+            # model.mesh.pos.from_numpy(case_info['mesh'].vertices.astype(np.float32))
+            model.mesh.pos.from_numpy(ti_pos.to_numpy())
             update_mesh(model.mesh)
             camera.from_mouse(gui)
             scene.render()
