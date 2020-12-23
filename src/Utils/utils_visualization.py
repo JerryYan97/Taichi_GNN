@@ -69,7 +69,6 @@ def set_3D_scene(scene, camera, model, case_info):
     scene.add_model(model)
 
 
-
 @ti.kernel
 def init_mesh(mesh: ti.template(), triangles: ti.ext_arr()):
     for i in range(mesh.n_faces[None] / 2):
@@ -85,7 +84,11 @@ def init_mesh(mesh: ti.template(), triangles: ti.ext_arr()):
 def update_mesh(mesh: ti.template()):
     for i in range(mesh.n_faces[None] / 2):
         pos1, pos2, pos3 = mesh.pos[mesh.faces[2 * i][0, 0]], mesh.pos[mesh.faces[2 * i][1, 0]], mesh.pos[mesh.faces[2 * i][2, 0]]
+        # print("pos1 - pos2:", pos1 - pos2, "pos1 - pos3:", pos1 - pos3, "cross:", ts.cross(pos1 - pos2, pos1 - pos3).normalized())
+        # normal = ts.cross(pos1 - pos2, pos1 - pos3).normalized()
+        # print("Normal:", normal)
         normal = -ts.cross(pos1 - pos2, pos1 - pos3).normalized()
+        # # print("Normal:", normal)
         mesh.nrm[2 * i] = normal
         mesh.nrm[2 * i + 1] = -normal
 

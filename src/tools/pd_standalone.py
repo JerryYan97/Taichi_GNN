@@ -2,14 +2,15 @@
 # 1. A matrix complication time improvement. It requires to use field to replace matrix. However, it would loss some
 # handy funcs like transpose, product, etc.
 
+import os
+import sys
+
+import numpy as np
 import taichi as ti
 import taichi_three as t3
-import numpy as np
-import sys, os, time
-import csv
 from scipy import sparse
-from scipy.sparse.linalg import spsolve
 from scipy.sparse.linalg import factorized
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
 from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh
@@ -57,9 +58,9 @@ ti_ex_force = ti.Vector.field(dim, real, 1)
 ti_mass = ti.field(real, n_vertices)
 ti_volume = ti.field(real, n_elements)
 ti_pos = ti.Vector.field(dim, real, n_vertices)
-ti_pos_new = ti.Vector.field(dim, real, n_elements)
+ti_pos_new = ti.Vector.field(dim, real, n_vertices)
 ti_pos_init = ti.Vector.field(dim, real, n_vertices)
-ti_last_pos_new = ti.Vector.field(dim, real, n_elements)
+ti_last_pos_new = ti.Vector.field(dim, real, n_vertices)
 ti_boundary_labels = ti.field(int, n_vertices)
 ti_vel = ti.Vector.field(dim, real, n_vertices)
 ti_elements = ti.Vector.field(dim + 1, int, n_elements)  # ids of three vertices of each face
@@ -71,14 +72,13 @@ ti_A_i = ti.field(real, shape=(dim * dim, dim * (dim + 1)))
 # A_i = ti.field(real, shape=(dim * dim, dim * (dim + 1)))
 ti_q_idx_vec = ti.field(real, (n_elements, dim * (dim + 1)))
 ti_Bp = ti.Matrix.field(dim, dim, real, n_elements * 2)
-ti_rhs_np = np.zeros(n_vertices * 2, dtype=np.float64)
-ti_Sn = ti.field(real, n_vertices * 2)
+# ti_rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
+ti_Sn = ti.field(real, n_vertices * dim)
 ti_lhs_matrix = ti.field(real, shape=(n_vertices * dim, n_vertices * dim))
 # potential energy of each element(face) for linear coratated elasticity material.
 ti_phi = ti.field(real, n_elements)
 ti_weight_strain = ti.field(real, n_elements)
 ti_weight_volume = ti.field(real, n_elements)
-
 
 camera = t3.Camera()
 scene = t3.Scene()
@@ -87,6 +87,15 @@ model = t3.Model(t3.DynamicMesh(n_faces=len(boundary_triangles) * 2,
                                 n_pos=case_info['mesh'].num_vertices,
                                 n_nrm=len(boundary_triangles) * 2))
 set_3D_scene(scene, camera, model, case_info)
+
+# if dim == 3:
+#     camera = t3.Camera()
+#     scene = t3.Scene()
+#     boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
+#     model = t3.Model(t3.DynamicMesh(n_faces=len(boundary_triangles) * 2,
+#                                     n_pos=case_info['mesh'].num_vertices,
+#                                     n_nrm=len(boundary_triangles) * 2))
+#     set_3D_scene(scene, camera, model, case_info)
 
 
 def set_exforce(angle, mag):
@@ -434,7 +443,20 @@ def build_sn():
             ti_Sn[Sn_idx3] = pos_i[2] + dt * vel_i[2] + (dt ** 2) * ti_ex_force[0][2] / ti_mass[vert_idx]
 
 
-# TODO: Dec20's work
+@ti.func
+def Build_Bp_i_vec(idx):
+    Bp_i = ti_Bp[idx]
+    if ti.static(dim == 2):
+        Bp_i_vec = ti.Vector([Bp_i[0, 0], Bp_i[0, 1],
+                              Bp_i[1, 0], Bp_i[1, 1]])
+        return Bp_i_vec
+    else:
+        Bp_i_vec = ti.Vector([Bp_i[0, 0], Bp_i[0, 1], Bp_i[0, 2],
+                              Bp_i[1, 0], Bp_i[1, 1], Bp_i[1, 2],
+                              Bp_i[2, 0], Bp_i[2, 1], Bp_i[2, 2]])
+        return Bp_i_vec
+
+
 @ti.kernel
 def build_rhs(rhs: ti.ext_arr()):
     one_over_dt2 = 1.0 / (dt ** 2)
@@ -444,16 +466,8 @@ def build_rhs(rhs: ti.ext_arr()):
     # Add strain and volume/area constraints to the rhs
     for t in ti.static(range(2)):
         for ele_idx in range(n_elements):
-            Bp_i = ti_Bp[t * n_elements+ele_idx]
-            Bp_i_vec = ti.Vector([Bp_i[0, 0], Bp_i[0, 1],
-                                  Bp_i[1, 0], Bp_i[1, 1]])
-            if ti.static(dim == 3):
-                Bp_i_vec = ti.Vector([Bp_i[0, 0], Bp_i[0, 1], Bp_i[0, 2],
-                                      Bp_i[1, 0], Bp_i[1, 1], Bp_i[1, 2],
-                                      Bp_i[2, 0], Bp_i[2, 1], Bp_i[2, 2]])
-
+            Bp_i_vec = Build_Bp_i_vec(t * n_elements+ele_idx)
             A_i = get_ti_A_i(ele_idx)
-
             AT_Bp = A_i.transpose() @ Bp_i_vec
             weight = 0.0
             if t == 0:
@@ -481,7 +495,7 @@ def build_rhs(rhs: ti.ext_arr()):
                 rhs[q_ic_x_idx] += AT_Bp[4]
                 rhs[q_ic_y_idx] += AT_Bp[5]
             else:
-                idx_a, idx_b, idx_c, idx_d = ti_elements[i]
+                idx_a, idx_b, idx_c, idx_d = ti_elements[ele_idx]
                 q_ia_x_idx = idx_a * 3
                 q_ia_y_idx = q_ia_x_idx + 1
                 q_ia_z_idx = q_ia_x_idx + 2
@@ -639,7 +653,7 @@ def compute_local_step_energy():
 if __name__ == "__main__":
     # print("Main starts")
     frame_counter = 0
-    rhs_np = np.zeros(n_vertices * 2, dtype=np.float64)
+    rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
     if dim == 2:
         ti_elements.from_numpy(mesh.faces)
     else:
@@ -677,6 +691,11 @@ if __name__ == "__main__":
     else:
         filename = f'./results/frame_rest.png'
         gui = ti.GUI('Model Visualizer', camera.res)
+        gui.get_event(None)
+        model.mesh.pos.from_numpy(case_info['mesh'].vertices.astype(np.float32))
+        update_mesh(model.mesh)
+        camera.from_mouse(gui)
+        scene.render()
         gui.set_image(camera.img)
         gui.show(filename)
 
@@ -729,4 +748,4 @@ if __name__ == "__main__":
             camera.from_mouse(gui)
             scene.render()
             gui.set_image(camera.img)
-            gui.show()
+            gui.show(filename)
