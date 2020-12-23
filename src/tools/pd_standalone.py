@@ -17,7 +17,7 @@ from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh
 
 real = ti.f64
 
-ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
+# ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
 
 # Mesh load and test case selection:
 test_case = 1002
