@@ -58,10 +58,12 @@ def draw_image(gui, file_name_path,
 
 def set_3D_scene(scene, camera, model, case_info):
     amb_light = t3.AmbientLight(0.5)
-    dir_light = t3.Light(dir=[-0.8, -0.6, -1.0])
+    dir_light = t3.Light(dir=case_info['light_dir'])
+    # pt_light = t3.PointLight(pos=[0, 0, 10])
     scene.add_camera(camera)
     scene.add_light(amb_light)
     scene.add_light(dir_light)
+    # scene.add_light(pt_light)
     boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
     model.mesh.n_faces[None] = len(boundary_triangles) * 2
     init_mesh(model.mesh, boundary_triangles)

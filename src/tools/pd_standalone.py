@@ -20,7 +20,7 @@ real = ti.f64
 # ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
 
 # Mesh load and test case selection:
-test_case = 1002
+test_case = 1001
 case_info = read(int(test_case))
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -50,7 +50,7 @@ solver_max_iteration = 10
 solver_stop_residual = 0.0001
 # external force -- counter-clock wise
 exf_angle = -45.0
-exf_mag = 600
+exf_mag = 6
 ti_ex_force = ti.Vector.field(dim, real, 1)
 
 
@@ -79,23 +79,23 @@ ti_lhs_matrix = ti.field(real, shape=(n_vertices * dim, n_vertices * dim))
 ti_phi = ti.field(real, n_elements)
 ti_weight_strain = ti.field(real, n_elements)
 ti_weight_volume = ti.field(real, n_elements)
+#
+# camera = t3.Camera()
+# scene = t3.Scene()
+# boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
+# model = t3.Model(t3.DynamicMesh(n_faces=len(boundary_triangles) * 2,
+#                                 n_pos=case_info['mesh'].num_vertices,
+#                                 n_nrm=len(boundary_triangles) * 2))
+# set_3D_scene(scene, camera, model, case_info)
 
-camera = t3.Camera()
-scene = t3.Scene()
-boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
-model = t3.Model(t3.DynamicMesh(n_faces=len(boundary_triangles) * 2,
-                                n_pos=case_info['mesh'].num_vertices,
-                                n_nrm=len(boundary_triangles) * 2))
-set_3D_scene(scene, camera, model, case_info)
-
-# if dim == 3:
-#     camera = t3.Camera()
-#     scene = t3.Scene()
-#     boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
-#     model = t3.Model(t3.DynamicMesh(n_faces=len(boundary_triangles) * 2,
-#                                     n_pos=case_info['mesh'].num_vertices,
-#                                     n_nrm=len(boundary_triangles) * 2))
-#     set_3D_scene(scene, camera, model, case_info)
+if dim == 3:
+    camera = t3.Camera()
+    scene = t3.Scene()
+    boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
+    model = t3.Model(t3.DynamicMesh(n_faces=len(boundary_triangles) * 2,
+                                    n_pos=case_info['mesh'].num_vertices,
+                                    n_nrm=len(boundary_triangles) * 2))
+    set_3D_scene(scene, camera, model, case_info)
 
 
 def set_exforce(angle, mag):
@@ -105,7 +105,7 @@ def set_exforce(angle, mag):
     if dim == 2:
         ti_ex_force[0] = ti.Vector([x, y])
     else:
-        ti_ex_force[0] = ti.Vector([x, y, 0.0])
+        ti_ex_force[0] = ti.Vector([0.0, 0.0, 60.0])
 
 
 @ti.func
@@ -703,7 +703,7 @@ if __name__ == "__main__":
     sim_t = 0.0
     plot_array = []
 
-    while frame_counter < 250:
+    while frame_counter < 1000:
         build_sn()
         # Warm up:
         warm_up()

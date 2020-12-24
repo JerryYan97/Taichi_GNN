@@ -111,6 +111,9 @@ def read(testcase):
     elif testcase == 1001:
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/box3D_v518_t2112.msh")
         dirichlet_list = []
+        for i in range(mesh.num_vertices):
+            if mesh.vertices[i][2] == mesh.bbox[0][2]:
+                dirichlet_list.append(i)
         dirichlet = np.array(dirichlet_list)
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
@@ -122,6 +125,7 @@ def read(testcase):
         case_info['mesh_offset'] = mesh_offset
         case_info['boundary'] = find_boundary(mesh.elements)
         case_info['init_transformation'] = t3.transform(t3.rotateY(45.0), [-0.2, -1.1, -2.0])
+        case_info['light_dir'] = [-0.2, -0.6, 0.0]
         return case_info
     elif testcase == 1002:
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/tet.msh")
@@ -139,6 +143,25 @@ def read(testcase):
         case_info['mesh_offset'] = mesh_offset
         case_info['boundary'] = find_boundary(mesh.elements)
         case_info['init_transformation'] = t3.transform(t3.rotateY(0.0), [0.0, 0.0, 0.0])
+        case_info['light_dir'] = [-0.8, -0.6, -1.0]
+        return case_info
+    elif testcase == 1003:
+        mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/bunny.msh")
+        dirichlet_list = [0, 1, 2]
+        dirichlet = np.array(dirichlet_list)
+        mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
+        mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
+
+        print("mesh elements:", mesh.elements)
+
+        case_info['mesh'] = mesh
+        case_info['dim'] = 3
+        case_info['dirichlet'] = dirichlet
+        case_info['mesh_scale'] = mesh_scale
+        case_info['mesh_offset'] = mesh_offset
+        case_info['boundary'] = find_boundary(mesh.elements)
+        case_info['init_transformation'] = t3.transform(t3.rotateY(0.0), [0.0, 0.0, 0.0])
+        case_info['light_dir'] = [-0.8, -0.6, -1.0]
         return case_info
     else:
         raise Exception("Invalid testcase selection.")
