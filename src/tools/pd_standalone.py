@@ -17,8 +17,6 @@ from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh
 
 real = ti.f64
 
-# ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
-
 # Mesh load and test case selection:
 test_case = 1001
 case_info = read(int(test_case))
@@ -38,8 +36,6 @@ n_vertices = mesh.num_vertices
 
 # Material settings:
 rho = 100
-# rho = 1000
-# E, nu = 1e4, 0.4  # Young's modulus and Poisson's ratio
 E, nu = 1e4, 0.4  # Young's modulus and Poisson's ratio
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
 
@@ -79,14 +75,7 @@ ti_lhs_matrix = ti.field(real, shape=(n_vertices * dim, n_vertices * dim))
 ti_phi = ti.field(real, n_elements)
 ti_weight_strain = ti.field(real, n_elements)
 ti_weight_volume = ti.field(real, n_elements)
-#
-# camera = t3.Camera()
-# scene = t3.Scene()
-# boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
-# model = t3.Model(t3.DynamicMesh(n_faces=len(boundary_triangles) * 2,
-#                                 n_pos=case_info['mesh'].num_vertices,
-#                                 n_nrm=len(boundary_triangles) * 2))
-# set_3D_scene(scene, camera, model, case_info)
+
 
 if dim == 3:
     camera = t3.Camera()
@@ -167,12 +156,6 @@ def get_ti_A_i(ele_idx):
 
 
 @ti.func
-def fill_ti_A_i(ele_idx):
-    for row in range(dim * dim):
-        for col in range(dim * (dim + 1)):
-            ti_A_i[row, col] = ti_A[ele_idx, row, col]
-
-@ti.func
 def compute_Dm(i):
     if ti.static(dim == 2):
         ia, ib, ic = ti_elements[i]
@@ -222,7 +205,7 @@ def fill_idx_vec(ele_idx):
 @ti.kernel
 def precomputation():
     dimp = dim+1
-    print("Precomputation starts")
+    # print("Precomputation starts")
     for e_it in range(n_elements):
         if ti.static(dim == 2):
             ia, ib, ic = ti_elements[e_it]
@@ -235,11 +218,11 @@ def precomputation():
             ti_mass[idx_b] += ti_volume[e_it] / dimp * rho
             ti_mass[idx_c] += ti_volume[e_it] / dimp * rho
             ti_mass[idx_d] += ti_volume[e_it] / dimp * rho
-            print("ti_elements[e_it]:\n", ti_elements[e_it])
+            # print("ti_elements[e_it]:\n", ti_elements[e_it])
 
     # Construct A_i matrix for every element / Build A for all the constraints:
     # Strain constraints and area constraints
-    print("A init starts")
+    # print("A init starts")
     for i in range(n_elements):
         for t in ti.static(range(2)):
             if ti.static(dim == 2):
@@ -326,17 +309,10 @@ def precomputation():
                             weight = ti_weight_strain[ele_idx]
                         else:
                             weight = ti_weight_volume[ele_idx]
-                        if lhs_row_idx == 0 and lhs_col_idx == 0:
-                            print("original ti_lhs_mat[0, 0]:", ti_lhs_matrix[lhs_row_idx, lhs_col_idx])
-                            print("Added value:", ti_A[ele_idx, idx, A_row_idx] *
-                                                                    ti_A[ele_idx, idx, A_col_idx] * weight)
-                            print("After added:", ti_lhs_matrix[lhs_row_idx, lhs_col_idx] +
-                                                  ti_A[ele_idx, idx, A_row_idx] *
-                                                  ti_A[ele_idx, idx, A_col_idx] * weight)
                         ti_lhs_matrix[lhs_row_idx, lhs_col_idx] += (ti_A[ele_idx, idx, A_row_idx] *
                                                                     ti_A[ele_idx, idx, A_col_idx] * weight)
 
-    print("Position constraints starts")
+    # print("Position constraints starts")
     # Add positional constraints to the lhs matrix
     for i in range(n_vertices):
         if ti_boundary_labels[i] == 1:
@@ -348,7 +324,7 @@ def precomputation():
                 q_i_z_idx = i * dim + 2
                 ti_lhs_matrix[q_i_z_idx, q_i_z_idx] += m_weight_positional
 
-    print("lhs matrix starts")
+    # print("lhs matrix starts")
     # Construct lhs matrix without constraints
     for i in range(n_vertices):
         for d in ti.static(range(dim)):
@@ -651,7 +627,13 @@ def compute_local_step_energy():
 
 
 if __name__ == "__main__":
-    # print("Main starts")
+    os.makedirs("results", exist_ok=True)
+    for root, dirs, files in os.walk("results/"):
+        for name in files:
+            os.remove(os.path.join(root, name))
+
+    video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
+
     frame_counter = 0
     rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
     if dim == 2:
@@ -662,17 +644,12 @@ if __name__ == "__main__":
     ti_pos_init.from_numpy(mesh.vertices)
 
     # Init Taichi global variables
-    # print("Init Taichi global variables")
     ti_boundary_labels.fill(0)
     ti_vel.fill(0)
-    # print("ti_vel.fill(0)")
     ti_mass.fill(0)
-    # print("ti_mass.fill(0)")
 
     set_exforce(exf_angle, exf_mag)
-    print("set_exforce(exf_angle, exf_mag)")
     init_mesh_DmInv(dirichlet, len(dirichlet))
-    print("precomputation() called")
     precomputation()
     lhs_matrix_np = ti_lhs_matrix.to_numpy()
     s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
@@ -689,15 +666,16 @@ if __name__ == "__main__":
         filename = f'./results/frame_rest.png'
         draw_image(gui, filename, ti_pos.to_numpy(), mesh_offset, mesh_scale, ti_elements.to_numpy(), n_elements)
     else:
-        filename = f'./results/frame_rest.png'
+        # filename = f'./results/frame_rest.png'
         gui = ti.GUI('Model Visualizer', camera.res)
         gui.get_event(None)
         model.mesh.pos.from_numpy(case_info['mesh'].vertices.astype(np.float32))
         update_mesh(model.mesh)
         camera.from_mouse(gui)
         scene.render()
+        video_manager.write_frame(camera.img)
         gui.set_image(camera.img)
-        gui.show(filename)
+        gui.show()
 
     frame_counter = 0
     sim_t = 0.0
@@ -743,10 +721,12 @@ if __name__ == "__main__":
             draw_image(gui, filename, ti_pos.to_numpy(), mesh_offset, mesh_scale, ti_elements.to_numpy(), n_elements)
         else:
             gui.get_event(None)
-            # model.mesh.pos.from_numpy(case_info['mesh'].vertices.astype(np.float32))
             model.mesh.pos.from_numpy(ti_pos.to_numpy())
             update_mesh(model.mesh)
             camera.from_mouse(gui)
             scene.render()
+            video_manager.write_frame(camera.img)
             gui.set_image(camera.img)
-            gui.show(filename)
+            gui.show()
+
+    video_manager.make_video(gif=True, mp4=True)
