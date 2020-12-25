@@ -18,7 +18,7 @@ from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1001
+test_case = 1003
 case_info = read(int(test_case))
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -42,7 +42,7 @@ mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
 # Solver settings:
 m_weight_positional = 1e20
 dt = 0.01
-solver_max_iteration = 10
+solver_max_iteration = 50
 solver_stop_residual = 0.0001
 # external force -- counter-clock wise
 exf_angle = -45.0
@@ -94,7 +94,7 @@ def set_exforce(angle, mag):
     if dim == 2:
         ti_ex_force[0] = ti.Vector([x, y])
     else:
-        ti_ex_force[0] = ti.Vector([0.0, 0.0, 60.0])
+        ti_ex_force[0] = ti.Vector([0.0, 0.0, 0.1])
 
 
 @ti.func
@@ -712,6 +712,9 @@ if __name__ == "__main__":
             #     if (global_step_energy - last_record_energy) / global_step_energy > 0.01:
             #         print("Large Error: GLOBAL")
             # last_record_energy = global_step_energy
+            residual = check_residual()
+            if residual < solver_stop_residual:
+                break
 
         # Update velocity and positions
         update_velocity_pos()

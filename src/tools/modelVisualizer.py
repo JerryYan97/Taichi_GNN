@@ -15,7 +15,7 @@ if __name__ == "__main__":
         for name in files:
             os.remove(os.path.join(root, name))
 
-    case_info = read(1004)
+    case_info = read(1003)
     n_particles = case_info['mesh'].num_vertices
     n_elements = 0
     if case_info['dim'] == 2:

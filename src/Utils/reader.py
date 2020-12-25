@@ -101,7 +101,11 @@ def read(testcase):
         return case_info
     elif testcase == 1003:
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/bunny3K.msh")
-        dirichlet_list = [0, 1, 2]
+        dirichlet_list = []
+        for i in range(mesh.num_vertices):
+            if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.1:
+                dirichlet_list.append(i)
+
         dirichlet = np.array(dirichlet_list)
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
@@ -114,7 +118,7 @@ def read(testcase):
         case_info['mesh_scale'] = mesh_scale
         case_info['mesh_offset'] = mesh_offset
         case_info['boundary'] = find_boundary(mesh.elements)
-        case_info['init_transformation'] = t3.transform(t3.rotateY(0.0), [0.0, 0.0, 0.0])
+        case_info['init_transformation'] = t3.transform(t3.rotateY(0.0), [-0.5, -1.0, 0.0])
         case_info['light_dir'] = [-0.8, -0.6, -1.0]
         return case_info
     elif testcase == 1004:
