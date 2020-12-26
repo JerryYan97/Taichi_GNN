@@ -10,20 +10,20 @@ import sys
 
 import numpy as np
 import taichi as ti
-ti.init(arch=ti.cpu, default_fp=ti.f64, debug=False)
 import taichi_three as t3
-from scipy import sparse
-from scipy.sparse.linalg import factorized
-
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
 from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh
+from scipy import sparse
+from scipy.sparse.linalg import factorized
 from Utils.math_tools import svd
+
+ti.init(arch=ti.cpu, default_fp=ti.f64, debug=False)
 
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1
+test_case = 1003
 case_info = read(int(test_case))
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -50,7 +50,7 @@ dt = 0.01
 # Backup settings:
 # Bar: 10
 # Bunny: 50
-solver_max_iteration = 100
+solver_max_iteration = 50
 solver_stop_residual = 0.0001
 # external force -- counter-clock wise
 exf_angle = -45.0
@@ -398,9 +398,9 @@ def local_solve_build_bp_for_all_constraints():
         # F_i = ti.Matrix([[0.469670097179, -0.530328267640], [0.530329888611, 1.530328253430]])
         ti_F[i] = F_i
         # Use current F_i construct current 'B * p' or Ri
-        U, sigma, V = ti.svd(F_i, real)
-        # U, sigma, V = svd(F_i)
-        print("F_i:\n", F_i, "U:\n", U, "Sigma:\n", sigma, "V:\n", V)
+        # U, sigma, V = ti.svd(F_i, real)
+        U, sigma, V = svd(F_i)
+        # print("F_i:\n", F_i, "U:\n", U, "Sigma:\n", sigma, "V:\n", V)
         ti_Bp[i] = U @ V.transpose()
 
         # Construct volume preservation constraints:
@@ -624,6 +624,13 @@ def local_compute_T2_energy() -> real:
     return local_T2_energy
 
 
+@ti.kernel
+def svd_2d():
+    mat2x2 = ti.Matrix.rows([[0.469670097179, -0.530328267640], [0.530329888611, 1.530328253430]])
+    U, Sigma, V = svd(mat2x2)
+    print("\nmat2x2:", mat2x2, "\nU:\n", U, "\nSigma:\n", Sigma, "\nV:\n", V)
+
+
 def compute_global_step_energy():
     # Calculate global T2 energy
     global_T2_energy = global_compute_T2_energy()
@@ -640,6 +647,7 @@ def compute_local_step_energy():
 
 
 if __name__ == "__main__":
+    # svd_2d()
     os.makedirs("results", exist_ok=True)
     for root, dirs, files in os.walk("results/"):
         for name in files:
