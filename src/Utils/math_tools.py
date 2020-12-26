@@ -77,9 +77,6 @@ def project_pd(F):
         return ti.Matrix([[out_0, out_1, out_2, out_3, out_4, out_5, out_6, out_7, out_8, out_9, out_10, out_11], [out_12, out_13, out_14, out_15, out_16, out_17, out_18, out_19, out_20, out_21, out_22, out_23], [out_24, out_25, out_26, out_27, out_28, out_29, out_30, out_31, out_32, out_33, out_34, out_35], [out_36, out_37, out_38, out_39, out_40, out_41, out_42, out_43, out_44, out_45, out_46, out_47], [out_48, out_49, out_50, out_51, out_52, out_53, out_54, out_55, out_56, out_57, out_58, out_59], [out_60, out_61, out_62, out_63, out_64, out_65, out_66, out_67, out_68, out_69, out_70, out_71], [out_72, out_73, out_74, out_75, out_76, out_77, out_78, out_79, out_80, out_81, out_82, out_83], [out_84, out_85, out_86, out_87, out_88, out_89, out_90, out_91, out_92, out_93, out_94, out_95], [out_96, out_97, out_98, out_99, out_100, out_101, out_102, out_103, out_104, out_105, out_106, out_107], [out_108, out_109, out_110, out_111, out_112, out_113, out_114, out_115, out_116, out_117, out_118, out_119], [out_120, out_121, out_122, out_123, out_124, out_125, out_126, out_127, out_128, out_129, out_130, out_131], [out_132, out_133, out_134, out_135, out_136, out_137, out_138, out_139, out_140, out_141, out_142, out_143]])
 
 
-
-
-
 @ti.func
 def project_pd64(F, diagonal):
     F00, F01, F02, F03, F04, F05 = F(0, 0), F(0, 1), F(0, 2), F(0, 3), F(0, 4), F(0, 5)
@@ -119,23 +116,23 @@ def cofactor(F):
                           [F[0, 1] * F[1, 2] - F[0, 2] * F[1, 1], F[0, 2] * F[1, 0] - F[0, 0] * F[1, 2], F[0, 0] * F[1, 1] - F[0, 1] * F[1, 0]]])
 
 
-# @ti.func
-# def svd(F):
-#     if ti.static(F.n == 2):
-#         F00, F01, F10, F11 = F[0, 0], F[0, 1], F[1, 0], F[1, 1]
-#         U00, U01, U10, U11 = 0.0, 0.0, 0.0, 0.0
-#         s00, s01, s10, s11 = 0.0, 0.0, 0.0, 0.0
-#         V00, V01, V10, V11 = 0.0, 0.0, 0.0, 0.0
-#         ti.external_func_call(func=so.svd_2,
-#                               args=(F00, F01, F10, F11),
-#                               outputs=(U00, U01, U10, U11, s00, s01, s10, s11, V00, V01, V10, V11))
-#         return ti.Matrix([[U00, U01], [U10, U11]]), ti.Matrix([[s00, s01], [s10, s11]]), ti.Matrix([[V00, V01], [V10, V11]])
-#     if ti.static(F.n == 3):
-#         F00, F01, F02, F10, F11, F12, F20, F21, F22 = F[0, 0], F[0, 1], F[0, 2], F[1, 0], F[1, 1], F[1, 2], F[2, 0], F[2, 1], F[2, 2]
-#         U00, U01, U02, U10, U11, U12, U20, U21, U22 = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-#         s00, s01, s02, s10, s11, s12, s20, s21, s22 = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-#         V00, V01, V02, V10, V11, V12, V20, V21, V22 = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-#         ti.external_func_call(func=so.svd_3,
-#                               args=(F00, F01, F02, F10, F11, F12, F20, F21, F22),
-#                               outputs=(U00, U01, U02, U10, U11, U12, U20, U21, U22, s00, s01, s02, s10, s11, s12, s20, s21, s22, V00, V01, V02, V10, V11, V12, V20, V21, V22))
-#         return ti.Matrix([[U00, U01, U02], [U10, U11, U12], [U20, U21, U22]]), ti.Matrix([[s00, s01, s02], [s10, s11, s12], [s20, s21, s22]]), ti.Matrix([[V00, V01, V02], [V10, V11, V12], [V20, V21, V22]])
+@ti.func
+def svd(F):
+    if ti.static(F.n == 2):
+        F00, F01, F10, F11 = F[0, 0], F[0, 1], F[1, 0], F[1, 1]
+        U00, U01, U10, U11 = 0.0, 0.0, 0.0, 0.0
+        s00, s01, s10, s11 = 0.0, 0.0, 0.0, 0.0
+        V00, V01, V10, V11 = 0.0, 0.0, 0.0, 0.0
+        ti.external_func_call(func=so.svd_2,
+                              args=(F00, F01, F10, F11),
+                              outputs=(U00, U01, U10, U11, s00, s01, s10, s11, V00, V01, V10, V11))
+        return ti.Matrix([[U00, U01], [U10, U11]]), ti.Matrix([[s00, s01], [s10, s11]]), ti.Matrix([[V00, V01], [V10, V11]])
+    if ti.static(F.n == 3):
+        F00, F01, F02, F10, F11, F12, F20, F21, F22 = F[0, 0], F[0, 1], F[0, 2], F[1, 0], F[1, 1], F[1, 2], F[2, 0], F[2, 1], F[2, 2]
+        U00, U01, U02, U10, U11, U12, U20, U21, U22 = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        s00, s01, s02, s10, s11, s12, s20, s21, s22 = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        V00, V01, V02, V10, V11, V12, V20, V21, V22 = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        ti.external_func_call(func=so.svd_3,
+                              args=(F00, F01, F02, F10, F11, F12, F20, F21, F22),
+                              outputs=(U00, U01, U02, U10, U11, U12, U20, U21, U22, s00, s01, s02, s10, s11, s12, s20, s21, s22, V00, V01, V02, V10, V11, V12, V20, V21, V22))
+        return ti.Matrix([[U00, U01, U02], [U10, U11, U12], [U20, U21, U22]]), ti.Matrix([[s00, s01, s02], [s10, s11, s12], [s20, s21, s22]]), ti.Matrix([[V00, V01, V02], [V10, V11, V12], [V20, V21, V22]])

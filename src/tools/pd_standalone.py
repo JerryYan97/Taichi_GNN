@@ -1,12 +1,16 @@
 # TODO:
 # 1. A matrix complication time improvement. It requires to use field to replace matrix. However, it would loss some
 # handy funcs like transpose, product, etc.
-
+# 2. SVD change
+# 3. Speed optimization: Dragon and bunny are to slow
+# 4. High resolution model problems: High resolution Dragon model will break this simulator
 import os
 import sys
 
+
 import numpy as np
 import taichi as ti
+ti.init(arch=ti.cpu, default_fp=ti.f64, debug=False)
 import taichi_three as t3
 from scipy import sparse
 from scipy.sparse.linalg import factorized
@@ -14,11 +18,12 @@ from scipy.sparse.linalg import factorized
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
 from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh
+from Utils.math_tools import svd
 
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1004
+test_case = 1
 case_info = read(int(test_case))
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -390,9 +395,12 @@ def local_solve_build_bp_for_all_constraints():
         # Construct strain constraints:
         # Construct Current F_i:
         F_i = compute_Fi(i)
+        # F_i = ti.Matrix([[0.469670097179, -0.530328267640], [0.530329888611, 1.530328253430]])
         ti_F[i] = F_i
         # Use current F_i construct current 'B * p' or Ri
         U, sigma, V = ti.svd(F_i, real)
+        # U, sigma, V = svd(F_i)
+        print("F_i:\n", F_i, "U:\n", U, "Sigma:\n", sigma, "V:\n", V)
         ti_Bp[i] = U @ V.transpose()
 
         # Construct volume preservation constraints:
