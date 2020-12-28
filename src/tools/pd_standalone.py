@@ -6,14 +6,12 @@
 # 4. High resolution model problems: High resolution Dragon model will break this simulator
 import os
 import sys
-
-
 import numpy as np
 import taichi as ti
 import taichi_three as t3
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
-from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh
+from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh, get_force_field
 from scipy import sparse
 from scipy.sparse.linalg import factorized
 from Utils.math_tools import svd
@@ -23,7 +21,7 @@ ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1003
+test_case = 1001
 case_info = read(int(test_case))
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -53,8 +51,6 @@ dt = 0.01
 solver_max_iteration = 50
 solver_stop_residual = 0.0001
 # external force -- counter-clock wise
-exf_angle = -45.0
-exf_mag = 6
 ti_ex_force = ti.Vector.field(dim, real, 1)
 
 
@@ -70,13 +66,10 @@ ti_vel = ti.Vector.field(dim, real, n_vertices)
 ti_elements = ti.Vector.field(dim + 1, int, n_elements)  # ids of three vertices of each face
 ti_Dm_inv = ti.Matrix.field(dim, dim, real, n_elements)  # The inverse of the init elements -- Dm
 ti_F = ti.Matrix.field(dim, dim, real, n_elements)
-# ti_A = ti.Matrix.field(dim * dim, dim * (dim + 1), real, n_elements * 2)
 ti_A = ti.field(real, (n_elements * 2, dim * dim, dim * (dim + 1)))
 ti_A_i = ti.field(real, shape=(dim * dim, dim * (dim + 1)))
-# A_i = ti.field(real, shape=(dim * dim, dim * (dim + 1)))
 ti_q_idx_vec = ti.field(real, (n_elements, dim * (dim + 1)))
 ti_Bp = ti.Matrix.field(dim, dim, real, n_elements * 2)
-# ti_rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
 ti_Sn = ti.field(real, n_vertices * dim)
 ti_lhs_matrix = ti.field(real, shape=(n_vertices * dim, n_vertices * dim))
 # potential energy of each element(face) for linear coratated elasticity material.
@@ -94,17 +87,21 @@ if dim == 3:
                                     n_nrm=len(boundary_triangles) * 2))
     set_3D_scene(scene, camera, model, case_info)
 
+
 # Backup Settings:
 # Bunny: ti.Vector([0.0, 0.0, 0.1])
 # Dragon:
-def set_exforce(angle, mag):
-    # Dim 3 needs more considerations:
-    x = float(mag) * ti.cos(3.1415926 / 180.0 * angle)
-    y = float(mag) * ti.sin(3.1415926 / 180.0 * angle)
+def set_exforce():
     if dim == 2:
-        ti_ex_force[0] = ti.Vector([x, y])
+        exf_angle = -45.0
+        exf_mag = 6
+        ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle))
     else:
-        ti_ex_force[0] = ti.Vector([0.0, 0.005, 0.01])
+        exf_angle1 = 45.0
+        exf_angle2 = 45.0
+        exf_mag = 6
+        ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
+    # print("External force:", ti_ex_force)
 
 
 @ti.func
@@ -661,7 +658,7 @@ if __name__ == "__main__":
     ti_vel.fill(0)
     ti_mass.fill(0)
 
-    set_exforce(exf_angle, exf_mag)
+    set_exforce()
     init_mesh_DmInv(dirichlet, len(dirichlet))
     precomputation()
     lhs_matrix_np = ti_lhs_matrix.to_numpy()

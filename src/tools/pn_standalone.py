@@ -9,7 +9,7 @@ from Utils.neo_hookean import *
 from Utils.reader import read
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
-from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh
+from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh, get_force_field
 
 ##############################################################################
 case_info = read(1003)
@@ -17,14 +17,14 @@ mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
 mesh_offset = case_info['mesh_offset']
+dim = case_info['dim']
 
-dim = 3
 if dim == 3:
     boundary_points, boundary_edges, boundary_triangles_ = case_info['boundary']
 
 ##############################################################################
 
-ti.init(arch=ti.cpu, default_fp=ti.f64)
+ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 
 real = ti.f64
 scalar = lambda: ti.var(dt=real)
@@ -58,8 +58,6 @@ data_mat = ti.field(real, shape=(3, 20000000))
 data_sol = ti.field(real, shape=200000)
 
 # external force -- Angle: from [1, 0] -- counter-clock wise
-exf_angle = 60.0
-exf_mag = 0.02
 ex_force = ti.Vector.field(dim, real, 1)
 
 if dim == 3:
@@ -73,13 +71,15 @@ if dim == 3:
 
 
 def set_exforce():
-    x = exf_mag * ti.cos(3.1415926 / 180.0 * exf_angle)
-    y = exf_mag * ti.sin(3.1415926 / 180.0 * exf_angle)
-    ex_force[0][0], ex_force[0][1] = x, y
-    if dim == 3:
-        z = exf_mag * ti.cos(3.1415926 / 180.0 * exf_angle)
-        ex_force[0][2] = z
-    print("ex_force:", ex_force)
+    if dim == 2:
+        exf_angle = -45.0
+        exf_mag = 6
+        ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle))
+    else:
+        exf_angle1 = 45.0
+        exf_angle2 = 45.0
+        exf_mag = 0.01
+        ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
 
 
 @ti.func
@@ -334,6 +334,7 @@ if __name__ == "__main__":
         vertices.from_numpy(mesh.elements)
     compute_restT_and_m()
     if dim == 2:
+        filename = f'./results/frame_rest.png'
         gui = ti.GUI("MPM", (1024, 1024), background_color=0x112F41)
     zero.fill(0)
     set_exforce()

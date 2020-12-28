@@ -86,12 +86,31 @@ def init_mesh(mesh: ti.template(), triangles: ti.ext_arr()):
 def update_mesh(mesh: ti.template()):
     for i in range(mesh.n_faces[None] / 2):
         pos1, pos2, pos3 = mesh.pos[mesh.faces[2 * i][0, 0]], mesh.pos[mesh.faces[2 * i][1, 0]], mesh.pos[mesh.faces[2 * i][2, 0]]
-        # print("pos1 - pos2:", pos1 - pos2, "pos1 - pos3:", pos1 - pos3, "cross:", ts.cross(pos1 - pos2, pos1 - pos3).normalized())
-        # normal = ts.cross(pos1 - pos2, pos1 - pos3).normalized()
-        # print("Normal:", normal)
         normal = -ts.cross(pos1 - pos2, pos1 - pos3).normalized()
-        # # print("Normal:", normal)
         mesh.nrm[2 * i] = normal
         mesh.nrm[2 * i + 1] = -normal
 
 
+# For 2D: Angle is counter-clock wise and it uses [1, 0] direction as its start direction.
+# For 3D: It uses Spherical coordinate system with its origin at the [0, 0, 0].
+#         Angle1 will be used to determine the angle between y axis and the final direction.
+#         Angle2 will be used to determine the direction along the x-z plane with a start direction at [1, 0, 0].
+#         Angle1(Theta) should be a scalar in [0, 2 * pi). Angle2(Phi) should be a scalar in the range of [0, pi].
+def get_force_field(mag, angle1, angle2=0.0, dim=2):
+    if dim == 2:
+        x = mag * ti.cos(ts.pi / 180.0 * angle1)
+        y = mag * ti.sin(ts.pi / 180.0 * angle1)
+        return [x, y]
+    elif dim == 3:
+        if angle1 < 0.0 or angle1 > 180:
+            raise Exception("Angle1 is incorrect. Incorrect Angle1 is {}".format(angle1))
+        if angle2 < 0.0 or angle2 > 360:
+            raise Exception("Angle2 is incorrect. Incorrect Angle2 is {}".format(angle2))
+        radian1 = ts.pi / 180.0 * angle1
+        radian2 = ts.pi / 180.0 * angle2
+        x = mag * ti.sin(radian1) * ti.cos(radian2)
+        y = mag * ti.sin(radian1) * ti.sin(radian2)
+        z = mag * ti.cos(radian2)
+        return [x, y, z]
+    else:
+        raise Exception("Force field dim doesn't correct. Error dim is {}".format(dim))
