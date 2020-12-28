@@ -13,7 +13,7 @@ from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh
 import meshio
 
 ##############################################################################
-case_info = read(1003)
+case_info = read(1002)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
