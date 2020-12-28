@@ -21,7 +21,7 @@ def fixed_corotated_energy(sig: ti.template(), la, mu):
 
 
 @ti.func
-def fixed_corotated_gradient(sig: ti.template(), la, mu):
+def elasticity_gradient(sig: ti.template(), la, mu):
     if ti.static(sig.n == 2):
         sigma = ti.Matrix.zero(ti.get_runtime().default_fp, sig.n, 1)
         for i in ti.static(range(sig.n)):
@@ -44,7 +44,7 @@ def fixed_corotated_gradient(sig: ti.template(), la, mu):
 
 
 @ti.func
-def fixed_corotated_hessian(sig: ti.template(), la, mu):
+def elasticity_hessian(sig: ti.template(), la, mu):
     if ti.static(sig.n == 2):
         sigma = ti.Matrix.zero(ti.get_runtime().default_fp, sig.n, 1)
         for i in ti.static(range(sig.n)):
@@ -72,171 +72,21 @@ def fixed_corotated_hessian(sig: ti.template(), la, mu):
 
 
 @ti.func
-def neo_hookean_energy(sigma, la, mu):
-    sigmamProdSum = sigma[0]*sigma[0] + sigma[1]*sigma[1] 
-    sigmaProd = sigma[0] * sigma[1]  # Determinant of F (J)
-    return 0.5*mu * (sigmamProdSum-2) - mu*ti.log(sigmaProd) + 0.5*la*(ti.log(sigmaProd)*ti.log(sigmaProd))
-
-
-@ti.func
-def neo_hookean_gradient(sigma, la, mu):
-    log_sigmaProd = ti.log(sigma[0] * sigma[1])
-    return ti.Vector([mu * (sigma[0] - 1.0/sigma[0]) + la * (1.0/sigma[0]) * log_sigmaProd,
-                      mu * (sigma[1] - 1.0/sigma[1]) + la * (1.0/sigma[1]) * log_sigmaProd])
-
-
-# MODIFIED -- NO ERROR
-@ti.func
-def neo_hookean_hessian(sigma, la, mu):
-    sigmaProd = sigma[0] * sigma[1]
-    sigmasquare = ti.Vector([sigma[0]*sigma[0], sigma[1]*sigma[1]])
-    return ti.Matrix([[mu * (1.0 + 1.0/sigmasquare[0]) - la * (1.0 / sigmasquare[0]) * (ti.log(sigmaProd)-1.0),
-                       la * (1.0/sigmaProd)],
-                      [la * (1.0/sigmaProd),
-                       mu * (1.0 + 1.0/sigmasquare[1]) - la * (1.0 / sigmasquare[1]) * (ti.log(sigmaProd)-1.0)]])
-
-# @ti.func
-# def neo_hookean_hessian(sigma, la, mu):
-#     sigmaProd = sigma[0] * sigma[1]
-#     log_sigmaProd = ti.log(sigmaProd)
-#     inv2_0 = 1.0 / (sigma[0] * sigma[0])
-#     inv2_1 = 1.0 / (sigma[1] * sigma[1])
-#     return ti.Matrix([[mu * (1.0 + inv2_0) - la * inv2_0 * (log_sigmaProd - 1.0),
-#                        la / sigmaProd],
-#                       [la / sigmaProd,
-#                        mu * (1.0 + inv2_1) - la * inv2_1 * (log_sigmaProd - 1.0)]])
-
-
-@ti.func
 def fixed_corotated_first_piola_kirchoff_stress(F, la, mu):
     J = F.determinant()
     JFinvT = cofactor(F)
-    # U, sig, V = svd(F)
-    U, sig, V = ti.svd(F)
+    U, sig, V = svd(F)
     R = U @ V.transpose()
     return 2 * mu * (F - R) + la * (J - 1) * JFinvT
 
 
 @ti.func
-def neo_hookean_first_piola_kirchoff_stress(F, la, mu):
-    J = F.determinant()
-    FinvT = F.inverse().transpose()
-    return mu * (F - mu * FinvT) + la * ti.log(J) * FinvT
-
-
-@ti.func
-def neo_hookean_first_piola_kirchoff_stress_derivative(F, la, mu):
-    U, sig, V = ti.svd(F)
-    sigma = ti.Vector([sig[0, 0], sig[1, 1]])
-    dE_div_dsigma = neo_hookean_gradient(sigma, la, mu)
-    d2E_div_dsigma2 = make_pd(neo_hookean_hessian(sigma, la, mu))
-
-    sigmaProd = sigma[0] * sigma[1]  # ERROR: sigmaProd = sig[0] * sig[1]
-    # print("sigmaProd:", sigmaProd)
-    leftCoef = (mu + (mu - la * ti.log(sigmaProd)) / sigmaProd) / 2.0
-    rightCoef = dE_div_dsigma[0] + dE_div_dsigma[1]
-    sum_sigma = ti.max(sigma[0] + sigma[1], 0.000001)
-    rightCoef /= (2.0 * sum_sigma)
-    B = make_pd(ti.Matrix([[leftCoef + rightCoef, leftCoef - rightCoef],
-                           [leftCoef - rightCoef, leftCoef + rightCoef]]))
-
-    M = ti.Matrix([[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
-    dPdF = ti.Matrix([[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
-    M[0, 0] = d2E_div_dsigma2[0, 0]
-    M[0, 3] = d2E_div_dsigma2[0, 1]
-    M[1, 1] = B[0, 0]
-    M[1, 2] = B[0, 1]
-    M[2, 1] = B[1, 0]
-    M[2, 2] = B[1, 1]
-    M[3, 0] = d2E_div_dsigma2[1, 0]
-    M[3, 3] = d2E_div_dsigma2[1, 1]
-    for j in ti.static(range(2)):
-        for i in ti.static(range(2)):
-            for s in ti.static(range(2)):
-                for r in ti.static(range(2)):
-                    ij, rs = ti.static(j * 2 + i, s * 2 + r)
-                    dPdF[ij, rs] = M[0, 0] * U[i, 0] * V[j, 0] * U[r, 0] * V[s, 0] + M[0, 3] * U[i, 0] * V[j, 0] * U[
-                        r, 1] * V[s, 1] + M[1, 1] * U[i, 0] * V[j, 1] * U[r, 0] * V[s, 1] + M[1, 2] * U[i, 0] * V[
-                                       j, 1] * U[r, 1] * V[s, 0] + M[2, 1] * U[i, 1] * V[j, 0] * U[r, 0] * V[s, 1] + M[
-                                       2, 2] * U[i, 1] * V[j, 0] * U[r, 1] * V[s, 0] + M[3, 0] * U[i, 1] * V[j, 1] * U[
-                                       r, 0] * V[s, 0] + M[3, 3] * U[i, 1] * V[j, 1] * U[r, 1] * V[s, 1]
-    return dPdF
-
-    # M = ti.Matrix([[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
-    # dPdF = ti.Matrix([[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
-    # M[0, 0] = d2E_div_dsigma2[0, 0]
-    # M[0, 3] = d2E_div_dsigma2[0, 1]
-    # M[1, 1] = B[0, 0]
-    # M[1, 2] = B[0, 1]
-    # M[2, 1] = B[1, 0]
-    # M[2, 2] = B[1, 1]
-    # M[3, 0] = d2E_div_dsigma2[1, 0]
-    # M[3, 3] = d2E_div_dsigma2[1, 1]
-    #
-    # for j in ti.static(range(2)):
-    #     for i in ti.static(range(2)):
-    #         for s in ti.static(range(2)):
-    #             for r in ti.static(range(2)):
-    #                 ij, rs = ti.static(j * 2 + i, s * 2 + r)
-    #                 dPdF[ij, rs] = M[0, 0] * U[i, 0] * V[j, 0] * U[r, 0] * V[s, 0] + \
-    #                                M[0, 3] * U[i, 0] * V[j, 0] * U[r, 1] * V[s, 1] + \
-    #                                M[1, 1] * U[i, 0] * V[j, 1] * U[r, 0] * V[s, 1] + \
-    #                                M[1, 2] * U[i, 0] * V[j, 1] * U[r, 1] * V[s, 0] + \
-    #                                M[2, 1] * U[i, 1] * V[j, 0] * U[r, 0] * V[s, 1] + \
-    #                                M[2, 2] * U[i, 1] * V[j, 0] * U[r, 1] * V[s, 0] + \
-    #                                M[3, 0] * U[i, 1] * V[j, 1] * U[r, 0] * V[s, 0] + \
-    #                                M[3, 3] * U[i, 1] * V[j, 1] * U[r, 1] * V[s, 1]
-    # return dPdF
-
-
-# @ti.func
-# def fixed_corotated_residual(F):
-#     U, sig, V = ti.svd(F)
-#     sigma = ti.Vector([sig[0, 0], sig[1, 1]])
-#     dE_div_dsigma = fixed_corotated_gradient(sigma, la, mu)
-#     return ti.Vector(dE_div_dsigma[0], dE_div_dsigma[1])
-
-
-@ti.func
-def fixed_corotated_first_piola_kirchoff_stress_derivative(F, la, mu):
-    U, sig, V = ti.svd(F)
-    sigma = ti.Vector([sig[0, 0], sig[1, 1]])
-    dE_div_dsigma = fixed_corotated_gradient(sigma, la, mu)
-    d2E_div_dsigma2 = make_pd(fixed_corotated_hessian(sigma, la, mu))
-
-    leftCoef = mu - la / 2 * (sigma[0] * sigma[1] - 1)
-    rightCoef = dE_div_dsigma[0] + dE_div_dsigma[1]
-    sum_sigma = ti.max(sigma[0] + sigma[1], 0.000001)
-    rightCoef /= (2 * sum_sigma)
-    B = make_pd(ti.Matrix([[leftCoef + rightCoef, leftCoef - rightCoef], [leftCoef - rightCoef, leftCoef + rightCoef]]))
-
-    M = ti.Matrix([[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
-    dPdF = ti.Matrix([[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
-    M[0, 0] = d2E_div_dsigma2[0, 0]
-    M[0, 3] = d2E_div_dsigma2[0, 1]
-    M[1, 1] = B[0, 0]
-    M[1, 2] = B[0, 1]
-    M[2, 1] = B[1, 0]
-    M[2, 2] = B[1, 1]
-    M[3, 0] = d2E_div_dsigma2[1, 0]
-    M[3, 3] = d2E_div_dsigma2[1, 1]
-    for j in ti.static(range(2)):
-        for i in ti.static(range(2)):
-            for s in ti.static(range(2)):
-                for r in ti.static(range(2)):
-                    ij, rs = ti.static(j * 2 + i, s * 2 + r)
-                    dPdF[ij, rs] = M[0, 0] * U[i, 0] * V[j, 0] * U[r, 0] * V[s, 0] + M[0, 3] * U[i, 0] * V[j, 0] * U[r, 1] * V[s, 1] + M[1, 1] * U[i, 0] * V[j, 1] * U[r, 0] * V[s, 1] + M[1, 2] * U[i, 0] * V[j, 1] * U[r, 1] * V[s, 0] + M[2, 1] * U[i, 1] * V[j, 0] * U[r, 0] * V[s, 1] + M[2, 2] * U[i, 1] * V[j, 0] * U[r, 1] * V[s, 0] + M[3, 0] * U[i, 1] * V[j, 1] * U[r, 0] * V[s, 0] + M[3, 3] * U[i, 1] * V[j, 1] * U[r, 1] * V[s, 1]
-    return dPdF
-
-
-@ti.func
 def fixed_corotated_first_piola_kirchoff_stress_derivative(F, la, mu):
     if ti.static(F.n == 2):
-        # U, sig, V = svd(F)
-        U, sig, V = ti.svd(F)
+        U, sig, V = svd(F)
         sigma = ti.Vector([sig[0, 0], sig[1, 1]])
-        dE_div_dsigma = fixed_corotated_gradient(sigma, la, mu)
-        d2E_div_dsigma2 = project_pd(fixed_corotated_hessian(sigma, la, mu))
+        dE_div_dsigma = elasticity_gradient(sigma, la, mu)
+        d2E_div_dsigma2 = project_pd(elasticity_hessian(sigma, la, mu))
 
         leftCoef = mu - la / 2 * (sigma[0] * sigma[1] - 1)
         rightCoef = dE_div_dsigma[0] + dE_div_dsigma[1]
@@ -263,12 +113,11 @@ def fixed_corotated_first_piola_kirchoff_stress_derivative(F, la, mu):
                         dPdF[ij, rs] = M[0, 0] * U[i, 0] * V[j, 0] * U[r, 0] * V[s, 0] + M[0, 3] * U[i, 0] * V[j, 0] * U[r, 1] * V[s, 1] + M[1, 1] * U[i, 0] * V[j, 1] * U[r, 0] * V[s, 1] + M[1, 2] * U[i, 0] * V[j, 1] * U[r, 1] * V[s, 0] + M[2, 1] * U[i, 1] * V[j, 0] * U[r, 0] * V[s, 1] + M[2, 2] * U[i, 1] * V[j, 0] * U[r, 1] * V[s, 0] + M[3, 0] * U[i, 1] * V[j, 1] * U[r, 0] * V[s, 0] + M[3, 3] * U[i, 1] * V[j, 1] * U[r, 1] * V[s, 1]
         return dPdF
     else:
-        # U, sig, V = svd(F)
-        U, sig, V = ti.svd(F)
+        U, sig, V = svd(F)
         sigma = ti.Vector([sig[0, 0], sig[1, 1], sig[2, 2]])
         sigmaProd = sigma[0] * sigma[1] * sigma[2]
-        dE_div_dsigma = fixed_corotated_gradient(sig, la, mu)
-        d2E_div_dsigma2 = project_pd(fixed_corotated_hessian(sig, la, mu))
+        dE_div_dsigma = elasticity_gradient(sig, la, mu)
+        d2E_div_dsigma2 = project_pd(elasticity_hessian(sig, la, mu))
 
         leftCoef = mu - la / 2 * sigma[2] * (sigmaProd - 1)
         rightCoef = dE_div_dsigma[0] + dE_div_dsigma[1]
