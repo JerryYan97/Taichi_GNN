@@ -10,10 +10,9 @@ from Utils.reader import read
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
 from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh
-import meshio
 
 ##############################################################################
-case_info = read(1002)
+case_info = read(1003)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
@@ -25,7 +24,7 @@ if dim == 3:
 
 ##############################################################################
 
-ti.init(arch=ti.cpu, default_fp=ti.f64, cpu_max_num_threads=1)
+ti.init(arch=ti.cpu, default_fp=ti.f64)
 
 real = ti.f64
 scalar = lambda: ti.var(dt=real)

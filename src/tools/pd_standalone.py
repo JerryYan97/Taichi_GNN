@@ -23,7 +23,7 @@ ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1004
+test_case = 1003
 case_info = read(int(test_case))
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
