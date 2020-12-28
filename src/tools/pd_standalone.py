@@ -18,12 +18,12 @@ from scipy import sparse
 from scipy.sparse.linalg import factorized
 from Utils.math_tools import svd
 
-ti.init(arch=ti.cpu, default_fp=ti.f64, debug=False)
+ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1003
+test_case = 1004
 case_info = read(int(test_case))
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -624,13 +624,6 @@ def local_compute_T2_energy() -> real:
     return local_T2_energy
 
 
-@ti.kernel
-def svd_2d():
-    mat2x2 = ti.Matrix.rows([[0.469670097179, -0.530328267640], [0.530329888611, 1.530328253430]])
-    U, Sigma, V = svd(mat2x2)
-    print("\nmat2x2:", mat2x2, "\nU:\n", U, "\nSigma:\n", Sigma, "\nV:\n", V)
-
-
 def compute_global_step_energy():
     # Calculate global T2 energy
     global_T2_energy = global_compute_T2_energy()
@@ -647,7 +640,6 @@ def compute_local_step_energy():
 
 
 if __name__ == "__main__":
-    # svd_2d()
     os.makedirs("results", exist_ok=True)
     for root, dirs, files in os.walk("results/"):
         for name in files:
@@ -674,9 +666,9 @@ if __name__ == "__main__":
     precomputation()
     lhs_matrix_np = ti_lhs_matrix.to_numpy()
     s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
-    print("ti_mass:\n", ti_mass.to_numpy())
-    print("lhs matrix ti field:\n", lhs_matrix_np)
-    print("sparse lhs matrix:\n", s_lhs_matrix_np)
+    # print("ti_mass:\n", ti_mass.to_numpy())
+    # print("lhs matrix ti field:\n", lhs_matrix_np)
+    # print("sparse lhs matrix:\n", s_lhs_matrix_np)
     pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
     gui = None
