@@ -139,10 +139,10 @@ def accuracy(output, labels):
 
 # definition of function
 def generate_edges(graph):
-    edges = []                                  # for each node in graph
+    edges = []  # for each node in graph
     for node in graph:
-        for neighbour in graph[node]:           # for each neighbour node of a single node
-            edges.append((node, neighbour))     # if edge exists then append
+        for neighbour in graph[node]:  # for each neighbour node of a single node
+            edges.append((node, neighbour))  # if edge exists then append
     return edges
 
 
@@ -152,14 +152,53 @@ def addEdge(graph, u, v):
 
 # definition of function
 def buildGraph(mesh, edge):
-    graph = defaultdict(list)       # function for adding edge to graph
-    for e in edge:                  # declaration of graph as dictionary
+    graph = defaultdict(list)  # function for adding edge to graph
+    for e in edge:  # declaration of graph as dictionary
         addEdge(graph, e[0], e[1])
-    print(generate_edges(graph))    # Driver Function call， to print generated graph
+    print(generate_edges(graph))  # Driver Function call， to print generated graph
     return graph
 
 
 ################################### K means part #####################################
+class MeshKmeansHelper():
+    def __init__(self, cluster_num, vertices_num, adj_mat):
+        self._k = cluster_num
+        self._vertices_num = vertices_num
+        self._adj_mat = adj_mat
+        self._spt_list = []
+        self._src_list = []
+
+    def generate_spt_list(self, src_list):
+        if len(src_list) != self.k:
+            raise Exception("Input srcs nums(", len(src_list), ") is not equal to k(", self.k, ").")
+        # Init relevant lists
+        self._spt_list = []
+        self._src_list = src_list
+        # Generate spt list
+        for i in range(self.k):
+            tmp_dijkstra = Dijkstra(self.vertices_num, self.adj_mat)
+            self._spt_list.append(tmp_dijkstra.dijkstra(self._src_list[i]))
+        print(len(self._spt_list))
+
+    def get_dist(self, src_idx, dst_idx):
+        try:
+            list_idx = self._src_list.index(src_idx)
+            check_num = self._spt_list[1][0]
+            return self._spt_list[list_idx][dst_idx]
+        except:
+            raise Exception("check num:", check_num,"list_idx:", list_idx, " dst_idx:", dst_idx)
+
+    @property
+    def k(self):
+        return self._k
+
+    @property
+    def vertices_num(self):
+        return self._vertices_num
+
+    @property
+    def adj_mat(self):
+        return self._adj_mat
 
 
 def update_centers(mesh, center_pos, parent_list, child_list, belonging):
@@ -196,19 +235,69 @@ def get_mesh_map(mesh):
         for j in range(adj_v.shape[0]):
             n1 = p
             n2 = adj_v[j]
-            p1 = mesh.vertices[n1, :]
-            p2 = mesh.vertices[n2, :]
+            p1 = mesh.vertices[n1]
+            p2 = mesh.vertices[n2]
             dp = LA.norm(p1 - p2)
             map[n1][n2] = map[n2][n1] = dp
     map_list = map.tolist()
     return map_list
 
 
-def childlist_parallel_func(childlist_item, parent_list, Graph):
+# def childlist_parallel_func(childlist_item, parent_list, Graph):
+#     min_dis = 100000.0
+#     parent_id = -1
+#     for p in parent_list:
+#         dis = Graph.dijkstra2node(childlist_item, p)
+#         if dis < min_dis:
+#             parent_id = p
+#             min_dis = dis
+#     return parent_id
+
+# Save for reference
+# def K_means_multiprocess(mesh, k):
+#     center_pos = []
+#     whole_list = [n for n in range(0, mesh.num_vertices)]
+#     # parent_list = random.sample(range(0, mesh.num_vertices), k)
+#     parent_list = [i for i in range(0, mesh.num_vertices, (mesh.num_vertices // k) + 1)]
+#     child_list = [x for x in whole_list if x not in parent_list]
+#     belonging = [None] * len(child_list)  # length: child
+#     for p in parent_list:
+#         center_pos.append(mesh.vertices[p, :])
+#     norm_d = 10000.0
+#     map_list = get_mesh_map(mesh)
+#     Graph = Dijkstra(mesh.num_vertices, map_list, False)
+#
+#     pool = Pool()
+#
+#     while norm_d > 1.0:
+#         res_list = []
+#         # Parallel call
+#         for t in range(len(child_list)):
+#             res_list.append(pool.apply_async(func=childlist_parallel_func,
+#                                              args=(child_list[t], parent_list, Graph,)))
+#         # Get results
+#         for t in range(len(child_list)):
+#             belonging[t] = res_list[t].get()
+#
+#         center_pos, norm_d, parent_list = update_centers(mesh, center_pos, parent_list, child_list, belonging)
+#         child_list = [x for x in whole_list if x not in parent_list]  # update child
+#     res_list = []
+#     # Parallel call
+#     for t in range(len(child_list)):
+#         res_list.append(pool.apply_async(func=childlist_parallel_func,
+#                                          args=(child_list[t], parent_list, Graph,)))
+#     # Get results
+#     for t in range(len(child_list)):
+#         belonging[t] = res_list[t].get()
+#
+#     return center_pos, child_list, parent_list, belonging
+
+def childlist_parallel_func(childlist_item, parent_list, clusters_helper):
     min_dis = 100000.0
     parent_id = -1
     for p in parent_list:
-        dis = Graph.dijkstra2node(childlist_item, p)
+        # dis = Graph.dijkstra2node(childlist_item, p)
+        dis = clusters_helper.get_dist(p, childlist_item)
         if dis < min_dis:
             parent_id = p
             min_dis = dis
@@ -226,16 +315,19 @@ def K_means_multiprocess(mesh, k):
         center_pos.append(mesh.vertices[p, :])
     norm_d = 10000.0
     map_list = get_mesh_map(mesh)
-    Graph = Dijkstra(mesh.num_vertices, map_list, False)
+    cluster_helper = MeshKmeansHelper(k, mesh.num_vertices, map_list)
+    # Graph = Dijkstra(mesh.num_vertices, map_list, False)
 
     pool = Pool()
 
     while norm_d > 1.0:
         res_list = []
+        cluster_helper.generate_spt_list(parent_list)
         # Parallel call
         for t in range(len(child_list)):
             res_list.append(pool.apply_async(func=childlist_parallel_func,
-                                             args=(child_list[t], parent_list, Graph,)))
+                                             args=(child_list[t], parent_list, cluster_helper,)))
+
         # Get results
         for t in range(len(child_list)):
             belonging[t] = res_list[t].get()
@@ -243,10 +335,11 @@ def K_means_multiprocess(mesh, k):
         center_pos, norm_d, parent_list = update_centers(mesh, center_pos, parent_list, child_list, belonging)
         child_list = [x for x in whole_list if x not in parent_list]  # update child
     res_list = []
+    cluster_helper.generate_spt_list(parent_list)
     # Parallel call
     for t in range(len(child_list)):
         res_list.append(pool.apply_async(func=childlist_parallel_func,
-                                         args=(child_list[t], parent_list, Graph,)))
+                                         args=(child_list[t], parent_list, cluster_helper,)))
     # Get results
     for t in range(len(child_list)):
         belonging[t] = res_list[t].get()
@@ -293,9 +386,3 @@ def K_means(mesh, k):
         t = t + 1
 
     return center_pos, child_list, parent_list, belonging
-
-
-
-
-
-

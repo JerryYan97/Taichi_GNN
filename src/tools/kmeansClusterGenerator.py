@@ -9,7 +9,7 @@ from Utils.utils_gcn import K_means, K_means_multiprocess
 from Utils.reader import read
 
 cluster_num = 10
-test_case = 4
+test_case = 2
 
 
 # Optimization record:
@@ -23,6 +23,13 @@ test_case = 4
 # case 2: 245.91074132919312 s
 # case 3: 12.78972315788269 s
 # case 4: 76.89776110649109 s
+# Multiprocessing + Dijkstra process optimization:
+# case 1: 0.667464017868042 s
+# case 2: 35.071603536605835 s
+# case 3: 2.235482692718506 s
+# case 4: 10.509188652038574 s
+
+
 
 if __name__ == "__main__":
     case_info = read(test_case)
