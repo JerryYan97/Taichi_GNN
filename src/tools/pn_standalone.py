@@ -13,19 +13,19 @@ from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh
 import meshio
 
 ##############################################################################
-case_info = read(1002)
+case_info = read(1003)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
 mesh_offset = case_info['mesh_offset']
+dim = case_info['dim']
 
-dim = 3
 if dim == 3:
     boundary_points, boundary_edges, boundary_triangles_ = case_info['boundary']
 
 ##############################################################################
 
-ti.init(arch=ti.cpu, default_fp=ti.f64, cpu_max_num_threads=1)
+ti.init(arch=ti.gpu, default_fp=ti.f64)
 
 real = ti.f64
 scalar = lambda: ti.var(dt=real)
@@ -45,22 +45,35 @@ if dim == 3:
     n_elements = mesh.elements.shape[0]
 cnt = ti.field(ti.i32, shape=())
 
-x, xPrev, xTilde, xn, v, m = vec(), vec(), vec(), vec(), vec(), scalar()
-zero = vec()
-restT = mat()
-vertices = ti.field(ti.i32)
-ti.root.dense(ti.k, n_particles).place(x, xPrev, xTilde, xn, v, m)
-ti.root.dense(ti.k, n_particles).place(zero)
-ti.root.dense(ti.i, n_elements).place(restT)
-ti.root.dense(ti.ij, (n_elements, dim + 1)).place(vertices)
+# x, xPrev, xTilde, xn, v, m = vec(), vec(), vec(), vec(), vec(), scalar()
+x = ti.Vector.field(dim, real, n_particles)
+xPrev = ti.Vector.field(dim, real, n_particles)
+xTilde = ti.Vector.field(dim, real, n_particles)
+xn = ti.Vector.field(dim, real, n_particles)
+v = ti.Vector.field(dim, real, n_particles)
+m = ti.field(real, n_particles)
+
+# zero = vec()
+# restT = mat()
+zero = ti.Vector.field(dim, real, n_particles)
+restT = ti.Matrix.field(dim, dim, real, n_elements)
+vertices = ti.field(ti.i32, (n_elements, dim + 1))
+# ti.root.dense(ti.k, n_particles).place(x, xPrev, xTilde, xn, v, m)
+# ti.root.dense(ti.k, n_particles).place(zero)
+# ti.root.dense(ti.i, n_elements).place(restT)
+# ti.root.dense(ti.ij, (n_elements, dim + 1)).place(vertices)
 
 data_rhs = ti.field(real, shape=200000)
 data_mat = ti.field(real, shape=(3, 20000000))
 data_sol = ti.field(real, shape=200000)
 
 # external force -- Angle: from [1, 0] -- counter-clock wise
-exf_angle = 60.0
-exf_mag = 0.02
+if dim == 2:
+    exf_angle = 60.0
+    exf_mag = 4
+else:
+    exf_angle = 60.0
+    exf_mag = 0.02
 ex_force = ti.Vector.field(dim, real, 1)
 
 if dim == 3:
@@ -313,9 +326,9 @@ def write_image(f):
                          (particle_pos[b][0], particle_pos[b][1]),
                          radius=1,
                          color=0x4FB99F)
-        gui.show(f'output/bunny{f:06d}.png')
+        gui.show(f'output/{f:06d}.png')
     else:
-        f = open(f'output/bunny{f:06d}.obj', 'w')
+        f = open(f'output/{f:06d}.obj', 'w')
         for i in range(n_particles):
             f.write('v %.6f %.6f %.6f\n' % (particle_pos[i, 0], particle_pos[i, 1], particle_pos[i, 2]))
         for [p0, p1, p2] in boundary_triangles_:
@@ -339,15 +352,22 @@ if __name__ == "__main__":
     zero.fill(0)
     set_exforce()
 
-    if dim == 3:
+    video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
+    frame_counter = 0
+
+    if dim == 2:
+        gui = ti.GUI('PN Standalone', background_color=0xf7f7f7)
         filename = f'./results/frame_rest.png'
+        draw_image(gui, filename, x.to_numpy(), mesh_offset, mesh_scale, vertices.to_numpy(), n_elements)
+    else:
+        # filename = f'./results/frame_rest.png'
         gui = ti.GUI('Model Visualizer', camera.res)
         gui.get_event(None)
         model.mesh.pos.from_numpy(case_info['mesh'].vertices.astype(np.float32))
         update_mesh(model.mesh)
         camera.from_mouse(gui)
         scene.render()
-        # video_manager.write_frame(camera.img)
+        video_manager.write_frame(camera.img)
         gui.set_image(camera.img)
         gui.show()
 
@@ -359,8 +379,12 @@ if __name__ == "__main__":
             data_rhs.fill(0)
             data_sol.fill(0)
             compute_hessian_and_gradient()
-            data_sol.from_numpy(solve_linear_system3(data_mat.to_numpy(), data_rhs.to_numpy(), n_particles * dim,
-                                                     np.array(dirichlet), zero.to_numpy(), False, 0, cnt[None]))
+            if dim == 2:
+                data_sol.from_numpy(solve_linear_system(data_mat.to_numpy(), data_rhs.to_numpy(), n_particles * dim,
+                                                         np.array(dirichlet), zero.to_numpy(), False, 0, cnt[None]))
+            else:
+                data_sol.from_numpy(solve_linear_system3(data_mat.to_numpy(), data_rhs.to_numpy(), n_particles * dim,
+                                                         np.array(dirichlet), zero.to_numpy(), False, 0, cnt[None]))
             if output_residual() < 1e-4 * dt:
                 break
             E0 = compute_energy()
@@ -375,9 +399,11 @@ if __name__ == "__main__":
         compute_v()
         particle_pos = x.to_numpy()
         vertices_ = vertices.to_numpy()
-        write_image(f)
+        # write_image(f)
+        frame_counter += 1
+        filename = f'./results/frame_{frame_counter:05d}.png'
         if dim == 2:
-            draw_image(gui, filename, x.to_numpy(), mesh_offset, mesh_scale, vertices.to_numpy(), n_elements)
+            draw_image(gui, filename, x.to_numpy(), mesh_offset, mesh_scale, vertices_, n_elements)
         else:
             gui.get_event(None)
             model.mesh.pos.from_numpy(x.to_numpy())
