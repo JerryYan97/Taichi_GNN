@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.sparse as sp
 import torch
+from multiprocessing import Pool
 from .reader import *
 from .Dijkstra import Dijkstra
 import os
@@ -201,6 +202,56 @@ def get_mesh_map(mesh):
             map[n1][n2] = map[n2][n1] = dp
     map_list = map.tolist()
     return map_list
+
+
+def childlist_parallel_func(childlist_item, parent_list, Graph):
+    min_dis = 100000.0
+    parent_id = -1
+    for p in parent_list:
+        dis = Graph.dijkstra2node(childlist_item, p)
+        if dis < min_dis:
+            parent_id = p
+            min_dis = dis
+    return parent_id
+
+
+def K_means_multiprocess(mesh, k):
+    center_pos = []
+    whole_list = [n for n in range(0, mesh.num_vertices)]
+    # parent_list = random.sample(range(0, mesh.num_vertices), k)
+    parent_list = [i for i in range(0, mesh.num_vertices, (mesh.num_vertices // k) + 1)]
+    child_list = [x for x in whole_list if x not in parent_list]
+    belonging = [None] * len(child_list)  # length: child
+    for p in parent_list:
+        center_pos.append(mesh.vertices[p, :])
+    norm_d = 10000.0
+    map_list = get_mesh_map(mesh)
+    Graph = Dijkstra(mesh.num_vertices, map_list, False)
+
+    pool = Pool()
+
+    while norm_d > 1.0:
+        res_list = []
+        # Parallel call
+        for t in range(len(child_list)):
+            res_list.append(pool.apply_async(func=childlist_parallel_func,
+                                             args=(child_list[t], parent_list, Graph,)))
+        # Get results
+        for t in range(len(child_list)):
+            belonging[t] = res_list[t].get()
+
+        center_pos, norm_d, parent_list = update_centers(mesh, center_pos, parent_list, child_list, belonging)
+        child_list = [x for x in whole_list if x not in parent_list]  # update child
+    res_list = []
+    # Parallel call
+    for t in range(len(child_list)):
+        res_list.append(pool.apply_async(func=childlist_parallel_func,
+                                         args=(child_list[t], parent_list, Graph,)))
+    # Get results
+    for t in range(len(child_list)):
+        belonging[t] = res_list[t].get()
+
+    return center_pos, child_list, parent_list, belonging
 
 
 def K_means(mesh, k):

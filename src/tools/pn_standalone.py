@@ -24,7 +24,7 @@ if dim == 3:
 
 ##############################################################################
 
-ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
+ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
 
 real = ti.f64
 scalar = lambda: ti.var(dt=real)
