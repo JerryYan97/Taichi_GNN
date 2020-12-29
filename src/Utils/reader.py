@@ -125,11 +125,7 @@ def read(testcase):
     elif testcase == 1004:
         # Bunny with 4 fixed points
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/bunny3K.msh")
-        dirichlet_list = []
-        for i in range(mesh.num_vertices):
-            if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.1:
-                dirichlet_list.append(i)
-
+        dirichlet_list = [665, 777, 1928, 1986]
         dirichlet = np.array(dirichlet_list)
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
