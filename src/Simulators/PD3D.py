@@ -150,6 +150,7 @@ class PDSimulation:
             self.exf_angle2 = ang2
             self.exf_mag = mag
             self.ti_ex_force[0] = ti.Vector(get_force_field(self.exf_mag, self.exf_angle1, self.exf_angle2, 3))
+            print("force: ", self.ti_ex_force[0][0], " ", self.ti_ex_force[0][1], " ", self.ti_ex_force[0][2])
 
     @ti.func
     def set_ti_A_i(self, ele_idx, row, col, val):
@@ -860,9 +861,9 @@ class PDSimulation:
             out[i, 13] = A_final[2, 1]
             out[i, 14] = A_final[2, 2]
 
-            out[i, 15] = grad_E[i * 2]
-            out[i, 16] = grad_E[i * 2 + 1]
-            out[i, 17] = grad_E[i * 2 + 2]
+            out[i, 15] = grad_E[i * 3]
+            out[i, 16] = grad_E[i * 3 + 1]
+            out[i, 17] = grad_E[i * 3 + 2]
 
             out[i, 18] = self.ti_ex_force[0][0]
             out[i, 19] = self.ti_ex_force[0][1]
@@ -942,7 +943,7 @@ class PDSimulation:
             # get info from pn
             self.copy(self.ti_pos, self.input_xn)
             self.copy(self.ti_vel, self.input_vn)
-            print("input xn:\n", self.input_xn.to_numpy())
+            # print("input xn:\n", self.input_xn.to_numpy())
             pn_dis, _pn_pos, pn_v = pn.data_one_frame(self.input_xn, self.input_vn)
             # print("pn dis \n", self.pn_dis.to_numpy())
             for itr in range(self.solver_max_iteration):
@@ -957,7 +958,7 @@ class PDSimulation:
             self.compute_x_xtilde()
 
             # get info from pn
-            self.gradE, _ = pn.get_gradE_from_pd(self.ti_pos)
+            self.gradE = pn.get_gradE_from_pd(self.ti_pos)
             self.output_all(self.ti_pos_del.to_numpy(), pn_dis.to_numpy(), self.gradE, frame_counter, is_test)
 
             # Show result

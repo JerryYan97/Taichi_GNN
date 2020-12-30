@@ -92,7 +92,7 @@ class PNSimulation:
         #                                          n_pos=self.case_info['mesh'].num_vertices,
         #                                          n_nrm=len(self.boundary_triangles) * 2))
         #     set_3D_scene(self.scene, self.camera, self.model, self.case_info)
-        self.x.from_numpy(self.mesh.vertices.astype(np.float32))
+        self.x.from_numpy(self.mesh.vertices.astype(np.float64))
         if self.dim == 2:
             self.vertices.from_numpy(self.mesh.faces)
             self.vertices_ = self.mesh.faces
@@ -110,6 +110,7 @@ class PNSimulation:
         self.nu = _nu
         self.mu = self.E / (2.0 * (1.0 + self.nu))
         self.la = self.E * self.nu / ((1.0 + self.nu) * (1.0 - 2.0 * self.nu))
+        print("mu: ", self.mu, "la: ", self.la)
 
     def set_force(self, ang1, ang2, mag):
         if self.dim == 2:
@@ -236,12 +237,12 @@ class PNSimulation:
 
     def get_gradE_from_pd(self, pd_pos):
         self.copy(pd_pos, self.grad_x)
-        self.copy(pd_pos, self.x)
+        # self.copy(pd_pos, self.x)
         self.compute_pd_gradient()
         self.copy(self.data_rhs, self.gradE)
-        self.copy(pd_pos, self.x)
-        self.compute_x_xtilde()
-        return self.gradE, self.x_xtilde
+        # self.copy(pd_pos, self.x)
+        # self.compute_x_xtilde()
+        return self.gradE
 
     @ti.kernel
     def compute_hessian_and_gradient(self):
@@ -569,19 +570,19 @@ class PNSimulation:
         self.copy(input_p, self.x)
         self.copy(input_v, self.v)
         self.compute_xn_and_xTilde()
-        print("m: \n", self.m.to_numpy())
-        print("1 x: \n", self.x.to_numpy())
-        print("1 v: \n", self.v.to_numpy())
-        print("1 rest T: \n", self.restT.to_numpy())
-        print("xTilde: \n", self.xTilde.to_numpy())
+        # print("m: \n", self.m.to_numpy())
+        # print("1 x: \n", self.x.to_numpy())
+        # print("1 v: \n", self.v.to_numpy())
+        # print("1 rest T: \n", self.restT.to_numpy())
+        # print("xTilde: \n", self.xTilde.to_numpy())
         while True:
             self.data_mat.fill(0)
             self.data_rhs.fill(0)
             self.data_sol.fill(0)
             self.compute_hessian_and_gradient()
-            print("cnt: ", self.cnt[None])
-            print("dara mat: \n", self.data_mat.to_numpy())
-            print("dara rhs: \n", self.data_rhs.to_numpy())
+            # print("cnt: ", self.cnt[None])
+            # print("dara mat: \n", self.data_mat.to_numpy())
+            # print("dara rhs: \n", self.data_rhs.to_numpy())
             self.data_sol.from_numpy(solve_linear_system3(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
                                                           self.n_vertices * self.dim, self.dirichlet,
                                                           self.zero.to_numpy(), False, 0, self.cnt[None]))
@@ -597,9 +598,9 @@ class PNSimulation:
                 self.apply_sol(alpha)
                 E = self.compute_energy()
         self.compute_v()
-        print("del_p: \n", self.del_p.to_numpy())
-        print("v: \n", self.v.to_numpy())
-        print("x: \n", self.x.to_numpy())
+        # print("del_p: \n", self.del_p.to_numpy())
+        # print("v: \n", self.v.to_numpy())
+        # print("x: \n", self.x.to_numpy())
         return self.del_p, self.x, self.v
 
     # TODO: Not always use, could be wrong
@@ -679,36 +680,43 @@ class PNSimulation:
             self.vertices.from_numpy(self.mesh.elements)
         self.compute_restT_and_m()
         self.zero.fill(0)
-        self.set_force()
 
         video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
         frame_counter = 0
 
-        if self.dim == 2:
-            gui = ti.GUI('PN Standalone', background_color=0xf7f7f7)
-            filename = f'./results/frame_rest.png'
-            draw_image(gui, filename, self.x.to_numpy(), self.mesh_offset, self.mesh_scale,
-                       self.vertices.to_numpy(), self.n_elements)
-        else:
-            # filename = f'./results/frame_rest.png'
-            gui = ti.GUI('Model Visualizer', self.camera.res)
-            gui.get_event(None)
-            self.model.mesh.pos.from_numpy(self.case_info['mesh'].vertices.astype(np.float64))
-            update_mesh(self.model.mesh)
-            self.camera.from_mouse(gui)
-            self.scene.render()
-            video_manager.write_frame(self.camera.img)
-            gui.set_image(self.camera.img)
-            gui.show()
+        # if self.dim == 2:
+        #     gui = ti.GUI('PN Standalone', background_color=0xf7f7f7)
+        #     filename = f'./results/frame_rest.png'
+        #     draw_image(gui, filename, self.x.to_numpy(), self.mesh_offset, self.mesh_scale,
+        #                self.vertices.to_numpy(), self.n_elements)
+        # else:
+        #     # filename = f'./results/frame_rest.png'
+        #     gui = ti.GUI('Model Visualizer', self.camera.res)
+        #     gui.get_event(None)
+        #     self.model.mesh.pos.from_numpy(self.case_info['mesh'].vertices.astype(np.float64))
+        #     update_mesh(self.model.mesh)
+        #     self.camera.from_mouse(gui)
+        #     self.scene.render()
+        #     video_manager.write_frame(self.camera.img)
+        #     gui.set_image(self.camera.img)
+        #     gui.show()
 
-        for f in range(100):
+        for f in range(50):
             print("==================== Frame: ", f, " ====================")
             self.compute_xn_and_xTilde()
+            # print("m: \n", self.m.to_numpy())
+            # print("1 x: \n", self.x.to_numpy())
+            # print("1 v: \n", self.v.to_numpy())
+            # print("1 rest T: \n", self.restT.to_numpy())
+            # print("xTilde: \n", self.xTilde.to_numpy())
             while True:
                 self.data_mat.fill(0)
                 self.data_rhs.fill(0)
                 self.data_sol.fill(0)
                 self.compute_hessian_and_gradient()
+                # print("cnt: ", self.cnt[None])
+                # print("dara mat: \n", self.data_mat.to_numpy())
+                # print("dara rhs: \n", self.data_rhs.to_numpy())
                 if self.dim == 2:
                     self.data_sol.from_numpy(solve_linear_system(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
                                                                  self.n_vertices * self.dim, np.array(self.dirichlet),
@@ -729,20 +737,23 @@ class PNSimulation:
                     self.apply_sol(alpha)
                     E = self.compute_energy()
             self.compute_v()
+            # print("del_p: \n", self.del_p.to_numpy())
+            print("v: \n", self.v.to_numpy())
+            print("x: \n", self.x.to_numpy())
             particle_pos = self.x.to_numpy()
             vertices_ = self.vertices.to_numpy()
             # write_image(f)
             frame_counter += 1
             filename = f'./results/frame_{frame_counter:05d}.png'
-            if self.dim == 2:
-                draw_image(gui, filename, self.x.to_numpy(), self.mesh_offset, self.mesh_scale,
-                           self.vertices.to_numpy(), self.n_elements)
-            else:
-                gui.get_event(None)
-                self.model.mesh.pos.from_numpy(self.x.to_numpy())
-                update_mesh(self.model.mesh)
-                self.camera.from_mouse(gui)
-                self.scene.render()
-                video_manager.write_frame(self.camera.img)
-                gui.set_image(self.camera.img)
-                gui.show()
+            # if self.dim == 2:
+            #     draw_image(gui, filename, self.x.to_numpy(), self.mesh_offset, self.mesh_scale,
+            #                self.vertices.to_numpy(), self.n_elements)
+            # else:
+            #     gui.get_event(None)
+            #     self.model.mesh.pos.from_numpy(self.x.to_numpy())
+            #     update_mesh(self.model.mesh)
+            #     self.camera.from_mouse(gui)
+            #     self.scene.render()
+            #     video_manager.write_frame(self.camera.img)
+            #     gui.set_image(self.camera.img)
+            #     gui.show()
