@@ -8,13 +8,12 @@ import numpy as np
 from Utils.neo_hookean import *
 from Utils.math_tools import *
 from Utils.reader import read
-from .PD3D import *
 from Utils.Dijkstra import *
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
 from numpy import linalg as LA
 from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh, get_force_field
-
+# from .PD3D import PDSimulation
 ##############################################################################
 real = ti.f64
 ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
@@ -42,7 +41,7 @@ class PNSimulation:
             self.n_elements = self.mesh.num_faces
         if self.dim == 3:
             self.n_elements = self.mesh.num_elements
-        print("element count: ", self.n_elements)
+        # print("element count: ", self.n_elements)
 
         self.x = ti.Vector.field(self.dim, real, self.n_vertices)
         self.xPrev = ti.Vector.field(self.dim, real, self.n_vertices)
@@ -82,27 +81,27 @@ class PNSimulation:
         self.initial_rel_pos = np.array([self.n_vertices, self.dim])
         self.pi = ti.Vector.field(self.dim, real, self.n_vertices)
         self.qi = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.init_pos = self.mesh.vertices.astype(np.float64)[:, :self.dim]
-        ################################ initial ######################################
-        if self.dim == 3:
-            self.camera = t3.Camera()
-            self.scene = t3.Scene()
-            self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
-            self.model = t3.Model(t3.DynamicMesh(n_faces=len(self.boundary_triangles) * 2,
-                                                 n_pos=self.case_info['mesh'].num_vertices,
-                                                 n_nrm=len(self.boundary_triangles) * 2))
-            set_3D_scene(self.scene, self.camera, self.model, self.case_info)
+        self.init_pos = self.mesh.vertices.astype(np.float32)[:, :self.dim]
 
-        # self.x.from_numpy(self.mesh.vertices.astype(np.float64))
-        # if self.dim == 2:
-        #     self.vertices.from_numpy(self.mesh.faces)
-        #     self.vertices_ = self.mesh.faces
+    def initial(self):
         # if self.dim == 3:
-        #     self.vertices.from_numpy(self.mesh.elements)
-        #     self.vertices_ = self.mesh.elements
-        # self.v.fill(0)
-        # self.zero.fill(0)
-        # self.m.fill(0)
+        #     self.camera = t3.Camera()
+        #     self.scene = t3.Scene()
+        #     self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
+        #     self.model = t3.Model(t3.DynamicMesh(n_faces=len(self.boundary_triangles) * 2,
+        #                                          n_pos=self.case_info['mesh'].num_vertices,
+        #                                          n_nrm=len(self.boundary_triangles) * 2))
+        #     set_3D_scene(self.scene, self.camera, self.model, self.case_info)
+        self.x.from_numpy(self.mesh.vertices.astype(np.float32))
+        if self.dim == 2:
+            self.vertices.from_numpy(self.mesh.faces)
+            self.vertices_ = self.mesh.faces
+        if self.dim == 3:
+            self.vertices.from_numpy(self.mesh.elements)
+            self.vertices_ = self.mesh.elements
+        self.v.fill(0)
+        self.zero.fill(0)
+        self.m.fill(0)
 
     def set_material(self, _rho, _ym, _nu, _dt):
         self.dt = _dt
@@ -112,15 +111,15 @@ class PNSimulation:
         self.mu = self.E / (2.0 * (1.0 + self.nu))
         self.la = self.E * self.nu / ((1.0 + self.nu) * (1.0 - 2.0 * self.nu))
 
-    def set_force(self):
+    def set_force(self, ang1, ang2, mag):
         if self.dim == 2:
             exf_angle = -45.0
             exf_mag = 6
             self.ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle))
         else:
-            exf_angle1 = 45.0
-            exf_angle2 = 45.0
-            exf_mag = 0.01
+            exf_angle1 = ang1
+            exf_angle2 = ang2
+            exf_mag = mag
             self.ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
 
     @ti.func
@@ -438,7 +437,7 @@ class PNSimulation:
         for i in range(self.n_vertices):
             for d in ti.static(range(self.dim)):
                 residual = ti.max(residual, ti.abs(self.data_sol[i * self.dim + d]))
-        print("Search Direction Residual : ", residual / self.dt)
+        print("PN Search Direction Residual : ", residual / self.dt)
         return residual
 
     def write_image(self, f):
@@ -557,9 +556,9 @@ class PNSimulation:
             out[i, 6] = R[1, 0]
             out[i, 7] = R[1, 1]
 
-            out[i, 8] = grad_E[i * 2]
-            out[i, 9] = grad_E[i * 2 + 1]
-            out[i, 9] = grad_E[i * 2 + 2]
+            out[i, 8] = grad_E[i * 3]
+            out[i, 9] = grad_E[i * 3 + 1]
+            out[i, 9] = grad_E[i * 3 + 2]
 
             out[i, 10] = self.ex_force[0][0]
             out[i, 11] = self.ex_force[0][1]
@@ -570,19 +569,22 @@ class PNSimulation:
         self.copy(input_p, self.x)
         self.copy(input_v, self.v)
         self.compute_xn_and_xTilde()
+        print("m: \n", self.m.to_numpy())
+        print("1 x: \n", self.x.to_numpy())
+        print("1 v: \n", self.v.to_numpy())
+        print("1 rest T: \n", self.restT.to_numpy())
+        print("xTilde: \n", self.xTilde.to_numpy())
         while True:
             self.data_mat.fill(0)
             self.data_rhs.fill(0)
             self.data_sol.fill(0)
             self.compute_hessian_and_gradient()
-            if self.dim == 2:
-                self.data_sol.from_numpy(solve_linear_system(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
-                                                             self.n_vertices * self.dim, self.dirichlet,
-                                                             self.zero.to_numpy(), False, 0, self.cnt[None]))
-            else:
-                self.data_sol.from_numpy(solve_linear_system3(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
-                                                              self.n_vertices * self.dim, self.dirichlet,
-                                                              self.zero.to_numpy(), False, 0, self.cnt[None]))
+            print("cnt: ", self.cnt[None])
+            print("dara mat: \n", self.data_mat.to_numpy())
+            print("dara rhs: \n", self.data_rhs.to_numpy())
+            self.data_sol.from_numpy(solve_linear_system3(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
+                                                          self.n_vertices * self.dim, self.dirichlet,
+                                                          self.zero.to_numpy(), False, 0, self.cnt[None]))
             if self.output_residual() < 1e-4 * self.dt:
                 break
             E0 = self.compute_energy()
@@ -595,6 +597,9 @@ class PNSimulation:
                 self.apply_sol(alpha)
                 E = self.compute_energy()
         self.compute_v()
+        print("del_p: \n", self.del_p.to_numpy())
+        print("v: \n", self.v.to_numpy())
+        print("x: \n", self.x.to_numpy())
         return self.del_p, self.x, self.v
 
     # TODO: Not always use, could be wrong
@@ -630,11 +635,6 @@ class PNSimulation:
                 self.data_rhs.fill(0)
                 self.data_sol.fill(0)
                 self.compute_hessian_and_gradient()
-                # if self.dim == 2:
-                #     self.data_sol.from_numpy(solve_linear_system(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
-                #                                                  self.n_vertices * self.dim, self.dirichlet,
-                #                                                  self.zero.to_numpy(), False, 0, self.cnt[None]))
-                # else:
                 self.data_sol.from_numpy(solve_linear_system3(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
                                                               self.n_vertices * self.dim, self.dirichlet,
                                                               self.zero.to_numpy(), False, 0, self.cnt[None]))

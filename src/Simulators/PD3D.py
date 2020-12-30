@@ -9,8 +9,6 @@ from scipy.sparse.linalg import spsolve
 from scipy.sparse.linalg import factorized
 from Utils.reader import read
 from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh, get_force_field
-import math
-from .PN3D import *
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
 from numpy import linalg as LA
@@ -18,6 +16,7 @@ import matplotlib.pyplot as plt
 from scipy import sparse
 from scipy.sparse.linalg import factorized
 from Utils.math_tools import svd
+from .PN3D import PNSimulation
 
 real = ti.f64
 
@@ -56,21 +55,17 @@ class PDSimulation:
         self.gradE = ti.field(real, shape=2000)
         self.x_xtilde = ti.Vector.field(self.dim, real, self.n_vertices)
         ################################ shape matching ######################################
-        self.initial_com = ti.Vector([0.0, 0.0])
         self.initial_rel_pos = np.array([self.n_vertices, self.dim])
         self.pi = ti.Vector.field(self.dim, real, self.n_vertices)
         self.qi = ti.Vector.field(self.dim, real, self.n_vertices)
         self.init_pos = self.mesh.vertices.astype(np.float32)
         self.init_pos = self.init_pos[:, :self.dim]
         ################################ force field ################################
-        self.gravity = ti.Vector([0, 0])
-        self.exf_angle = np.arange(0, 2 * np.pi, 30)
-        self.exf_mag = np.arange(0, 10.0, 30)
-        # print("angle: ", self.exf_angle, " mag: ", self.exf_mag)
-        self.exf_ind = 0
-        self.mag_ind = 0
         self.ti_ex_force = ti.Vector.field(self.dim, real, 1)
         self.npex_f = np.zeros((self.dim, 1))
+        self.exf_angle1 = 0.0
+        self.exf_angle2 = 0.0
+        self.exf_mag = 0.0
 
         self.input_xn = ti.Vector.field(self.dim, real, self.n_vertices)
         self.input_vn = ti.Vector.field(self.dim, real, self.n_vertices)
@@ -102,24 +97,37 @@ class PDSimulation:
         self.ti_phi = ti.field(real, self.n_elements)
         self.ti_weight_strain = ti.field(real, self.n_elements)   # self.mu * 2 * self.volume
         self.ti_weight_volume = ti.field(real, self.n_elements)   # self.lam * self.dim * self.volume
+
+    def initial(self):
         if self.dim == 3:
-            self.camera = t3.Camera()
-            self.scene = t3.Scene()
+        #     self.camera = t3.Camera()
+        #     self.scene = t3.Scene()
             self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
-            self.model = t3.Model(t3.DynamicMesh(n_faces=len(self.boundary_triangles) * 2,
-                                                 n_pos=self.case_info['mesh'].num_vertices,
-                                                 n_nrm=len(self.boundary_triangles) * 2))
-            set_3D_scene(self.scene, self.camera, self.model, self.case_info)
-        ################################# initial ######################################
+        #     self.model = t3.Model(t3.DynamicMesh(n_faces=len(self.boundary_triangles) * 2,
+        #                                          n_pos=self.case_info['mesh'].num_vertices,
+        #                                          n_nrm=len(self.boundary_triangles) * 2))
+        #     set_3D_scene(self.scene, self.camera, self.model, self.case_info)
+
+        if self.dim == 2:
+            self.initial_com = ti.Vector([0.0, 0.0])
+        else:
+            self.initial_com = ti.Vector([0.0, 0.0, 0.0])
+
         if self.dim == 2:
             self.ti_elements.from_numpy(self.mesh.faces)
         else:
             self.ti_elements.from_numpy(self.mesh.elements)
+
         self.ti_pos.from_numpy(self.mesh.vertices)
         self.ti_pos_init.from_numpy(self.mesh.vertices)
         self.ti_boundary_labels.fill(0)
         self.ti_vel.fill(0)
         self.ti_mass.fill(0)
+        self.input_xn.fill(0)
+        self.input_vn.fill(0)
+
+    # def initial_scene(self):
+
 
     def set_material(self, _rho, _ym, _nu, _dt):
         self.dt = _dt
@@ -129,16 +137,19 @@ class PDSimulation:
         self.mu = self.E / (2 * (1 + self.nu))
         self.lam = self.E * self.nu / ((1 + self.nu) * (1 - 2 * self.nu))
 
-    def set_exforce(self, ind, mag):
+    def set_force(self, ang1, ang2, mag):
         if self.dim == 2:
             exf_angle = -45.0
             exf_mag = 6
             self.ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle))
         else:
-            exf_angle1 = 45.0
-            exf_angle2 = 45.0
-            exf_mag = 6
-            self.ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
+            # exf_angle1 = 45.0
+            # exf_angle2 = 45.0
+            # exf_mag = 6
+            self.exf_angle1 = ang1
+            self.exf_angle2 = ang2
+            self.exf_mag = mag
+            self.ti_ex_force[0] = ti.Vector(get_force_field(self.exf_mag, self.exf_angle1, self.exf_angle2, 3))
 
     @ti.func
     def set_ti_A_i(self, ele_idx, row, col, val):
@@ -352,7 +363,8 @@ class PDSimulation:
                                 weight = self.ti_weight_strain[ele_idx]
                             else:
                                 weight = self.ti_weight_volume[ele_idx]
-                            self.ti_lhs_matrix[lhs_row_idx, lhs_col_idx] += (self.ti_A[ele_idx, idx, A_row_idx] * self.ti_A[ele_idx, idx, A_col_idx] * weight)
+                            self.ti_lhs_matrix[lhs_row_idx, lhs_col_idx] += (self.ti_A[ele_idx, idx, A_row_idx] *
+                                                                             self.ti_A[ele_idx, idx, A_col_idx] * weight)
 
         # print("Position constraints starts")
         # Add positional constraints to the lhs matrix
@@ -743,8 +755,8 @@ class PDSimulation:
         lhs_matrix_np = self.lhs_matrix.to_numpy()
         s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
         pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
-        self.copy(input_p, self.pos)
-        self.copy(input_v, self.vel)
+        self.copy(input_p, self.ti_pos)
+        self.copy(input_v, self.ti_vel)
         self.build_sn()
         self.warm_up()
         last_record_energy = 100000000000.0
@@ -778,9 +790,9 @@ class PDSimulation:
 
     def get_local_transformation(self):
         ele_count = self.dim * self.dim
-        out = np.ones([self.n_particles, ele_count], dtype=float)
+        out = np.ones([self.n_vertices, ele_count], dtype=float)
         self.mesh.enable_connectivity()
-        for i in range(self.n_particles):
+        for i in range(self.n_vertices):
             adj_v = self.mesh.get_vertex_adjacent_vertices(i)
             adj_v = np.append(adj_v, i)
             adj_v = np.sort(adj_v)
@@ -806,16 +818,18 @@ class PDSimulation:
     def output_all(self, pd_dis, pn_dis, grad_E, frame, T):
         frame = str(frame).zfill(5)
         if T == 0:
-            out_name = "Outputs/3Doutput" + str(self.exf_ind) + "_" + str(self.mag_ind) + "_" + frame + ".csv"
+            out_name = "Outputs/output"+str(self.exf_angle1)+"_"+str(self.exf_angle2)+"_"+\
+                       str(self.exf_mag)+"_"+frame+".csv"
         else:
-            out_name = "Outputs_T/3Doutput" + str(self.exf_ind) + "_" + str(self.mag_ind) + "_" + frame + ".csv"
+            out_name = "Outputs_T/output"+str(self.exf_angle1)+"_"+str(self.exf_angle2)+"_"+\
+                       str(self.exf_mag)+"_"+frame+".csv"
         if not os.path.exists(out_name):
-            file = open(out_name, 'w+')
-            file.close()
+            with open(out_name, 'w+') as f:
+                f.close()
         ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim  # pd pos + pn pos + local transform + residual + force
-        out = np.ones([self.n_particles, ele_count], dtype=float)
+        out = np.ones([self.n_vertices, ele_count], dtype=float)
         self.mesh.enable_connectivity()
-        for i in range(self.n_particles):
+        for i in range(self.n_vertices):
             out[i, 0] = pd_dis[i, 0]  # pd pos
             out[i, 1] = pd_dis[i, 1]
             out[i, 2] = pd_dis[i, 2]
@@ -827,7 +841,7 @@ class PDSimulation:
             adj_v = self.mesh.get_vertex_adjacent_vertices(i)
             adj_v = np.append(adj_v, i)
             adj_v = np.sort(adj_v)
-            new_pos, init_rel_pos = self.build_pos_arr(adj_v, self.pos, self.initial_rel_pos)
+            new_pos, init_rel_pos = self.build_pos_arr(adj_v, self.ti_pos, self.initial_rel_pos)
             com = self.calcCenterOfMass(adj_v).to_numpy()
             curr_rel_pos = np.zeros((adj_v.shape[0], self.dim))
             for j in range(new_pos.shape[0]):
@@ -850,46 +864,72 @@ class PDSimulation:
             out[i, 16] = grad_E[i * 2 + 1]
             out[i, 17] = grad_E[i * 2 + 2]
 
-            out[i, 18] = self.ex_force[0][0]
-            out[i, 19] = self.ex_force[0][1]
-            out[i, 20] = self.ex_force[0][2]
+            out[i, 18] = self.ti_ex_force[0][0]
+            out[i, 19] = self.ti_ex_force[0][1]
+            out[i, 20] = self.ti_ex_force[0][2]
 
-            out[i, 21] = self.vel[i][0]  # velocity
-            out[i, 22] = self.vel[i][1]
-            out[i, 23] = self.vel[i][2]
+            out[i, 21] = self.ti_vel[i][0]  # velocity
+            out[i, 22] = self.ti_vel[i][1]
+            out[i, 23] = self.ti_vel[i][2]
 
             out[i, 24] = self.ti_pos_init[i][0]  # rest shape
             out[i, 25] = self.ti_pos_init[i][1]
             out[i, 26] = self.ti_pos_init[i][2]
         np.savetxt(out_name, out, delimiter=',')
 
+    def write_image(self, f):
+        if not os.path.exists("output"):
+            os.makedirs("output")
+        for root, dirs, files in os.walk("output/"):
+            for name in files:
+                os.remove(os.path.join(root, name))
+        if self.dim == 2:
+            for i in range(self.n_elements):
+                for j in range(3):
+                    a, b = self.vertices[i, j], self.vertices[i, (j + 1) % 3]
+                    self.gui.line((self.x[a][0], self.x[a][1]),
+                                  (self.x[b][0], self.x[b][1]),
+                                  radius=1,
+                                  color=0x4FB99F)
+            self.gui.show(f'output/bunny{f:06d}.png')
+        else:
+            name = "output/bunny_"+str(self.exf_angle1)+"_"+str(self.exf_angle2)+\
+                   "_"+str(self.exf_mag)+str(f).zfill(6)+".obj"
+            f = open(name, 'w')
+            for i in range(self.n_vertices):
+                f.write('v %.6f %.6f %.6f\n' % (self.ti_pos[i][0], self.ti_pos[i][1], self.ti_pos[i][2]))
+            for [p0, p1, p2] in self.boundary_triangles:
+                f.write('f %d %d %d\n' % (p0 + 1, p1 + 1, p2 + 1))
+            f.close()
+
     def Run(self, pn, is_test, frame_count):
-    # def Run(self, is_test, frame_count):
+        self.initial()
         rhs_np = np.zeros(self.n_vertices * self.dim, dtype=np.float64)
+
         # Init Taichi global variables
-        self.set_exforce(60, 0.005)
         self.init_mesh_DmInv(self.dirichlet, len(self.dirichlet))
         self.precomputation()
         lhs_matrix_np = self.ti_lhs_matrix.to_numpy()
         s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
         pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
-        video_manager = ti.VideoManager(output_dir='results/', framerate=24, automatic_build=False)
 
-        if self.dim == 2:
-            gui = ti.GUI('PN Standalone', background_color=0xf7f7f7)
-            filename = f'./results/frame_rest.png'
-            draw_image(gui, filename, self.ti_pos.to_numpy(), self.mesh_offset, self.mesh_scale, self.ti_elements.to_numpy(), self.n_elements)
-        else:
-            # filename = f'./results/frame_rest.png'
-            gui = ti.GUI('Model Visualizer', self.camera.res)
-            gui.get_event(None)
-            self.model.mesh.pos.from_numpy(self.case_info['mesh'].vertices.astype(np.float32))
-            update_mesh(self.model.mesh)
-            self.camera.from_mouse(gui)
-            self.scene.render()
-            video_manager.write_frame(self.camera.img)
-            gui.set_image(self.camera.img)
-            gui.show()
+        # video_manager = ti.VideoManager(output_dir='results/', framerate=24, automatic_build=False)
+
+        # if self.dim == 2:
+        #     gui = ti.GUI('PN Standalone', background_color=0xf7f7f7)
+        #     filename = f'./results/frame_rest.png'
+        #     draw_image(gui, filename, self.ti_pos.to_numpy(), self.mesh_offset, self.mesh_scale, self.ti_elements.to_numpy(), self.n_elements)
+        # else:
+        #     # filename = f'./results/frame_rest.png'
+        #     gui = ti.GUI('Model Visualizer', self.camera.res)
+        #     gui.get_event(None)
+        #     self.model.mesh.pos.from_numpy(self.case_info['mesh'].vertices.astype(np.float32))
+        #     update_mesh(self.model.mesh)
+        #     self.camera.from_mouse(gui)
+        #     self.scene.render()
+        #     video_manager.write_frame(self.camera.img)
+        #     gui.set_image(self.camera.img)
+        #     gui.show()
 
         frame_counter = 0
         plot_array = []
@@ -902,8 +942,9 @@ class PDSimulation:
             # get info from pn
             self.copy(self.ti_pos, self.input_xn)
             self.copy(self.ti_vel, self.input_vn)
+            print("input xn:\n", self.input_xn.to_numpy())
             pn_dis, _pn_pos, pn_v = pn.data_one_frame(self.input_xn, self.input_vn)
-
+            # print("pn dis \n", self.pn_dis.to_numpy())
             for itr in range(self.solver_max_iteration):
                 self.local_solve_build_bp_for_all_constraints()
                 self.build_rhs(rhs_np)
@@ -921,18 +962,19 @@ class PDSimulation:
 
             # Show result
             frame_counter += 1
-            filename = f'./results/frame_{frame_counter:05d}.png'
-            if self.dim == 2:
-                draw_image(gui, filename, self.ti_pos.to_numpy(), self.mesh_offset, self.mesh_scale,
-                           self.ti_elements.to_numpy(), self.n_elements)
-            else:
-                gui.get_event(None)
-                self.model.mesh.pos.from_numpy(self.ti_pos.to_numpy())
-                update_mesh(self.model.mesh)
-                self.camera.from_mouse(gui)
-                self.scene.render()
-                video_manager.write_frame(self.camera.img)
-                gui.set_image(self.camera.img)
-                gui.show()
+            # filename = f'./results/frame_{frame_counter:05d}.png'
+            # if self.dim == 2:
+            #     draw_image(gui, filename, self.ti_pos.to_numpy(), self.mesh_offset, self.mesh_scale,
+            #                self.ti_elements.to_numpy(), self.n_elements)
+            # else:
+            #     gui.get_event(None)
+            #     self.model.mesh.pos.from_numpy(self.ti_pos.to_numpy())
+            #     update_mesh(self.model.mesh)
+            #     self.camera.from_mouse(gui)
+            #     self.scene.render()
+            #     video_manager.write_frame(self.camera.img)
+            #     gui.set_image(self.camera.img)
+            #     gui.show()
+            self.write_image(frame_counter)
 
-        video_manager.make_video(gif=True, mp4=True)
+        # video_manager.make_video(gif=True, mp4=True)
