@@ -2,12 +2,13 @@
 # from src.Simulators.PD import *
 from src.Simulators.PN3D import *
 from src.Simulators.PD3D import *
-
 from src.Utils.reader import read
 from src.Utils.utils_gcn import K_means
 import torch
 import os
-ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
+
+ti.init(arch=ti.cpu, default_fp=ti.f64, debug=False)
+# ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 
 rho = 1e2
 E = 1e4
@@ -15,9 +16,9 @@ nu = 0.4
 dt = 0.01
 
 running_times = 1
-frame_count = 100
+frame_count = 150
 
-test_case = 1004
+test_case = 1001
 cluster_num = 10
 
 # NOTE: Please remember to save your data. It will delete all files in Outputs/ or Outputs_T/ when you exe Run.py.
@@ -26,13 +27,13 @@ cluster_num = 10
 if __name__ == '__main__':
     # simple data generation
     is_test = 0
-    # if is_test == 0:
-    #     if not os.path.exists("Outputs"):
-    #         os.makedirs("Outputs")
-    #     for root, dirs, files in os.walk("Outputs/"):
-    #         for name in files:
-    #             os.remove(os.path.join(root, name))
-    #
+    if is_test == 0:
+        if not os.path.exists("Outputs"):
+            os.makedirs("Outputs")
+        for root, dirs, files in os.walk("Outputs/"):
+            for name in files:
+                os.remove(os.path.join(root, name))
+
     # # ti.init()
     # pd = PDSimulation(test_case, dt)
     # pn = PNSimulation(test_case, dt)
@@ -65,39 +66,87 @@ if __name__ == '__main__':
     # pn.Run2()
 
     # TODO: generate large size of data
-    is_test = int(input("Data generation mode [0 -- training data /1 -- test data]:"))
-    if is_test == 0:
-        if not os.path.exists("Outputs"):
-            os.makedirs("Outputs")
-        for root, dirs, files in os.walk("Outputs/"):
-            for name in files:
-                os.remove(os.path.join(root, name))
-    else:
-        if not os.path.exists("Outputs_T"):
-            os.makedirs("Outputs_T")
-        for root, dirs, files in os.walk("Outputs_T/"):
-            for name in files:
-                os.remove(os.path.join(root, name))
+    # is_test = int(input("Data generation mode [0 -- training data /1 -- test data]:"))
+    # if is_test == 0:
+    #     if not os.path.exists("Outputs"):
+    #         os.makedirs("Outputs")
+    #     for root, dirs, files in os.walk("Outputs/"):
+    #         for name in files:
+    #             os.remove(os.path.join(root, name))
+    # else:
+    #     if not os.path.exists("Outputs_T"):
+    #         os.makedirs("Outputs_T")
+    #     for root, dirs, files in os.walk("Outputs_T/"):
+    #         for name in files:
+    #             os.remove(os.path.join(root, name))
     # Large scale data generation
-    sampled_angle1_num = 16
-    sampled_angle2_num = 16
-    sampled_mag_num = 9
+    sampled_angle1_num = 8
+    sampled_angle2_num = 8
+    sampled_mag_num = 5
+    pd = PDSimulation(test_case, dt)
+    pn = PNSimulation(test_case, dt)
+    pd.set_material(rho, E, nu, dt)
+    pn.set_material(rho, E, nu, dt)
+    pd.initial_scene()
     for ang_idx1 in range(sampled_angle1_num):
         for ang_idx2 in range(sampled_angle2_num):
             for mag_idx in range(sampled_mag_num):
-                ti.reset()
-                pd = PDSimulation(test_case, dt)
-                pn = PNSimulation(test_case, dt)
-
-                pn.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), 0.001*(mag_idx + 1))
-                pd.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), 0.001*(mag_idx + 1))
-
-                pd.set_material(rho, E, nu, dt)
-                pn.set_material(rho, E, nu, dt)
-
+                pd.initial()
                 pn.initial()
                 pn.compute_restT_and_m()
+
+                pn.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), (mag_idx + 5))
+                pd.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), (mag_idx + 5))
                 pd.Run(pn, is_test, frame_count)
+
+
+    # foor loop generate
+    # pd = PDSimulation(test_case, dt)
+    # pn = PNSimulation(test_case, dt)
+    # pd.set_material(rho, E, nu, dt)
+    # pn.set_material(rho, E, nu, dt)
+    #
+    # for ang_idx1 in range(1):
+    #     for ang_idx2 in range(2):
+    #         for mag_idx in range(1):
+    #             # ti.reset()
+    #             #
+    #             # pd = PDSimulation(test_case, dt)
+    #             # pn = PNSimulation(test_case, dt)
+    #             pd.initial()
+    #             pn.initial()
+    #             pn.compute_restT_and_m()
+    #
+    #             pn.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), (mag_idx + 1))
+    #             pd.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), (mag_idx + 1))
+    #
+    #             pd.Run(pn, is_test, frame_count)
+
+
+    # separately generate
+    # pd = PDSimulation(test_case, dt)
+    # pn = PNSimulation(test_case, dt)
+    # pd.set_material(rho, E, nu, dt)
+    # pn.set_material(rho, E, nu, dt)
+    # pd.initial()
+    # pn.initial()
+    # pn.compute_restT_and_m()
+    # pn.set_force(0 * (180.0 / sampled_angle1_num), 0 * (360.0 / sampled_angle2_num), (0 + 1))
+    # pd.set_force(0 * (180.0 / sampled_angle1_num), 0 * (360.0 / sampled_angle2_num), (0 + 1))
+    # pd.Run(pn, is_test, frame_count)
+
+
+    # pd2 = PDSimulation(test_case, dt)
+    # pn2 = PNSimulation(test_case, dt)
+    # pd2.set_material(rho, E, nu, dt)
+    # pn2.set_material(rho, E, nu, dt)
+    # pd2.initial()
+    # pn2.initial()
+    # pn2.compute_restT_and_m()
+    # pn2.set_force(0 * (180.0 / sampled_angle1_num), 1 * (360.0 / sampled_angle2_num), (0 + 1))
+    # pd2.set_force(0 * (180.0 / sampled_angle1_num), 1 * (360.0 / sampled_angle2_num), (0 + 1))
+    # pd2.Run(pn2, is_test, frame_count)
+
 
     # for i in range(running_times):
     #     pd = PDSimulation(test_case, 2)

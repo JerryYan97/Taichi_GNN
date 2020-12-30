@@ -25,6 +25,7 @@ def calcR(A_pq):
     R = np.dot(A_pq, inv(S))
     return R
 
+
 @ti.data_oriented
 class PDSimulation:
     def __init__(self, obj_file, _dt):
@@ -98,16 +99,19 @@ class PDSimulation:
         self.ti_weight_strain = ti.field(real, self.n_elements)   # self.mu * 2 * self.volume
         self.ti_weight_volume = ti.field(real, self.n_elements)   # self.lam * self.dim * self.volume
 
-    def initial(self):
-        if self.dim == 3:
-        #     self.camera = t3.Camera()
-        #     self.scene = t3.Scene()
-            self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
-        #     self.model = t3.Model(t3.DynamicMesh(n_faces=len(self.boundary_triangles) * 2,
-        #                                          n_pos=self.case_info['mesh'].num_vertices,
-        #                                          n_nrm=len(self.boundary_triangles) * 2))
-        #     set_3D_scene(self.scene, self.camera, self.model, self.case_info)
+        self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
 
+    def initial_scene(self):
+        if self.dim == 3:
+            self.camera = t3.Camera()
+            self.scene = t3.Scene()
+            # self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
+            self.model = t3.Model(t3.DynamicMesh(n_faces=len(self.boundary_triangles) * 2,
+                                                 n_pos=self.case_info['mesh'].num_vertices,
+                                                 n_nrm=len(self.boundary_triangles) * 2))
+            set_3D_scene(self.scene, self.camera, self.model, self.case_info)
+
+    def initial(self):
         if self.dim == 2:
             self.initial_com = ti.Vector([0.0, 0.0])
         else:
@@ -120,13 +124,34 @@ class PDSimulation:
 
         self.ti_pos.from_numpy(self.mesh.vertices)
         self.ti_pos_init.from_numpy(self.mesh.vertices)
-        self.ti_boundary_labels.fill(0)
-        self.ti_vel.fill(0)
-        self.ti_mass.fill(0)
         self.input_xn.fill(0)
         self.input_vn.fill(0)
-
-    # def initial_scene(self):
+        self.ti_mass.fill(0)
+        self.ti_volume.fill(0)
+        self.ti_pos_new.fill(0)
+        self.ti_last_pos_new.fill(0)
+        self.ti_boundary_labels.fill(0)
+        self.ti_vel.fill(0)
+        self.ti_vel_last.fill(0)
+        self.ti_Dm_inv.fill(0)
+        self.ti_F.fill(0)
+        self.ti_A.fill(0)
+        self.ti_A_i.fill(0)
+        self.ti_q_idx_vec.fill(0)
+        self.ti_Bp.fill(0)
+        self.ti_Sn.fill(0)
+        self.ti_lhs_matrix.fill(0)
+        self.ti_phi.fill(0)
+        self.ti_weight_strain.fill(0)
+        self.ti_weight_volume.fill(0)
+        self.ti_pos_del.fill(0)
+        self.gradE.fill(0)
+        self.x_xtilde.fill(0)
+        ################################ shape matching ######################################
+        self.pi.fill(0)
+        self.qi.fill(0)
+        ################################ force field ################################
+        self.ti_ex_force.fill(0)
 
 
     def set_material(self, _rho, _ym, _nu, _dt):
@@ -821,9 +846,16 @@ class PDSimulation:
         if T == 0:
             out_name = "Outputs/output"+str(self.exf_angle1)+"_"+str(self.exf_angle2)+"_"+\
                        str(self.exf_mag)+"_"+frame+".csv"
-        else:
+        elif T == 1:
             out_name = "Outputs_T/output"+str(self.exf_angle1)+"_"+str(self.exf_angle2)+"_"+\
                        str(self.exf_mag)+"_"+frame+".csv"
+        elif T == 2:
+            out_name = "Outputs2/output"+str(self.exf_angle1)+"_"+str(self.exf_angle2)+"_"+\
+                       str(self.exf_mag)+"_"+frame+".csv"
+        elif T == 3:
+            out_name = "Outputs3/output"+str(self.exf_angle1)+"_"+str(self.exf_angle2)+"_"+\
+                       str(self.exf_mag)+"_"+frame+".csv"
+
         if not os.path.exists(out_name):
             with open(out_name, 'w+') as f:
                 f.close()
@@ -904,7 +936,6 @@ class PDSimulation:
             f.close()
 
     def Run(self, pn, is_test, frame_count):
-        self.initial()
         rhs_np = np.zeros(self.n_vertices * self.dim, dtype=np.float64)
 
         # Init Taichi global variables
@@ -914,23 +945,23 @@ class PDSimulation:
         s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
         pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
-        # video_manager = ti.VideoManager(output_dir='results/', framerate=24, automatic_build=False)
+        video_manager = ti.VideoManager(output_dir='results/', framerate=24, automatic_build=False)
 
-        # if self.dim == 2:
-        #     gui = ti.GUI('PN Standalone', background_color=0xf7f7f7)
-        #     filename = f'./results/frame_rest.png'
-        #     draw_image(gui, filename, self.ti_pos.to_numpy(), self.mesh_offset, self.mesh_scale, self.ti_elements.to_numpy(), self.n_elements)
-        # else:
-        #     # filename = f'./results/frame_rest.png'
-        #     gui = ti.GUI('Model Visualizer', self.camera.res)
-        #     gui.get_event(None)
-        #     self.model.mesh.pos.from_numpy(self.case_info['mesh'].vertices.astype(np.float32))
-        #     update_mesh(self.model.mesh)
-        #     self.camera.from_mouse(gui)
-        #     self.scene.render()
-        #     video_manager.write_frame(self.camera.img)
-        #     gui.set_image(self.camera.img)
-        #     gui.show()
+        if self.dim == 2:
+            gui = ti.GUI('PN Standalone', background_color=0xf7f7f7)
+            filename = f'./results/frame_rest.png'
+            draw_image(gui, filename, self.ti_pos.to_numpy(), self.mesh_offset, self.mesh_scale, self.ti_elements.to_numpy(), self.n_elements)
+        else:
+            # filename = f'./results/frame_rest.png'
+            gui = ti.GUI('Model Visualizer', self.camera.res)
+            gui.get_event(None)
+            self.model.mesh.pos.from_numpy(self.case_info['mesh'].vertices.astype(np.float32))
+            update_mesh(self.model.mesh)
+            self.camera.from_mouse(gui)
+            self.scene.render()
+            video_manager.write_frame(self.camera.img)
+            gui.set_image(self.camera.img)
+            gui.show()
 
         frame_counter = 0
         plot_array = []
@@ -963,19 +994,19 @@ class PDSimulation:
 
             # Show result
             frame_counter += 1
-            # filename = f'./results/frame_{frame_counter:05d}.png'
-            # if self.dim == 2:
-            #     draw_image(gui, filename, self.ti_pos.to_numpy(), self.mesh_offset, self.mesh_scale,
-            #                self.ti_elements.to_numpy(), self.n_elements)
-            # else:
-            #     gui.get_event(None)
-            #     self.model.mesh.pos.from_numpy(self.ti_pos.to_numpy())
-            #     update_mesh(self.model.mesh)
-            #     self.camera.from_mouse(gui)
-            #     self.scene.render()
-            #     video_manager.write_frame(self.camera.img)
-            #     gui.set_image(self.camera.img)
-            #     gui.show()
+            filename = f'./results/frame_{frame_counter:05d}.png'
+            if self.dim == 2:
+                draw_image(gui, filename, self.ti_pos.to_numpy(), self.mesh_offset, self.mesh_scale,
+                           self.ti_elements.to_numpy(), self.n_elements)
+            else:
+                gui.get_event(None)
+                self.model.mesh.pos.from_numpy(self.ti_pos.to_numpy())
+                update_mesh(self.model.mesh)
+                self.camera.from_mouse(gui)
+                self.scene.render()
+                video_manager.write_frame(self.camera.img)
+                gui.set_image(self.camera.img)
+                gui.show()
             self.write_image(frame_counter)
 
         # video_manager.make_video(gif=True, mp4=True)

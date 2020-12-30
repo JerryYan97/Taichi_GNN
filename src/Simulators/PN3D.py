@@ -16,7 +16,8 @@ from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh, get
 # from .PD3D import PDSimulation
 ##############################################################################
 real = ti.f64
-ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
+# ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
+
 
 @ti.data_oriented
 class PNSimulation:
@@ -53,13 +54,11 @@ class PNSimulation:
         self.grad_x = ti.Vector.field(self.dim, real, self.n_vertices)
         self.x_xtilde = ti.Vector.field(self.dim, real, self.n_vertices)
 
-        self.temp_x = ti.Vector.field(self.dim, real, self.n_vertices)
         self.input_xn = ti.Vector.field(self.dim, real, self.n_vertices)
         self.input_vn = ti.Vector.field(self.dim, real, self.n_vertices)
         self.del_p = ti.Vector.field(self.dim, real, self.n_vertices)
 
         self.F = ti.Matrix.field(self.dim, self.dim, real, self.n_elements)
-        self.RR = ti.Matrix.field(self.dim, self.dim, real, self.n_vertices)
         self.zero = ti.Vector.field(self.dim, real, self.n_vertices)
         self.restT = ti.Matrix.field(self.dim, self.dim, real, self.n_elements)
         self.vertices = ti.field(ti.i32, (self.n_elements, self.dim + 1))
@@ -99,9 +98,25 @@ class PNSimulation:
         if self.dim == 3:
             self.vertices.from_numpy(self.mesh.elements)
             self.vertices_ = self.mesh.elements
+
+        self.xPrev.fill(0)
+        self.xTilde.fill(0)
+        self.xn.fill(0)
         self.v.fill(0)
-        self.zero.fill(0)
         self.m.fill(0)
+
+        self.grad_x.fill(0)
+        self.x_xtilde.fill(0)
+
+        self.input_xn.fill(0)
+        self.input_vn.fill(0)
+        self.del_p.fill(0)
+
+        # self.F.fill(0)
+        self.zero.fill(0)
+        self.restT.fill(0)
+        ################################ external force ######################################
+        self.ex_force.fill(0)
 
     def set_material(self, _rho, _ym, _nu, _dt):
         self.dt = _dt
@@ -565,6 +580,9 @@ class PNSimulation:
             out[i, 11] = self.ex_force[0][1]
             out[i, 10] = self.ex_force[0][2]
         np.savetxt(out_name, out)
+
+    # def set_res(self, r):
+    #     self.res = r
 
     def data_one_frame(self, input_p, input_v):
         self.copy(input_p, self.x)
