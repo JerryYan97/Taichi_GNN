@@ -8,8 +8,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.utils_gcn import K_means, K_means_multiprocess
 from Utils.reader import read
 
+# Owing to the fixed color panel, it now just has only tests clusters num that is 10 and under 10.
 cluster_num = 10
-test_case = 2
+test_case = 1001
 
 
 # Optimization record:
@@ -28,8 +29,10 @@ test_case = 2
 # case 2: 35.071603536605835 s
 # case 3: 2.235482692718506 s
 # case 4: 10.509188652038574 s
-
-
+# case 1001: 8.820295810699463 s
+# case 1002:
+# case 1003:
+# case 1004:
 
 if __name__ == "__main__":
     case_info = read(test_case)
@@ -37,6 +40,7 @@ if __name__ == "__main__":
     dirichlet = case_info['dirichlet']
     mesh_scale = case_info['mesh_scale']
     mesh_offset = case_info['mesh_offset']
+    dim = case_info['dim']
 
     time_start = time.time()
     # _, child_list, parent_list, belonging = K_means(mesh, cluster_num)
@@ -60,18 +64,54 @@ if __name__ == "__main__":
                "/../../MeshModels/SavedClusters/" + f"test_case{test_case}_cluster.csv",
                cluster, delimiter=',', fmt='%d')
 
-    for i in range(cluster_num):
-        posidx = np.where(np.asarray(belonging) == parent_list[i])[0]
-        pos = mesh.vertices[np.asarray(child_list)[posidx]]
-        x = [item[0] for item in pos]
-        x.append(mesh.vertices[parent_list[i], 0])
-        y = [item[1] for item in pos]
-        y.append(mesh.vertices[parent_list[i], 1])
-        plt.scatter(x, y, label="stars", color=color_tab[i], marker="*", s=30)
+    if dim == 2:
+        for i in range(cluster_num):
+            posidx = np.where(np.asarray(belonging) == parent_list[i])[0]
+            pos = mesh.vertices[np.asarray(child_list)[posidx]]
+            x = [item[0] for item in pos]
+            x.append(mesh.vertices[parent_list[i], 0])
+            y = [item[1] for item in pos]
+            y.append(mesh.vertices[parent_list[i], 1])
+            plt.scatter(x, y, label="stars", color=color_tab[i], marker="*", s=30)
 
-    plt.xlabel('x - axis')  # x-axis label
-    plt.ylabel('y - axis')  # frequency label
-    plt.title('K-means result plot!')  # plot title
-    plt.legend()  # showing legend
-    plt.show()  # function to show the plot
-    # plt.savefig('kmeans_result.png')
+        plt.xlabel('x - axis')  # x-axis label
+        plt.ylabel('y - axis')  # frequency label
+        plt.title('K-means result plot!')  # plot title
+        plt.legend()  # showing legend
+        plt.show()  # function to show the plot
+        # plt.savefig('kmeans_result.png')
+    elif dim == 3:
+        import tina
+        import taichi as ti
+
+        ti_particles_color = ti.field(ti.f32, mesh.num_vertices)
+
+        @ti.kernel
+        def init_color(label_color_list: ti.ext_arr()):
+            print("Hello World")
+
+        print(belonging)
+
+        ti.init(ti.gpu)
+
+        scene = tina.Scene()
+
+        # Init particles info
+        particles_list = []
+        label_color_list = np.array([0xeb3434, 0xebab34, 0xe8eb34, 0x80eb34, 0x34eb77,
+                                     0x34ebba, 0x34d6eb, 0x3483eb, 0x3434eb, 0xae34eb])
+
+        pars = tina.SimpleParticles()
+        material = tina.BlinnPhong()
+        scene.add_object(pars, material)
+        radius_array = np.full((1, mesh.num_vertices), 0.1)
+        init_color(label_color_list)
+        #
+        # gui = ti.GUI('particles')
+        #
+        # while gui.running:
+        #     scene.input(gui)
+        #     scene.render()
+        #     gui.set_image(scene.img)
+        #     gui.show()
+
