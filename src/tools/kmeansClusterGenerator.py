@@ -10,7 +10,8 @@ from Utils.reader import read
 
 # Owing to the fixed color panel, it now just has only tests clusters num that is 10 and under 10.
 cluster_num = 10
-test_case = 1001
+# Case 1002 doesn't work because it's particles' num is less than the clusters' num.
+test_case = 1004
 
 
 # Optimization record:
@@ -30,9 +31,13 @@ test_case = 1001
 # case 3: 2.235482692718506 s
 # case 4: 10.509188652038574 s
 # case 1001: 8.820295810699463 s
-# case 1002:
-# case 1003:
+# case 1002: None
+# case 1003: Timeout
 # case 1004:
+
+def rgb_range01(rgb_np):
+    return rgb_np / 255.0
+
 
 if __name__ == "__main__":
     case_info = read(test_case)
@@ -84,34 +89,41 @@ if __name__ == "__main__":
         import tina
         import taichi as ti
 
-        ti_particles_color = ti.field(ti.f32, mesh.num_vertices)
-
-        @ti.kernel
-        def init_color(label_color_list: ti.ext_arr()):
-            print("Hello World")
-
-        print(belonging)
-
         ti.init(ti.gpu)
 
         scene = tina.Scene()
 
         # Init particles info
         particles_list = []
-        label_color_list = np.array([0xeb3434, 0xebab34, 0xe8eb34, 0x80eb34, 0x34eb77,
-                                     0x34ebba, 0x34d6eb, 0x3483eb, 0x3434eb, 0xae34eb])
+        label_color_list = np.array([rgb_range01(np.array([255.0, 66.0, 66.0])),
+                                     rgb_range01(np.array([245.0, 167.0, 66.0])),
+                                     rgb_range01(np.array([245.0, 239.0, 66.0])),
+                                     rgb_range01(np.array([129.0, 245.0, 66.0])),
+                                     rgb_range01(np.array([66.0, 245.0, 132.0])),
+                                     rgb_range01(np.array([66.0, 245.0, 218.0])),
+                                     rgb_range01(np.array([66.0, 197.0, 245.0])),
+                                     rgb_range01(np.array([66.0, 114.0, 245.0])),
+                                     rgb_range01(np.array([144.0, 66.0, 245.0])),
+                                     rgb_range01(np.array([242.0, 66.0, 245.0]))])
 
         pars = tina.SimpleParticles()
         material = tina.BlinnPhong()
         scene.add_object(pars, material)
-        radius_array = np.full((1, mesh.num_vertices), 0.1)
-        init_color(label_color_list)
-        #
-        # gui = ti.GUI('particles')
-        #
-        # while gui.running:
-        #     scene.input(gui)
-        #     scene.render()
-        #     gui.set_image(scene.img)
-        #     gui.show()
 
+        gui = ti.GUI('kmeans visualization')
+
+        pars.set_particles(mesh.vertices)
+        pars.set_particle_radii(np.full(mesh.num_vertices, 0.08))
+        # Label particles color
+        particles_color = np.full((mesh.num_vertices, 3), -1.0, dtype=float)
+        np_child_list = np.asarray(child_list)
+        for i in range(cluster_num):
+            pos_idx = np.asarray(np.asarray(belonging) == parent_list[i]).nonzero()[0]
+            particles_color[np_child_list[pos_idx]] = label_color_list[i]
+            particles_color[parent_list[i]] = label_color_list[i]
+        pars.set_particle_colors(particles_color)
+        while gui.running:
+            scene.input(gui)
+            scene.render()
+            gui.set_image(scene.img)
+            gui.show()
