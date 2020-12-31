@@ -16,7 +16,7 @@ nu = 0.4
 dt = 0.01
 
 running_times = 1
-frame_count = 150
+frame_count = 80
 
 test_case = 1001
 cluster_num = 10
@@ -27,12 +27,12 @@ cluster_num = 10
 if __name__ == '__main__':
     # simple data generation
     is_test = 0
-    if is_test == 0:
-        if not os.path.exists("Outputs"):
-            os.makedirs("Outputs")
-        for root, dirs, files in os.walk("Outputs/"):
-            for name in files:
-                os.remove(os.path.join(root, name))
+    # if is_test == 0:
+    #     if not os.path.exists("Outputs"):
+    #         os.makedirs("Outputs")
+    #     for root, dirs, files in os.walk("Outputs/"):
+    #         for name in files:
+    #             os.remove(os.path.join(root, name))
 
     # # ti.init()
     # pd = PDSimulation(test_case, dt)

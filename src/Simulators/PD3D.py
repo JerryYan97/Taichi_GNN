@@ -49,7 +49,7 @@ class PDSimulation:
         self.mu = self.E / (2 * (1 + self.nu))
         self.lam = self.E * self.nu / ((1 + self.nu) * (1 - 2 * self.nu))
         self.m_weight_positional = 1e20
-        self.solver_max_iteration = 10
+        self.solver_max_iteration = 50
         self.solver_stop_residual = 0.0001
         ################################ field ######################################
         self.ti_pos_del = ti.Vector.field(self.dim, real, self.n_vertices)
@@ -984,9 +984,13 @@ class PDSimulation:
                 pos_new_np = pre_fact_lhs_solve(rhs_np)
                 self.update_pos_new_from_numpy(pos_new_np)
 
+                residual = self.check_residual()
+                if residual < self.solver_stop_residual:
+                    break
+
             # Update velocity and positions
             self.update_velocity_pos()
-            self.compute_x_xtilde()
+            # self.compute_x_xtilde()
 
             # get info from pn
             self.gradE = pn.get_gradE_from_pd(self.ti_pos)

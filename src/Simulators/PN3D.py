@@ -453,7 +453,7 @@ class PNSimulation:
         for i in range(self.n_vertices):
             for d in ti.static(range(self.dim)):
                 residual = ti.max(residual, ti.abs(self.data_sol[i * self.dim + d]))
-        print("PN Search Direction Residual : ", residual / self.dt)
+        # print("PN Search Direction Residual : ", residual / self.dt)
         return residual
 
     def write_image(self, f):

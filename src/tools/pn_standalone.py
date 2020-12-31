@@ -12,19 +12,16 @@ from scipy.linalg import sqrtm
 from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh, get_force_field
 
 ##############################################################################
-case_info = read(1004)
+case_info = read(1005)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
 mesh_offset = case_info['mesh_offset']
 dim = case_info['dim']
 
-if dim == 3:
-    boundary_points, boundary_edges, boundary_triangles_ = case_info['boundary']
-
 ##############################################################################
 
-ti.init(arch=ti.gpu, default_fp=ti.f64)
+ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 
 real = ti.f64
 
@@ -69,16 +66,36 @@ if dim == 3:
     set_3D_scene(scene, camera, model, case_info)
 
 
+def initial():
+    x.from_numpy(mesh.vertices.astype(np.float64))
+    if dim == 2:
+        vertices.from_numpy(mesh.faces)
+    if dim == 3:
+        vertices.from_numpy(mesh.elements)
+    xPrev.fill(0)
+    xTilde.fill(0)
+    xn.fill(0)
+    v.fill(0)
+    m.fill(0)
+    zero.fill(0)
+    restT.fill(0)
+    ################################ external force ######################################
+    ex_force.fill(0)
+
 def set_exforce():
     if dim == 2:
         exf_angle = -45.0
         exf_mag = 6
         ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle))
     else:
-        exf_angle1 = 45.0
-        exf_angle2 = 45.0
-        exf_mag = 0.01
+        exf_angle1 = 0.0
+        exf_angle2 = 0.0
+        exf_mag = 0.0002
+        # 1001 6
+        # 1003 and 1004 0.06
+        # 1005 0.0002
         ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
+        print("ex force: ", ex_force[0][0], " ", ex_force[0][1], " ", ex_force[0][2])
 
 
 @ti.func
@@ -322,20 +339,8 @@ def write_image(f):
 
 
 if __name__ == "__main__":
-    if dim == 2:
-        x.from_numpy(mesh.vertices.astype(np.float32))
-    if dim == 3:
-        x.from_numpy(mesh.vertices.astype(np.float32))
-    v.fill(0)
-    if dim == 2:
-        vertices.from_numpy(mesh.faces)
-    if dim == 3:
-        vertices.from_numpy(mesh.elements)
+    initial()
     compute_restT_and_m()
-    if dim == 2:
-        filename = f'./results/frame_rest.png'
-        gui = ti.GUI("MPM", (1024, 1024), background_color=0x112F41)
-    zero.fill(0)
     set_exforce()
 
     video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
@@ -357,7 +362,7 @@ if __name__ == "__main__":
         gui.set_image(camera.img)
         gui.show()
 
-    for f in range(100):
+    for f in range(1000):
         print("==================== Frame: ", f, " ====================")
         compute_xn_and_xTilde()
         while True:

@@ -21,7 +21,7 @@ ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1001
+test_case = 1005
 case_info = read(int(test_case))
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -88,6 +88,35 @@ if dim == 3:
     set_3D_scene(scene, camera, model, case_info)
 
 
+    def initial():
+        if dim == 2:
+           ti_elements.from_numpy(mesh.faces)
+        else:
+            ti_elements.from_numpy(mesh.elements)
+
+        ti_pos.from_numpy(mesh.vertices)
+        ti_pos_init.from_numpy(mesh.vertices)
+        ti_mass.fill(0)
+        ti_volume.fill(0)
+        ti_pos_new.fill(0)
+        ti_last_pos_new.fill(0)
+        ti_boundary_labels.fill(0)
+        ti_vel.fill(0)
+        ti_Dm_inv.fill(0)
+        ti_F.fill(0)
+        ti_A.fill(0)
+        ti_A_i.fill(0)
+        ti_q_idx_vec.fill(0)
+        ti_Bp.fill(0)
+        ti_Sn.fill(0)
+        ti_lhs_matrix.fill(0)
+        ti_phi.fill(0)
+        ti_weight_strain.fill(0)
+        ti_weight_volume.fill(0)
+        ti_ex_force.fill(0)
+
+
+
 # Backup Settings:
 # Bunny: ti.Vector([0.0, 0.0, 0.1])
 # Dragon:
@@ -99,7 +128,7 @@ def set_exforce():
     else:
         exf_angle1 = 45.0
         exf_angle2 = 45.0
-        exf_mag = 6
+        exf_mag = 0.0002
         ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
     # print("External force:", ti_ex_force)
 
@@ -646,17 +675,19 @@ if __name__ == "__main__":
 
     frame_counter = 0
     rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
-    if dim == 2:
-        ti_elements.from_numpy(mesh.faces)
-    else:
-        ti_elements.from_numpy(mesh.elements)
-    ti_pos.from_numpy(mesh.vertices)
-    ti_pos_init.from_numpy(mesh.vertices)
+    # if dim == 2:
+    #     ti_elements.from_numpy(mesh.faces)
+    # else:
+    #     ti_elements.from_numpy(mesh.elements)
+    # ti_pos.from_numpy(mesh.vertices)
+    # ti_pos_init.from_numpy(mesh.vertices)
+    #
+    # # Init Taichi global variables
+    # ti_boundary_labels.fill(0)
+    # ti_vel.fill(0)
+    # ti_mass.fill(0)
 
-    # Init Taichi global variables
-    ti_boundary_labels.fill(0)
-    ti_vel.fill(0)
-    ti_mass.fill(0)
+    initial()
 
     set_exforce()
     init_mesh_DmInv(dirichlet, len(dirichlet))
