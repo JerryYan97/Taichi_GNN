@@ -1,10 +1,11 @@
 import numpy as np
 import scipy.sparse as sp
 import torch
-from multiprocessing import Pool
+# from multiprocessing import Pool
+import multiprocessing as mp
 from .reader import *
 from .Dijkstra import Dijkstra
-from .utils_visualization import printProgressBar
+# from .utils_visualization import printProgressBar
 import os
 from collections import defaultdict
 from torch_geometric.data import InMemoryDataset, Data
@@ -12,6 +13,7 @@ import scipy as sp
 import random
 from numpy import linalg as LA
 from os import system
+from scipy.sparse import lil_matrix
 
 
 class SIM_Data_Geo(InMemoryDataset):
@@ -162,6 +164,43 @@ def buildGraph(mesh, edge):
 
 
 ################################### K means part #####################################
+def min_distance(vertices_num, dist, min_dist_set):
+    min_dist = float("inf")
+    for v in range(vertices_num):
+        if dist[v] < min_dist and min_dist_set[v] == False:
+            min_dist = dist[v]
+            min_index = v
+    return min_index
+
+
+def spt_parallel_func(shared_adj_mat, src_list, vertices_num, idx):
+    dist = [float("inf")] * vertices_num
+    dist[src_list[idx]] = 0
+    min_dist_set = [False] * vertices_num
+    for count in range(vertices_num):
+        # minimum distance vertex that is not processed
+        u = min_distance(vertices_num, dist, min_dist_set)
+        # put minimum distance vertex in shortest tree
+        min_dist_set[u] = True
+        # Update dist value of the adjacent vertices
+        for v in range(vertices_num):
+            if shared_adj_mat[u, v] > 0 and min_dist_set[v] == False and dist[v] > dist[u] + shared_adj_mat[u, v]:
+                dist[v] = dist[u] + shared_adj_mat[u, v]
+    return dist
+
+
+def childlist_helper_parallel_func(childlist_item, parent_list, src_list, spt_list):
+    min_dis = 100000.0
+    parent_id = -1
+    for p in parent_list:
+        list_idx = src_list.index(p)
+        dis = spt_list[list_idx][childlist_item]
+        if dis < min_dis:
+            parent_id = p
+            min_dis = dis
+    return parent_id
+
+
 class MeshKmeansHelper():
     def __init__(self, cluster_num, vertices_num, adj_mat):
         self._k = cluster_num
@@ -169,11 +208,6 @@ class MeshKmeansHelper():
         self._adj_mat = adj_mat
         self._spt_list = []
         self._src_list = []
-
-    def spt_parallel_func(self, idx):
-        tmp_dijkstra = Dijkstra(self.vertices_num, self.adj_mat)
-        return tmp_dijkstra.dijkstra(self._src_list[idx])
-
 
     def generate_spt_list(self, src_list, pool):
         if len(src_list) != self.k:
@@ -184,19 +218,28 @@ class MeshKmeansHelper():
         # Generate spt list
         res_list = []
         for i in range(self.k):
-            res_list.append(pool.apply_async(func=self.spt_parallel_func,
-                                             args=(i,)))
+            res_list.append(pool.apply_async(func=spt_parallel_func,
+                                             args=(self._adj_mat, self._src_list, self._vertices_num, i,)))
         for i in range(self.k):
             self._spt_list.append(res_list[i].get())
-            # tmp_dijkstra = Dijkstra(self.vertices_num, self.adj_mat)
-            # self._spt_list.append(tmp_dijkstra.dijkstra(self._src_list[i]))
+
+    def generate_belongs(self, child_list, parent_list, pool):
+        belonging = [None] * len(child_list)
+        res_list = []
+        # Parallel call
+        for t in range(len(child_list)):
+            res_list.append(pool.apply_async(func=childlist_helper_parallel_func,
+                                             args=(child_list[t], parent_list, self._src_list, self._spt_list,)))
+        # Get results
+        for t in range(len(child_list)):
+            belonging[t] = res_list[t].get()
+            if t % 10 == 0:
+                print("section 1 progress:", (float(t) / len(child_list)) * 100.0, "%")
+        return belonging
 
     def get_dist(self, src_idx, dst_idx):
-        try:
-            list_idx = self._src_list.index(src_idx)
-            return self._spt_list[list_idx][dst_idx]
-        except:
-            raise Exception("list_idx:", list_idx, " dst_idx:", dst_idx)
+        list_idx = self._src_list.index(src_idx)
+        return self._spt_list[list_idx][dst_idx]
 
     def get_spt(self, src_idx):
         list_idx = self._src_list.index(src_idx)
@@ -242,7 +285,7 @@ def update_centers(mesh, center_pos, parent_list, child_list, belonging):
 
 
 def get_mesh_map(mesh):
-    map = np.zeros((mesh.num_vertices, mesh.num_vertices))
+    map = lil_matrix((mesh.num_vertices, mesh.num_vertices), dtype=float)
     mesh.enable_connectivity()
     for p in range(mesh.num_vertices):
         adj_v = mesh.get_vertex_adjacent_vertices(p)
@@ -252,152 +295,31 @@ def get_mesh_map(mesh):
             p1 = mesh.vertices[n1]
             p2 = mesh.vertices[n2]
             dp = LA.norm(p1 - p2)
-            map[n1][n2] = map[n2][n1] = dp
-    map_list = map.tolist()
-    return map_list
-
-
-def K_means_taichi(mesh, k):
-    center_pos = []
-    whole_list = [n for n in range(0, mesh.num_vertices)]
-    # parent_list = random.sample(range(0, mesh.num_vertices), k)
-    parent_list = [i for i in range(0, mesh.num_vertices, (mesh.num_vertices // k) + 1)]
-    child_list = [x for x in whole_list if x not in parent_list]
-    belonging = [None] * len(child_list)  # length: child
-    for p in parent_list:
-        center_pos.append(mesh.vertices[p, :])
-    norm_d = 10000.0
-    map_list = get_mesh_map(mesh)
-    cluster_helper = MeshKmeansHelper(k, mesh.num_vertices, map_list)
-
-    pool = Pool(7)
-
-    while norm_d > 1.0:
-        res_list = []
-        cluster_helper.generate_spt_list(parent_list, pool)
-        # Parallel call
-        for t in range(len(child_list)):
-            res_list.append(pool.apply_async(func=childlist_parallel_func,
-                                             args=(child_list[t], parent_list, cluster_helper,)))
-
-        # Get results
-        for t in range(len(child_list)):
-            belonging[t] = res_list[t].get()
-            # system('clear')
-            if t % 10 == 0:
-                print("section 1 progress:", (float(t) / len(child_list)) * 100.0, "%")
-
-            # if t % 10:
-            #     print("progress bar:")
-            #     printProgressBar(t, len(child_list) - 1, 'Parallel 1:')
-
-        center_pos, norm_d, parent_list = update_centers(mesh, center_pos, parent_list, child_list, belonging)
-        child_list = [x for x in whole_list if x not in parent_list]  # update child
-    res_list = []
-    cluster_helper.generate_spt_list(parent_list, pool)
-    # Parallel call
-    for t in range(len(child_list)):
-        res_list.append(pool.apply_async(func=childlist_parallel_func,
-                                         args=(child_list[t], parent_list, cluster_helper,)))
-    # Get results
-    for t in range(len(child_list)):
-        belonging[t] = res_list[t].get()
-        # system('clear')
-        if t % 10 == 0:
-            print("section 2 progress:", (float(t) / len(child_list)) * 100.0, "%")
-
-    return center_pos, child_list, parent_list, belonging
-
-
-def childlist_parallel_func(childlist_item, parent_list, clusters_helper):
-    min_dis = 100000.0
-    parent_id = -1
-    for p in parent_list:
-        dis = clusters_helper.get_dist(p, childlist_item)
-        if dis < min_dis:
-            parent_id = p
-            min_dis = dis
-    return parent_id
+            map[n1, n2] = map[n2, n1] = dp
+    return map
 
 
 def K_means_multiprocess(mesh, k):
     center_pos = []
     whole_list = [n for n in range(0, mesh.num_vertices)]
-    # parent_list = random.sample(range(0, mesh.num_vertices), k)
     parent_list = [i for i in range(0, mesh.num_vertices, (mesh.num_vertices // k) + 1)]
     child_list = [x for x in whole_list if x not in parent_list]
-    belonging = [None] * len(child_list)  # length: child
     for p in parent_list:
         center_pos.append(mesh.vertices[p, :])
     norm_d = 10000.0
-    map_list = get_mesh_map(mesh)
-    cluster_helper = MeshKmeansHelper(k, mesh.num_vertices, map_list)
+    pool = mp.Pool()
 
-    pool = Pool()
+    cluster_helper = MeshKmeansHelper(k, mesh.num_vertices, get_mesh_map(mesh))
 
     while norm_d > 1.0:
-        res_list = []
-        cluster_helper.generate_spt_list(parent_list)
-        # Parallel call
-        for t in range(len(child_list)):
-            res_list.append(pool.apply_async(func=childlist_parallel_func,
-                                             args=(child_list[t], parent_list, cluster_helper,)))
-
-        # Get results
-        for t in range(len(child_list)):
-            belonging[t] = res_list[t].get()
-
+        cluster_helper.generate_spt_list(parent_list, pool)
+        belonging = cluster_helper.generate_belongs(child_list, parent_list, pool)
         center_pos, norm_d, parent_list = update_centers(mesh, center_pos, parent_list, child_list, belonging)
         child_list = [x for x in whole_list if x not in parent_list]  # update child
-    res_list = []
-    cluster_helper.generate_spt_list(parent_list)
-    # Parallel call
-    for t in range(len(child_list)):
-        res_list.append(pool.apply_async(func=childlist_parallel_func,
-                                         args=(child_list[t], parent_list, cluster_helper,)))
-    # Get results
-    for t in range(len(child_list)):
-        belonging[t] = res_list[t].get()
 
-    return center_pos, child_list, parent_list, belonging
-
-
-def K_means(mesh, k):
-    center_pos = []
-    whole_list = [n for n in range(0, mesh.num_vertices)]
-    # parent_list = random.sample(range(0, mesh.num_vertices), k)
-    parent_list = [i for i in range(0, mesh.num_vertices, (mesh.num_vertices // k) + 1)]
-    child_list = [x for x in whole_list if x not in parent_list]
-    belonging = [None] * len(child_list)  # length: child
-    for p in parent_list:
-        center_pos.append(mesh.vertices[p, :])
-    norm_d = 10000.0
-    map_list = get_mesh_map(mesh)
-    Graph = Dijkstra(mesh.num_vertices, map_list, False)
-    while norm_d > 1.0:
-        t = 0
-        for item1 in child_list:
-            min_dis = 100000.0
-            parent_id = -1
-            for p in parent_list:
-                dis = Graph.dijkstra2node(item1, p)
-                if dis < min_dis:
-                    parent_id = p
-                    min_dis = dis
-            belonging[t] = parent_id
-            t = t + 1
-        center_pos, norm_d, parent_list = update_centers(mesh, center_pos, parent_list, child_list, belonging)
-        child_list = [x for x in whole_list if x not in parent_list]  # update child
-    t = 0
-    for item1 in child_list:
-        min_dis = 100000.0
-        parent_id = -1
-        for p in parent_list:
-            dis = Graph.dijkstra2node(item1, p)
-            if dis < min_dis:
-                parent_id = p
-                min_dis = dis
-        belonging[t] = parent_id
-        t = t + 1
+    cluster_helper.generate_spt_list(parent_list, pool)
+    belonging = cluster_helper.generate_belongs(child_list, parent_list, pool)
+    pool.close()
+    pool.join()
 
     return center_pos, child_list, parent_list, belonging

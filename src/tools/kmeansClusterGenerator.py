@@ -5,13 +5,14 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
-from Utils.utils_gcn import K_means, K_means_multiprocess, K_means_taichi
+# from Utils.utils_gcn import K_means, K_means_multiprocess, K_means_taichi
+from Utils.utils_gcn import *
 from Utils.reader import read
 
 # Owing to the fixed color panel, it now just has only tests clusters num that is 10 and under 10.
 cluster_num = 10
 # Case 1002 doesn't work because it's particles' num is less than the clusters' num.
-test_case = 2
+test_case = 1005
 
 
 # Optimization record:
@@ -35,7 +36,9 @@ test_case = 2
 # case 1003: Timeout
 # case 1004: Timeout
 # Multiprocessing 2 + Taichi optimization:
-#
+# case 1001: ~13.113672256469727s
+# case 1004: 2141.33443069458 s
+# case 1005: 3529.759060382843 s
 
 def rgb_range01(rgb_np):
     return rgb_np / 255.0
@@ -50,9 +53,7 @@ if __name__ == "__main__":
     dim = case_info['dim']
 
     time_start = time.time()
-    # _, child_list, parent_list, belonging = K_means(mesh, cluster_num)
-    # _, child_list, parent_list, belonging = K_means_multiprocess(mesh, cluster_num)
-    _, child_list, parent_list, belonging = K_means_taichi(mesh, cluster_num)
+    _, child_list, parent_list, belonging = K_means_multiprocess(mesh, cluster_num)
     time_end = time.time()
     print("Kmeans execute time duration:", time_end-time_start, 's')
 
@@ -116,7 +117,7 @@ if __name__ == "__main__":
         gui = ti.GUI('kmeans visualization')
 
         pars.set_particles(mesh.vertices)
-        pars.set_particle_radii(np.full(mesh.num_vertices, 0.08))
+        pars.set_particle_radii(np.full(mesh.num_vertices, 0.01))
         # Label particles color
         particles_color = np.full((mesh.num_vertices, 3), -1.0, dtype=float)
         np_child_list = np.asarray(child_list)
