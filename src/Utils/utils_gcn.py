@@ -4,12 +4,14 @@ import torch
 from multiprocessing import Pool
 from .reader import *
 from .Dijkstra import Dijkstra
+from .utils_visualization import printProgressBar
 import os
 from collections import defaultdict
 from torch_geometric.data import InMemoryDataset, Data
 import scipy as sp
 import random
 from numpy import linalg as LA
+from os import system
 
 
 class SIM_Data_Geo(InMemoryDataset):
@@ -168,16 +170,26 @@ class MeshKmeansHelper():
         self._spt_list = []
         self._src_list = []
 
-    def generate_spt_list(self, src_list):
+    def spt_parallel_func(self, idx):
+        tmp_dijkstra = Dijkstra(self.vertices_num, self.adj_mat)
+        return tmp_dijkstra.dijkstra(self._src_list[idx])
+
+
+    def generate_spt_list(self, src_list, pool):
         if len(src_list) != self.k:
             raise Exception("Input srcs nums(", len(src_list), ") is not equal to k(", self.k, ").")
         # Init relevant lists
         self._spt_list = []
         self._src_list = src_list
         # Generate spt list
+        res_list = []
         for i in range(self.k):
-            tmp_dijkstra = Dijkstra(self.vertices_num, self.adj_mat)
-            self._spt_list.append(tmp_dijkstra.dijkstra(self._src_list[i]))
+            res_list.append(pool.apply_async(func=self.spt_parallel_func,
+                                             args=(i,)))
+        for i in range(self.k):
+            self._spt_list.append(res_list[i].get())
+            # tmp_dijkstra = Dijkstra(self.vertices_num, self.adj_mat)
+            # self._spt_list.append(tmp_dijkstra.dijkstra(self._src_list[i]))
 
     def get_dist(self, src_idx, dst_idx):
         try:
@@ -185,6 +197,10 @@ class MeshKmeansHelper():
             return self._spt_list[list_idx][dst_idx]
         except:
             raise Exception("list_idx:", list_idx, " dst_idx:", dst_idx)
+
+    def get_spt(self, src_idx):
+        list_idx = self._src_list.index(src_idx)
+        return self._spt_list[list_idx]
 
     @property
     def k(self):
@@ -239,6 +255,58 @@ def get_mesh_map(mesh):
             map[n1][n2] = map[n2][n1] = dp
     map_list = map.tolist()
     return map_list
+
+
+def K_means_taichi(mesh, k):
+    center_pos = []
+    whole_list = [n for n in range(0, mesh.num_vertices)]
+    # parent_list = random.sample(range(0, mesh.num_vertices), k)
+    parent_list = [i for i in range(0, mesh.num_vertices, (mesh.num_vertices // k) + 1)]
+    child_list = [x for x in whole_list if x not in parent_list]
+    belonging = [None] * len(child_list)  # length: child
+    for p in parent_list:
+        center_pos.append(mesh.vertices[p, :])
+    norm_d = 10000.0
+    map_list = get_mesh_map(mesh)
+    cluster_helper = MeshKmeansHelper(k, mesh.num_vertices, map_list)
+
+    pool = Pool(7)
+
+    while norm_d > 1.0:
+        res_list = []
+        cluster_helper.generate_spt_list(parent_list, pool)
+        # Parallel call
+        for t in range(len(child_list)):
+            res_list.append(pool.apply_async(func=childlist_parallel_func,
+                                             args=(child_list[t], parent_list, cluster_helper,)))
+
+        # Get results
+        for t in range(len(child_list)):
+            belonging[t] = res_list[t].get()
+            # system('clear')
+            if t % 10 == 0:
+                print("section 1 progress:", (float(t) / len(child_list)) * 100.0, "%")
+
+            # if t % 10:
+            #     print("progress bar:")
+            #     printProgressBar(t, len(child_list) - 1, 'Parallel 1:')
+
+        center_pos, norm_d, parent_list = update_centers(mesh, center_pos, parent_list, child_list, belonging)
+        child_list = [x for x in whole_list if x not in parent_list]  # update child
+    res_list = []
+    cluster_helper.generate_spt_list(parent_list, pool)
+    # Parallel call
+    for t in range(len(child_list)):
+        res_list.append(pool.apply_async(func=childlist_parallel_func,
+                                         args=(child_list[t], parent_list, cluster_helper,)))
+    # Get results
+    for t in range(len(child_list)):
+        belonging[t] = res_list[t].get()
+        # system('clear')
+        if t % 10 == 0:
+            print("section 2 progress:", (float(t) / len(child_list)) * 100.0, "%")
+
+    return center_pos, child_list, parent_list, belonging
 
 
 def childlist_parallel_func(childlist_item, parent_list, clusters_helper):

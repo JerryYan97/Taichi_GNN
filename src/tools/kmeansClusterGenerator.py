@@ -5,13 +5,13 @@ import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
-from Utils.utils_gcn import K_means, K_means_multiprocess
+from Utils.utils_gcn import K_means, K_means_multiprocess, K_means_taichi
 from Utils.reader import read
 
 # Owing to the fixed color panel, it now just has only tests clusters num that is 10 and under 10.
 cluster_num = 10
 # Case 1002 doesn't work because it's particles' num is less than the clusters' num.
-test_case = 1004
+test_case = 2
 
 
 # Optimization record:
@@ -33,7 +33,9 @@ test_case = 1004
 # case 1001: 8.820295810699463 s
 # case 1002: None
 # case 1003: Timeout
-# case 1004:
+# case 1004: Timeout
+# Multiprocessing 2 + Taichi optimization:
+#
 
 def rgb_range01(rgb_np):
     return rgb_np / 255.0
@@ -49,7 +51,8 @@ if __name__ == "__main__":
 
     time_start = time.time()
     # _, child_list, parent_list, belonging = K_means(mesh, cluster_num)
-    _, child_list, parent_list, belonging = K_means_multiprocess(mesh, cluster_num)
+    # _, child_list, parent_list, belonging = K_means_multiprocess(mesh, cluster_num)
+    _, child_list, parent_list, belonging = K_means_taichi(mesh, cluster_num)
     time_end = time.time()
     print("Kmeans execute time duration:", time_end-time_start, 's')
 

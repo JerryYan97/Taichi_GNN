@@ -1,5 +1,5 @@
 import taichi as ti
-import taichi_three as t3
+# import taichi_three as t3
 import taichi_glsl as ts
 
 
