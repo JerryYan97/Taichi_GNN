@@ -8,7 +8,7 @@ import os
 import sys
 import numpy as np
 import taichi as ti
-import taichi_three as t3
+# import taichi_three as t3
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
 from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh, get_force_field
@@ -21,7 +21,7 @@ ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1005
+test_case = 1
 case_info = read(int(test_case))
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -78,44 +78,32 @@ ti_weight_strain = ti.field(real, n_elements)
 ti_weight_volume = ti.field(real, n_elements)
 
 
-if dim == 3:
-    camera = t3.Camera()
-    scene = t3.Scene()
-    boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
-    model = t3.Model(t3.DynamicMesh(n_faces=len(boundary_triangles) * 2,
-                                    n_pos=case_info['mesh'].num_vertices,
-                                    n_nrm=len(boundary_triangles) * 2))
-    set_3D_scene(scene, camera, model, case_info)
+def init():
+    if dim == 2:
+        ti_elements.from_numpy(mesh.faces)
+    else:
+        ti_elements.from_numpy(mesh.elements)
 
-
-    def initial():
-        if dim == 2:
-           ti_elements.from_numpy(mesh.faces)
-        else:
-            ti_elements.from_numpy(mesh.elements)
-
-        ti_pos.from_numpy(mesh.vertices)
-        ti_pos_init.from_numpy(mesh.vertices)
-        ti_mass.fill(0)
-        ti_volume.fill(0)
-        ti_pos_new.fill(0)
-        ti_last_pos_new.fill(0)
-        ti_boundary_labels.fill(0)
-        ti_vel.fill(0)
-        ti_Dm_inv.fill(0)
-        ti_F.fill(0)
-        ti_A.fill(0)
-        ti_A_i.fill(0)
-        ti_q_idx_vec.fill(0)
-        ti_Bp.fill(0)
-        ti_Sn.fill(0)
-        ti_lhs_matrix.fill(0)
-        ti_phi.fill(0)
-        ti_weight_strain.fill(0)
-        ti_weight_volume.fill(0)
-        ti_ex_force.fill(0)
-
-
+    ti_pos.from_numpy(mesh.vertices)
+    ti_pos_init.from_numpy(mesh.vertices)
+    ti_mass.fill(0)
+    ti_volume.fill(0)
+    ti_pos_new.fill(0)
+    ti_last_pos_new.fill(0)
+    ti_boundary_labels.fill(0)
+    ti_vel.fill(0)
+    ti_Dm_inv.fill(0)
+    ti_F.fill(0)
+    ti_A.fill(0)
+    ti_A_i.fill(0)
+    ti_q_idx_vec.fill(0)
+    ti_Bp.fill(0)
+    ti_Sn.fill(0)
+    ti_lhs_matrix.fill(0)
+    ti_phi.fill(0)
+    ti_weight_strain.fill(0)
+    ti_weight_volume.fill(0)
+    ti_ex_force.fill(0)
 
 # Backup Settings:
 # Bunny: ti.Vector([0.0, 0.0, 0.1])
@@ -241,7 +229,6 @@ def fill_idx_vec(ele_idx):
 @ti.kernel
 def precomputation():
     dimp = dim+1
-    # print("Precomputation starts")
     for e_it in range(n_elements):
         if ti.static(dim == 2):
             ia, ib, ic = ti_elements[e_it]
@@ -254,11 +241,9 @@ def precomputation():
             ti_mass[idx_b] += ti_volume[e_it] / dimp * rho
             ti_mass[idx_c] += ti_volume[e_it] / dimp * rho
             ti_mass[idx_d] += ti_volume[e_it] / dimp * rho
-            # print("ti_elements[e_it]:\n", ti_elements[e_it])
 
     # Construct A_i matrix for every element / Build A for all the constraints:
     # Strain constraints and area constraints
-    # print("A init starts")
     for i in range(n_elements):
         for t in ti.static(range(2)):
             if ti.static(dim == 2):
@@ -687,7 +672,7 @@ if __name__ == "__main__":
     # ti_vel.fill(0)
     # ti_mass.fill(0)
 
-    initial()
+    init()
 
     set_exforce()
     init_mesh_DmInv(dirichlet, len(dirichlet))
@@ -707,6 +692,15 @@ if __name__ == "__main__":
         filename = f'./results/frame_rest.png'
         draw_image(gui, filename, ti_pos.to_numpy(), mesh_offset, mesh_scale, ti_elements.to_numpy(), n_elements)
     else:
+        import tina
+        camera = t3.Camera()
+        scene = t3.Scene()
+        boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
+        model = t3.Model(t3.DynamicMesh(n_faces=len(boundary_triangles) * 2,
+                                            n_pos=case_info['mesh'].num_vertices,
+                                            n_nrm=len(boundary_triangles) * 2))
+        set_3D_scene(scene, camera, model, case_info)
+
         # filename = f'./results/frame_rest.png'
         gui = ti.GUI('Model Visualizer', camera.res)
         gui.get_event(None)

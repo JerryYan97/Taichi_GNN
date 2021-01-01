@@ -91,6 +91,28 @@ def update_mesh(mesh: ti.template()):
         mesh.nrm[2 * i + 1] = -normal
 
 
+# It's only for 3D.
+@ti.kernel
+def update_boundary_pos(pos: ti.template(),
+                        boundary_pos: ti.ext_arr(),
+                        boundary_tris: ti.ext_arr(),
+                        boundary_tri_num: ti.int32):
+    for tri_idx in range(boundary_tri_num):
+        for tri_vert_idx in ti.static(range(3)):
+            for dim_idx in ti.static(range(3)):
+                boundary_pos[tri_idx, tri_vert_idx, dim_idx] = pos[boundary_tris[tri_idx, tri_vert_idx]][dim_idx]
+
+    # for tri_idx in range(boundary_tri_num):
+    #     b_pos_idx1, b_pos_idx2, b_pos_idx3 = tri_idx * 3, tri_idx * 3 + 1, tri_idx * 3 + 2
+    #     tri_pos_idx1 = boundary_tris[tri_idx, 0]
+    #     tri_pos_idx2 = boundary_tris[tri_idx, 1]
+    #     tri_pos_idx3 = boundary_tris[tri_idx, 2]
+    #     for dim_idx in ti.static(range(3)):
+    #         boundary_pos[b_pos_idx1, dim_idx] = pos[tri_pos_idx1][dim_idx]
+    #         boundary_pos[b_pos_idx2, dim_idx] = pos[tri_pos_idx2][dim_idx]
+    #         boundary_pos[b_pos_idx3, dim_idx] = pos[tri_pos_idx3][dim_idx]
+
+
 # For 2D: Angle is counter-clock wise and it uses [1, 0] direction as its start direction.
 # For 3D: It uses Spherical coordinate system with its origin at the [0, 0, 0].
 #         Angle1 will be used to determine the angle between y axis and the final direction.
