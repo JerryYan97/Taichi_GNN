@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
-from Utils.utils_visualization import draw_pd_pn_image, set_3D_scene, update_boundary_pos
+from Utils.utils_visualization import draw_pd_pn_image, set_3D_scene, update_boundary_mesh, rotate_matrix_y_axis
 
 
 if __name__ == "__main__":
@@ -15,7 +15,7 @@ if __name__ == "__main__":
         for name in files:
             os.remove(os.path.join(root, name))
 
-    case_info = read(1001)
+    case_info = read(1005)
     n_particles = case_info['mesh'].num_vertices
     n_elements = 0
     if case_info['dim'] == 2:
@@ -32,16 +32,17 @@ if __name__ == "__main__":
         gui = ti.GUI("Model Visualizer", (1024, 1024), background_color=0xf7f7f7)
     elif case_info['dim'] == 3:
         import tina
-        boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
         mesh_pos = ti.Vector.field(3, ti.f32, case_info['mesh'].num_vertices)
         scene = tina.Scene(culling=False)
         mesh = tina.SimpleMesh()
-        scene.add_object(mesh)
+        model = tina.MeshTransform(mesh)
+        scene.add_object(model)
         gui = ti.GUI('Model Visualizer')
 
+        model.set_transform(case_info['transformation_mat'])
         mesh_pos.from_numpy(case_info['mesh'].vertices)
-        boundary_pos = np.ndarray(shape=(len(boundary_triangles), 3, 3), dtype=np.float)
-        boundary_tri_num = len(boundary_triangles)
+        boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
+        boundary_tri_num = case_info['boundary_tri_num']
 
     while True:
         if case_info['dim'] == 2:
@@ -50,7 +51,7 @@ if __name__ == "__main__":
                             case_info['mesh'].vertices.astype(np.float64)[:, 0:2],
                             case_info['mesh_offset'], case_info['mesh_scale'], case_info['mesh'].faces, n_elements)
         elif case_info['dim'] == 3:
-            update_boundary_pos(mesh_pos, boundary_pos, boundary_triangles, boundary_tri_num)
+            update_boundary_mesh(mesh_pos, boundary_pos, case_info)
             scene.input(gui)
             mesh.set_face_verts(boundary_pos)
             scene.render()

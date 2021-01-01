@@ -1,6 +1,7 @@
 import taichi as ti
 # import taichi_three as t3
 import taichi_glsl as ts
+import numpy as np
 
 
 # PN result: Red (Top Layer)
@@ -57,18 +58,19 @@ def draw_image(gui, file_name_path,
 
 
 def set_3D_scene(scene, camera, model, case_info):
-    amb_light = t3.AmbientLight(0.5)
-    dir_light = t3.Light(dir=case_info['light_dir'])
-    # pt_light = t3.PointLight(pos=[0, 0, 10])
-    scene.add_camera(camera)
-    scene.add_light(amb_light)
-    scene.add_light(dir_light)
-    # scene.add_light(pt_light)
-    boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
-    model.mesh.n_faces[None] = len(boundary_triangles) * 2
-    init_mesh(model.mesh, boundary_triangles)
-    model.L2W[None] = case_info['init_transformation']
-    scene.add_model(model)
+    raise NotImplementedError("set_3D_scene() is Not Implemented")
+    # amb_light = t3.AmbientLight(0.5)
+    # dir_light = t3.Light(dir=case_info['light_dir'])
+    # # pt_light = t3.PointLight(pos=[0, 0, 10])
+    # scene.add_camera(camera)
+    # scene.add_light(amb_light)
+    # scene.add_light(dir_light)
+    # # scene.add_light(pt_light)
+    # boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
+    # model.mesh.n_faces[None] = len(boundary_triangles) * 2
+    # init_mesh(model.mesh, boundary_triangles)
+    # model.L2W[None] = case_info['init_transformation']
+    # scene.add_model(model)
 
 
 @ti.kernel
@@ -102,15 +104,10 @@ def update_boundary_pos(pos: ti.template(),
             for dim_idx in ti.static(range(3)):
                 boundary_pos[tri_idx, tri_vert_idx, dim_idx] = pos[boundary_tris[tri_idx, tri_vert_idx]][dim_idx]
 
-    # for tri_idx in range(boundary_tri_num):
-    #     b_pos_idx1, b_pos_idx2, b_pos_idx3 = tri_idx * 3, tri_idx * 3 + 1, tri_idx * 3 + 2
-    #     tri_pos_idx1 = boundary_tris[tri_idx, 0]
-    #     tri_pos_idx2 = boundary_tris[tri_idx, 1]
-    #     tri_pos_idx3 = boundary_tris[tri_idx, 2]
-    #     for dim_idx in ti.static(range(3)):
-    #         boundary_pos[b_pos_idx1, dim_idx] = pos[tri_pos_idx1][dim_idx]
-    #         boundary_pos[b_pos_idx2, dim_idx] = pos[tri_pos_idx2][dim_idx]
-    #         boundary_pos[b_pos_idx3, dim_idx] = pos[tri_pos_idx3][dim_idx]
+
+def update_boundary_mesh(mesh_pos, boundary_pos, case_info):
+    boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
+    update_boundary_pos(mesh_pos, boundary_pos, boundary_triangles, case_info['boundary_tri_num'])
 
 
 # For 2D: Angle is counter-clock wise and it uses [1, 0] direction as its start direction.
@@ -138,25 +135,9 @@ def get_force_field(mag, angle1, angle2=0.0, dim=2):
         raise Exception("Force field dim doesn't correct. Error dim is {}".format(dim))
 
 
-# https://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console
-# Print iterations progress
-def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
-    """
-    Call in a loop to create terminal progress bar
-    @params:
-        iteration   - Required  : current iteration (Int)
-        total       - Required  : total iterations (Int)
-        prefix      - Optional  : prefix string (Str)
-        suffix      - Optional  : suffix string (Str)
-        decimals    - Optional  : positive number of decimals in percent complete (Int)
-        length      - Optional  : character length of bar (Int)
-        fill        - Optional  : bar fill character (Str)
-        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
-    """
-    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
-    filledLength = int(length * iteration // total)
-    bar = fill * filledLength + '-' * (length - filledLength)
-    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
-    # Print New Line on Complete
-    if iteration == total:
-        print()
+def rotate_matrix_y_axis(beta_degree):
+    beta_radian = np.radians(beta_degree)
+    return np.array([[np.cos(beta_radian), 0.0, -np.sin(beta_radian), 0.0],
+                     [0.0, 1.0, 0.0, 0.0],
+                     [np.sin(beta_radian), 0.0, np.cos(beta_radian), 0.0],
+                     [0.0, 0.0, 0.0, 1.0]])

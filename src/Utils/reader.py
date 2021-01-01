@@ -2,10 +2,10 @@ import pymesh
 import numpy as np
 import sys
 import os
-# import taichi_three as t3
 
 from .graph_tools import find_boundary
-
+from tina import translate, scale
+from .utils_visualization import rotate_matrix_y_axis
 
 def read(testcase):
     case_info = {}
@@ -78,7 +78,10 @@ def read(testcase):
         case_info['mesh_scale'] = mesh_scale
         case_info['mesh_offset'] = mesh_offset
         case_info['boundary'] = find_boundary(mesh.elements)
-        # case_info['init_transformation'] = t3.transform(t3.rotateY(45.0), [-0.2, -1.1, -2.0])
+        case_info['boundary_tri_num'] = len(case_info['boundary'][2])
+        case_info['init_translate'] = [0.0, -1.0, 0.0]
+        case_info['init_scale'] = 1.0
+        case_info['transformation_mat'] = translate([0.0, -1.0, -5.0]) @ rotate_matrix_y_axis(-45.0) @ scale(1.0)
         case_info['light_dir'] = [-0.2, -0.6, 0.0]
         return case_info
     elif testcase == 1002:
@@ -96,7 +99,10 @@ def read(testcase):
         case_info['mesh_scale'] = mesh_scale
         case_info['mesh_offset'] = mesh_offset
         case_info['boundary'] = find_boundary(mesh.elements)
-        # case_info['init_transformation'] = t3.transform(t3.rotateY(0.0), [0.0, 0.0, 0.0])
+        case_info['boundary_tri_num'] = len(case_info['boundary'][2])
+        case_info['init_translate'] = [0.0, 0.0, 0.0]
+        case_info['init_scale'] = 1.0
+        case_info['transformation_mat'] = translate([0.0, 0.0, 0.0]) @ rotate_matrix_y_axis(45.0) @ scale(1.0)
         case_info['light_dir'] = [-0.8, -0.6, -1.0]
         return case_info
     elif testcase == 1003:
@@ -119,7 +125,10 @@ def read(testcase):
         case_info['mesh_scale'] = mesh_scale
         case_info['mesh_offset'] = mesh_offset
         case_info['boundary'] = find_boundary(mesh.elements)
-        # case_info['init_transformation'] = t3.transform(t3.rotateY(0.0), [-0.5, -1.0, 0.0])
+        case_info['boundary_tri_num'] = len(case_info['boundary'][2])
+        case_info['init_translate'] = [-0.2, -0.5, 0.0]
+        case_info['init_scale'] = 1.0
+        case_info['transformation_mat'] = translate([-0.3, -0.5, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
         case_info['light_dir'] = [-0.8, -0.6, -1.0]
         return case_info
     elif testcase == 1004:
@@ -138,7 +147,8 @@ def read(testcase):
         case_info['mesh_scale'] = mesh_scale
         case_info['mesh_offset'] = mesh_offset
         case_info['boundary'] = find_boundary(mesh.elements)
-        # case_info['init_transformation'] = t3.transform(t3.rotateY(0.0), [-0.5, -1.0, 0.0])
+        case_info['boundary_tri_num'] = len(case_info['boundary'][2])
+        case_info['transformation_mat'] = translate([-0.3, -0.5, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
         case_info['light_dir'] = [-0.8, -0.6, -1.0]
         return case_info
     elif testcase == 1005:
@@ -161,7 +171,8 @@ def read(testcase):
         case_info['mesh_scale'] = mesh_scale
         case_info['mesh_offset'] = mesh_offset
         case_info['boundary'] = find_boundary(mesh.elements)
-        # case_info['init_transformation'] = t3.transform(t3.rotateY(-75.0), [0.0, -0.2, 2.5])
+        case_info['boundary_tri_num'] = len(case_info['boundary'][2])
+        case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(6.0)
         case_info['light_dir'] = [-0.8, -0.6, -1.0]
         return case_info
     else:
