@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
-from Utils.utils_visualization import draw_pd_pn_image, set_3D_scene, update_boundary_mesh, rotate_matrix_y_axis
+from Utils.utils_visualization import draw_pd_pn_image, set_3D_scene, update_boundary_mesh
 
 
 if __name__ == "__main__":
@@ -33,7 +33,7 @@ if __name__ == "__main__":
     elif case_info['dim'] == 3:
         import tina
         mesh_pos = ti.Vector.field(3, ti.f32, case_info['mesh'].num_vertices)
-        scene = tina.Scene(culling=False)
+        scene = tina.Scene(culling=False, clipping=True)
         mesh = tina.SimpleMesh()
         model = tina.MeshTransform(mesh)
         scene.add_object(model)
@@ -42,7 +42,6 @@ if __name__ == "__main__":
         model.set_transform(case_info['transformation_mat'])
         mesh_pos.from_numpy(case_info['mesh'].vertices)
         boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
-        boundary_tri_num = case_info['boundary_tri_num']
 
     while True:
         if case_info['dim'] == 2:

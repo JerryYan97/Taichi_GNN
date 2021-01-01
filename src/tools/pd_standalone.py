@@ -11,12 +11,10 @@ import taichi as ti
 # import taichi_three as t3
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
-from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh, get_force_field
+from Utils.utils_visualization import draw_image, get_force_field, update_boundary_mesh
 from scipy import sparse
 from scipy.sparse.linalg import factorized
 from Utils.math_tools import svd
-
-ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 
 real = ti.f64
 
@@ -35,7 +33,17 @@ if dim == 2:
 else:
     n_elements = mesh.num_elements
 
+ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 n_vertices = mesh.num_vertices
+
+if dim == 3:
+    import tina
+    scene = tina.Scene(culling=False, clipping=True)
+    tina_mesh = tina.SimpleMesh()
+    model = tina.MeshTransform(tina_mesh)
+    scene.add_object(model)
+    boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
+
 
 # Material settings:
 rho = 100
@@ -116,7 +124,7 @@ def set_exforce():
     else:
         exf_angle1 = 45.0
         exf_angle2 = 45.0
-        exf_mag = 0.0002
+        exf_mag = 1.0
         ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
     # print("External force:", ti_ex_force)
 
@@ -313,7 +321,6 @@ def precomputation():
                 set_ti_A_i(t * n_elements + i, 8, 8, e23)
                 set_ti_A_i(t * n_elements + i, 8, 11, e33)
 
-    # print("Constraints init starts")
     # # Add strain and area/volume constraints to the lhs matrix
     for ele_idx in range(n_elements):
         for t in range(2):
@@ -333,7 +340,6 @@ def precomputation():
                         ti_lhs_matrix[lhs_row_idx, lhs_col_idx] += (ti_A[ele_idx, idx, A_row_idx] *
                                                                     ti_A[ele_idx, idx, A_col_idx] * weight)
 
-    # print("Position constraints starts")
     # Add positional constraints to the lhs matrix
     for i in range(n_vertices):
         if ti_boundary_labels[i] == 1:
@@ -345,13 +351,10 @@ def precomputation():
                 q_i_z_idx = i * dim + 2
                 ti_lhs_matrix[q_i_z_idx, q_i_z_idx] += m_weight_positional
 
-    # print("lhs matrix starts")
     # Construct lhs matrix without constraints
     for i in range(n_vertices):
         for d in ti.static(range(dim)):
             ti_lhs_matrix[i * dim + d, i * dim + d] += ti_mass[i] / (dt * dt)
-    # print("ti_lhs_mat: after add mass:")
-    # print(ti_lhs_matrix[None])
 
 
 @ti.func
@@ -406,12 +409,9 @@ def local_solve_build_bp_for_all_constraints():
         # Construct strain constraints:
         # Construct Current F_i:
         F_i = compute_Fi(i)
-        # F_i = ti.Matrix([[0.469670097179, -0.530328267640], [0.530329888611, 1.530328253430]])
         ti_F[i] = F_i
         # Use current F_i construct current 'B * p' or Ri
-        # U, sigma, V = ti.svd(F_i, real)
         U, sigma, V = svd(F_i)
-        # print("F_i:\n", F_i, "U:\n", U, "Sigma:\n", sigma, "V:\n", V)
         ti_Bp[i] = U @ V.transpose()
 
         # Construct volume preservation constraints:
@@ -656,21 +656,10 @@ if __name__ == "__main__":
         for name in files:
             os.remove(os.path.join(root, name))
 
-    video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
+    # video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
 
     frame_counter = 0
     rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
-    # if dim == 2:
-    #     ti_elements.from_numpy(mesh.faces)
-    # else:
-    #     ti_elements.from_numpy(mesh.elements)
-    # ti_pos.from_numpy(mesh.vertices)
-    # ti_pos_init.from_numpy(mesh.vertices)
-    #
-    # # Init Taichi global variables
-    # ti_boundary_labels.fill(0)
-    # ti_vel.fill(0)
-    # ti_mass.fill(0)
 
     init()
 
@@ -684,7 +673,6 @@ if __name__ == "__main__":
     # print("sparse lhs matrix:\n", s_lhs_matrix_np)
     pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
-    gui = None
     wait = input("PRESS ENTER TO CONTINUE.")
 
     if dim == 2:
@@ -692,24 +680,13 @@ if __name__ == "__main__":
         filename = f'./results/frame_rest.png'
         draw_image(gui, filename, ti_pos.to_numpy(), mesh_offset, mesh_scale, ti_elements.to_numpy(), n_elements)
     else:
-        import tina
-        camera = t3.Camera()
-        scene = t3.Scene()
-        boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
-        model = t3.Model(t3.DynamicMesh(n_faces=len(boundary_triangles) * 2,
-                                            n_pos=case_info['mesh'].num_vertices,
-                                            n_nrm=len(boundary_triangles) * 2))
-        set_3D_scene(scene, camera, model, case_info)
-
-        # filename = f'./results/frame_rest.png'
-        gui = ti.GUI('Model Visualizer', camera.res)
-        gui.get_event(None)
-        model.mesh.pos.from_numpy(case_info['mesh'].vertices.astype(np.float32))
-        update_mesh(model.mesh)
-        camera.from_mouse(gui)
+        gui = ti.GUI('PD standalone 3D')
+        model.set_transform(case_info['transformation_mat'])
+        update_boundary_mesh(ti_pos, boundary_pos, case_info)
+        scene.input(gui)
+        tina_mesh.set_face_verts(boundary_pos)
         scene.render()
-        video_manager.write_frame(camera.img)
-        gui.set_image(camera.img)
+        gui.set_image(scene.img)
         gui.show()
 
     frame_counter = 0
@@ -758,13 +735,11 @@ if __name__ == "__main__":
         if dim == 2:
             draw_image(gui, filename, ti_pos.to_numpy(), mesh_offset, mesh_scale, ti_elements.to_numpy(), n_elements)
         else:
-            gui.get_event(None)
-            model.mesh.pos.from_numpy(ti_pos.to_numpy())
-            update_mesh(model.mesh)
-            camera.from_mouse(gui)
+            update_boundary_mesh(ti_pos, boundary_pos, case_info)
+            scene.input(gui)
+            tina_mesh.set_face_verts(boundary_pos)
             scene.render()
-            video_manager.write_frame(camera.img)
-            gui.set_image(camera.img)
+            gui.set_image(scene.img)
             gui.show()
 
-    video_manager.make_video(gif=True, mp4=True)
+# video_manager.make_video(gif=True, mp4=True)
