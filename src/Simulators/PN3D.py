@@ -3,27 +3,22 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 print(sys.path)
 from Utils.JGSL_WATER import *
 import taichi as ti
-import taichi_three as t3
 import numpy as np
 from Utils.neo_hookean import *
 from Utils.math_tools import *
-from Utils.reader import read
 from Utils.Dijkstra import *
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
-from numpy import linalg as LA
 from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh, get_force_field
-# from .PD3D import PDSimulation
 ##############################################################################
 real = ti.f64
-# ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 
 
 @ti.data_oriented
 class PNSimulation:
-    def __init__(self, obj_file, _dt):
+    def __init__(self, case_info, _dt):
         ################################ mesh ######################################
-        self.case_info = read(obj_file)
+        self.case_info = case_info
         self.mesh = self.case_info['mesh']
         self.dirichlet = self.case_info['dirichlet']
         self.mesh_scale = self.case_info['mesh_scale']

@@ -1,7 +1,7 @@
 import sys, os, time
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 import taichi as ti
-import taichi_three as t3
+# import taichi_three as t3
 import numpy as np
 import pymesh
 from Utils.JGSL_WATER import *
@@ -9,10 +9,10 @@ from Utils.neo_hookean import *
 from Utils.reader import read
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
-from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh, get_force_field
+from Utils.utils_visualization import draw_image, update_boundary_mesh, get_force_field
 
 ##############################################################################
-case_info = read(1005)
+case_info = read(1001)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
@@ -21,7 +21,7 @@ dim = case_info['dim']
 
 ##############################################################################
 
-ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
+ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 
 real = ti.f64
 
@@ -36,6 +36,13 @@ if dim == 2:
     n_elements = mesh.num_faces
 if dim == 3:
     n_elements = mesh.elements.shape[0]
+    import tina
+    scene = tina.Scene(culling=False, clipping=True)
+    tina_mesh = tina.SimpleMesh()
+    model = tina.MeshTransform(tina_mesh)
+    scene.add_object(model)
+    boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
+
 cnt = ti.field(ti.i32, shape=())
 
 x = ti.Vector.field(dim, real, n_particles)
@@ -55,15 +62,6 @@ data_sol = ti.field(real, shape=200000)
 
 # external force -- Angle: from [1, 0] -- counter-clock wise
 ex_force = ti.Vector.field(dim, real, 1)
-
-if dim == 3:
-    camera = t3.Camera()
-    scene = t3.Scene()
-    boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
-    model = t3.Model(t3.DynamicMesh(n_faces=len(boundary_triangles) * 2,
-                                    n_pos=case_info['mesh'].num_vertices,
-                                    n_nrm=len(boundary_triangles) * 2))
-    set_3D_scene(scene, camera, model, case_info)
 
 
 def initial():
@@ -90,7 +88,7 @@ def set_exforce():
     else:
         exf_angle1 = 0.0
         exf_angle2 = 0.0
-        exf_mag = 0.0002
+        exf_mag = 6.0
         # 1001 6
         # 1003 and 1004 0.06
         # 1005 0.0002
@@ -351,15 +349,13 @@ if __name__ == "__main__":
         filename = f'./results/frame_rest.png'
         draw_image(gui, filename, x.to_numpy(), mesh_offset, mesh_scale, vertices.to_numpy(), n_elements)
     else:
-        # filename = f'./results/frame_rest.png'
-        gui = ti.GUI('Model Visualizer', camera.res)
-        gui.get_event(None)
-        model.mesh.pos.from_numpy(case_info['mesh'].vertices.astype(np.float32))
-        update_mesh(model.mesh)
-        camera.from_mouse(gui)
+        gui = ti.GUI('PN standalone 3D')
+        model.set_transform(case_info['transformation_mat'])
+        update_boundary_mesh(x, boundary_pos, case_info)
+        scene.input(gui)
+        tina_mesh.set_face_verts(boundary_pos)
         scene.render()
-        video_manager.write_frame(camera.img)
-        gui.set_image(camera.img)
+        gui.set_image(scene.img)
         gui.show()
 
     for f in range(1000):
@@ -396,11 +392,9 @@ if __name__ == "__main__":
         if dim == 2:
             draw_image(gui, filename, x.to_numpy(), mesh_offset, mesh_scale, vertices.to_numpy(), n_elements)
         else:
-            gui.get_event(None)
-            model.mesh.pos.from_numpy(x.to_numpy())
-            update_mesh(model.mesh)
-            camera.from_mouse(gui)
+            update_boundary_mesh(x, boundary_pos, case_info)
+            scene.input(gui)
+            tina_mesh.set_face_verts(boundary_pos)
             scene.render()
-            video_manager.write_frame(camera.img)
-            gui.set_image(camera.img)
+            gui.set_image(scene.img)
             gui.show()

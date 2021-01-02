@@ -8,7 +8,6 @@ import os
 import sys
 import numpy as np
 import taichi as ti
-# import taichi_three as t3
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
 from Utils.utils_visualization import draw_image, get_force_field, update_boundary_mesh
@@ -27,23 +26,20 @@ mesh_scale = case_info['mesh_scale']
 mesh_offset = case_info['mesh_offset']
 dim = case_info['dim']
 
+ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
+n_vertices = mesh.num_vertices
+
 # 2D and 3D scene settings:
 if dim == 2:
     n_elements = mesh.num_faces
 else:
     n_elements = mesh.num_elements
-
-ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
-n_vertices = mesh.num_vertices
-
-if dim == 3:
     import tina
     scene = tina.Scene(culling=False, clipping=True)
     tina_mesh = tina.SimpleMesh()
     model = tina.MeshTransform(tina_mesh)
     scene.add_object(model)
     boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
-
 
 # Material settings:
 rho = 100
@@ -112,6 +108,7 @@ def init():
     ti_weight_strain.fill(0)
     ti_weight_volume.fill(0)
     ti_ex_force.fill(0)
+
 
 # Backup Settings:
 # Bunny: ti.Vector([0.0, 0.0, 0.1])

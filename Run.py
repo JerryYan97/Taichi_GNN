@@ -3,7 +3,6 @@
 from src.Simulators.PN3D import *
 from src.Simulators.PD3D import *
 from src.Utils.reader import read
-from src.Utils.utils_gcn import K_means
 import torch
 import os
 
@@ -25,14 +24,26 @@ cluster_num = 10
 
 # pd->pn
 if __name__ == '__main__':
-    # simple data generation
+    # Run settings:
     is_test = 0
-    # if is_test == 0:
-    #     if not os.path.exists("Outputs"):
-    #         os.makedirs("Outputs")
-    #     for root, dirs, files in os.walk("Outputs/"):
-    #         for name in files:
-    #             os.remove(os.path.join(root, name))
+    if is_test == 0:
+        if not os.path.exists("Outputs"):
+            os.makedirs("Outputs")
+        for root, dirs, files in os.walk("Outputs/"):
+            for name in files:
+                os.remove(os.path.join(root, name))
+
+    # Case settings:
+    case_info = read(test_case)
+    scene_info = {}
+    # 3D visualization variables init:
+    if case_info['dim'] == 3:
+        import tina
+        scene_info['scene'] = tina.Scene(culling=False, clipping=True)
+        scene_info['tina_mesh'] = tina.SimpleMesh()
+        scene_info['model'] = tina.MeshTransform(scene_info['tina_mesh'])
+        scene_info['scene'].add_object(scene_info['model'])
+        scene_info['boundary_pos'] = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
 
     # # ti.init()
     # pd = PDSimulation(test_case, dt)
@@ -80,24 +91,24 @@ if __name__ == '__main__':
     #         for name in files:
     #             os.remove(os.path.join(root, name))
     # Large scale data generation
-    sampled_angle1_num = 8
-    sampled_angle2_num = 8
-    sampled_mag_num = 5
-    pd = PDSimulation(test_case, dt)
-    pn = PNSimulation(test_case, dt)
-    pd.set_material(rho, E, nu, dt)
-    pn.set_material(rho, E, nu, dt)
-    pd.initial_scene()
-    for ang_idx1 in range(sampled_angle1_num):
-        for ang_idx2 in range(sampled_angle2_num):
-            for mag_idx in range(sampled_mag_num):
-                pd.initial()
-                pn.initial()
-                pn.compute_restT_and_m()
-
-                pn.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), (mag_idx + 5))
-                pd.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), (mag_idx + 5))
-                pd.Run(pn, is_test, frame_count)
+    # sampled_angle1_num = 8
+    # sampled_angle2_num = 8
+    # sampled_mag_num = 5
+    # pd = PDSimulation(test_case, dt)
+    # pn = PNSimulation(test_case, dt)
+    # pd.set_material(rho, E, nu, dt)
+    # pn.set_material(rho, E, nu, dt)
+    # pd.initial_scene()
+    # for ang_idx1 in range(sampled_angle1_num):
+    #     for ang_idx2 in range(sampled_angle2_num):
+    #         for mag_idx in range(sampled_mag_num):
+    #             pd.initial()
+    #             pn.initial()
+    #             pn.compute_restT_and_m()
+    #
+    #             pn.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), (mag_idx + 5))
+    #             pd.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), (mag_idx + 5))
+    #             pd.Run(pn, is_test, frame_count)
 
 
     # foor loop generate
@@ -122,18 +133,17 @@ if __name__ == '__main__':
     #
     #             pd.Run(pn, is_test, frame_count)
 
-
-    # separately generate
-    # pd = PDSimulation(test_case, dt)
-    # pn = PNSimulation(test_case, dt)
-    # pd.set_material(rho, E, nu, dt)
-    # pn.set_material(rho, E, nu, dt)
-    # pd.initial()
-    # pn.initial()
-    # pn.compute_restT_and_m()
-    # pn.set_force(0 * (180.0 / sampled_angle1_num), 0 * (360.0 / sampled_angle2_num), (0 + 1))
-    # pd.set_force(0 * (180.0 / sampled_angle1_num), 0 * (360.0 / sampled_angle2_num), (0 + 1))
-    # pd.Run(pn, is_test, frame_count)
+    # Separately generate
+    pd = PDSimulation(case_info, dt)
+    pn = PNSimulation(case_info, dt)
+    pd.set_material(rho, E, nu, dt)
+    pn.set_material(rho, E, nu, dt)
+    pd.initial()
+    pn.initial()
+    pn.compute_restT_and_m()
+    pn.set_force(0, 0, 6)
+    pd.set_force(0, 0, 6)
+    pd.Run(pn, is_test, frame_count, scene_info)
 
 
     # pd2 = PDSimulation(test_case, dt)
