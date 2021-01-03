@@ -8,13 +8,60 @@ from scipy.linalg import sqrtm
 from scipy import sparse
 from scipy.sparse.linalg import factorized
 from Utils.math_tools import svd
+import multiprocessing as mp
 
 real = ti.f64
+
+
+def calcCenterOfMass(vind, dim, mass, pos):
+    sum = np.zeros(dim)
+    summ = 0.0
+    for i in vind:
+        sum += mass[i] * pos[i]
+        summ += mass[i]
+    sum /= summ
+    return sum
+
+
+def calcA_qq(q_i, dim):
+    sum = np.zeros((dim, dim))
+    for i in range(q_i.shape[0]):
+        sum += np.outer(q_i[i], np.transpose(q_i[i]))
+    return np.linalg.inv(sum)
+
+
+def calcA_pq(p_i, q_i, dim):
+    sum = np.zeros((dim, dim))
+    for i in range(p_i.shape[0]):
+        sum += np.outer(p_i[i], np.transpose(q_i[i]))
+    return sum
+
 
 def calcR(A_pq):
     S = sqrtm(np.dot(np.transpose(A_pq), A_pq))
     R = np.dot(A_pq, inv(S))
     return R
+
+
+def f(adj_v, pos, initial_rel_pos, mass, dim):
+    init_rel_pos = initial_rel_pos[adj_v, :]
+    new_pos = pos[adj_v, :]
+    com = calcCenterOfMass(adj_v, dim, mass, pos)
+    curr_rel_pos = new_pos - com[None, :]
+    A_pq = calcA_pq(curr_rel_pos, init_rel_pos, dim)
+    A_qq = calcA_qq(init_rel_pos, dim)
+    A_final = np.matmul(A_pq, A_qq).reshape((1, -1))
+    return A_final
+
+
+def get_local_transformation(n_vertices, mesh, pos, init_pos, mass, dim):
+    cores = mp.cpu_count()
+    Pool = mp.Pool(processes=cores)
+    adj_list = []
+    for i in range(n_vertices):
+        adj_list.append(np.sort(np.append(mesh.get_vertex_adjacent_vertices(i), i)))
+    multi_res = [Pool.apply_async(f, (adj, pos, init_pos, mass, dim)) for adj in adj_list]
+    return multi_res
 
 
 @ti.data_oriented
@@ -90,9 +137,10 @@ class PDSimulation:
         self.ti_phi = ti.field(real, self.n_elements)
         self.ti_weight_strain = ti.field(real, self.n_elements)   # self.mu * 2 * self.volume
         self.ti_weight_volume = ti.field(real, self.n_elements)   # self.lam * self.dim * self.volume
-
-
         self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
+        self.mesh.enable_connectivity()
+
+        self.pos_init_out = []
 
     def initial_scene(self):
         if self.dim == 3:
@@ -117,6 +165,7 @@ class PDSimulation:
 
         self.ti_pos.from_numpy(self.mesh.vertices)
         self.ti_pos_init.from_numpy(self.mesh.vertices)
+        self.pos_init_out = self.ti_pos_init.to_numpy()
         self.input_xn.fill(0)
         self.input_vn.fill(0)
         self.ti_mass.fill(0)
@@ -624,7 +673,7 @@ class PDSimulation:
                 self.ti_pos_new[pos_idx][2] = sol[sol_idx3]
 
     @ti.kernel
-    def check_residual(self) -> ti.f64:
+    def check_residual(self) -> real:
         residual = 0.0
         for i in range(self.n_vertices):
             residual += (self.ti_last_pos_new[i] - self.ti_pos_new[i]).norm()
@@ -633,7 +682,7 @@ class PDSimulation:
         return residual
 
     @ti.kernel
-    def compute_T1_energy(self) -> ti.f64:
+    def compute_T1_energy(self) -> real:
         T1 = 0.0
         for i in range(self.n_vertices):
             sn_idx1, sn_idx2 = i * 2, i * 2 + 1
@@ -718,46 +767,6 @@ class PDSimulation:
         for i in x:
             y[i] = x[i]
 
-    ################################### shape matching #####################################
-    def calcCenterOfMass(self, vind):
-        if self.dim == 2:
-            sum = ti.Vector([0.0, 0.0])
-        else:
-            sum = ti.Vector([0.0, 0.0, 0.0])
-        summ = 0.0
-        for i in vind:
-            for d in range(self.dim):
-                sum[d] += self.ti_mass[i] * self.ti_pos[i][d]
-            summ += self.ti_mass[i]
-        sum[0] /= summ
-        sum[1] /= summ
-        if self.dim == 3:
-            sum[2] /= summ
-        return sum
-
-    def calcA_qq(self, q_i):
-        if self.dim == 2:
-            sum = np.zeros((2, 2))
-        else:
-            sum = np.zeros((3, 3))
-        for i in range(q_i.shape[0]):
-            sum += np.outer(q_i[i], np.transpose(q_i[i]))
-        return np.linalg.inv(sum)
-
-    def calcA_pq(self, p_i, q_i):
-        if self.dim == 2:
-            sum = np.zeros((2, 2))
-        else:
-            sum = np.zeros((3, 3))
-        for i in range(p_i.shape[0]):
-            sum += np.outer(p_i[i], np.transpose(q_i[i]))
-        return sum
-
-    def calcR(self, A_pq):
-        S = sqrtm(np.dot(np.transpose(A_pq), A_pq))
-        R = np.dot(A_pq, inv(S))
-        return R
-
     def build_pos_arr(self, adj_v, arr, rel_pos):
         result = np.zeros((adj_v.shape[0], self.dim))
         result_pos = np.zeros((adj_v.shape[0], self.dim))
@@ -806,33 +815,6 @@ class PDSimulation:
         self.ti_mass.fill(0.0)
         self.lhs_matrix.fill(0.0)
         self.precomputation()
-
-    def get_local_transformation(self):
-        ele_count = self.dim * self.dim
-        out = np.ones([self.n_vertices, ele_count], dtype=float)
-        self.mesh.enable_connectivity()
-        for i in range(self.n_vertices):
-            adj_v = self.mesh.get_vertex_adjacent_vertices(i)
-            adj_v = np.append(adj_v, i)
-            adj_v = np.sort(adj_v)
-            new_pos, init_rel_pos = self.build_pos_arr(adj_v, self.pos, self.initial_rel_pos)
-            com = self.calcCenterOfMass(adj_v).to_numpy()
-            curr_rel_pos = np.zeros((adj_v.shape[0], self.dim))
-            for j in range(new_pos.shape[0]):
-                curr_rel_pos[j, :] = new_pos[j, :] - com
-            A_pq = self.calcA_pq(curr_rel_pos, init_rel_pos)
-            A_qq = self.calcA_qq(init_rel_pos)
-            A_final = np.matmul(A_pq, A_qq)
-            out[i, 6] = A_final[0, 0]
-            out[i, 7] = A_final[0, 1]
-            out[i, 8] = A_final[0, 2]
-            out[i, 9] = A_final[1, 0]
-            out[i, 10] = A_final[1, 1]
-            out[i, 11] = A_final[1, 2]
-            out[i, 12] = A_final[2, 0]
-            out[i, 13] = A_final[2, 1]
-            out[i, 14] = A_final[2, 2]
-        return out
 
     def output_all(self, pd_dis, pn_dis, grad_E, frame, T):
         frame = str(frame).zfill(5)
@@ -903,30 +885,74 @@ class PDSimulation:
             out[i, 26] = self.ti_pos_init[i][2]
         np.savetxt(out_name, out, delimiter=',')
 
-    def write_image(self, f):
-        if not os.path.exists("output"):
-            os.makedirs("output")
-        for root, dirs, files in os.walk("output/"):
-            for name in files:
-                os.remove(os.path.join(root, name))
-        if self.dim == 2:
-            for i in range(self.n_elements):
-                for j in range(3):
-                    a, b = self.vertices[i, j], self.vertices[i, (j + 1) % 3]
-                    self.gui.line((self.x[a][0], self.x[a][1]),
-                                  (self.x[b][0], self.x[b][1]),
-                                  radius=1,
-                                  color=0x4FB99F)
-            self.gui.show(f'output/bunny{f:06d}.png')
-        else:
-            name = "output/bunny_"+str(self.exf_angle1)+"_"+str(self.exf_angle2)+\
-                   "_"+str(self.exf_mag)+str(f).zfill(6)+".obj"
-            f = open(name, 'w')
-            for i in range(self.n_vertices):
-                f.write('v %.6f %.6f %.6f\n' % (self.ti_pos[i][0], self.ti_pos[i][1], self.ti_pos[i][2]))
-            for [p0, p1, p2] in self.boundary_triangles:
-                f.write('f %d %d %d\n' % (p0 + 1, p1 + 1, p2 + 1))
-            f.close()
+    def output_all_new(self, pd_dis, pn_dis, grad_E, frame, T):
+        vel = self.ti_vel.to_numpy()
+        gradE = grad_E.to_numpy()
+        exf = np.array([self.ti_ex_force[0][0], self.ti_ex_force[0][1], self.ti_ex_force[0][2]])
+        frame = str(frame).zfill(5)
+        if T == 0:
+            out_name = "Outputs/output" + str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + \
+                       str(self.exf_mag) + "_" + frame + ".csv"
+        elif T == 1:
+            out_name = "Outputs_T/output" + str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + \
+                       str(self.exf_mag) + "_" + frame + ".csv"
+        elif T == 2:
+            out_name = "Outputs2/output" + str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + \
+                       str(self.exf_mag) + "_" + frame + ".csv"
+        elif T == 3:
+            out_name = "Outputs3/output" + str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + \
+                       str(self.exf_mag) + "_" + frame + ".csv"
+
+        # if not os.path.exists(out_name):
+        #     with open(out_name, 'w+') as f:
+        #         f.close()
+        # pd pos + pn pos + local transform + residual + force
+        ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim
+        out = np.ones([self.n_vertices, ele_count], dtype=float)
+        tt = time.time()
+        A_finals = get_local_transformation(self.n_vertices, self.mesh, self.ti_pos.to_numpy(), self.initial_rel_pos,
+                                            self.ti_mass.to_numpy(), self.dim)
+        ttt = time.time()
+        print("solve As: ", ttt - tt)
+        i = 0
+        for res in A_finals:
+            out[i, 0:3] = pd_dis[i, :]  # pd pos
+            out[i, 3:6] = pn_dis[i, :]  # pn pos
+            out[i, 6:15] = res.get()
+            out[i, 15:18] = gradE[i * 3: i * 3 + 3]
+            out[i, 18:21] = exf
+            out[i, 21:24] = vel[i, :]
+            out[i, 24:27] = self.pos_init_out[i, :]
+            i = i + 1
+        tttt = time.time()
+        print("append As: ", tttt - ttt)
+        # np.savetxt(out_name, out, delimiter=',')
+
+
+    # def write_image(self, f):
+    #     if not os.path.exists("output"):
+    #         os.makedirs("output")
+    #     for root, dirs, files in os.walk("output/"):
+    #         for name in files:
+    #             os.remove(os.path.join(root, name))
+    #     if self.dim == 2:
+    #         for i in range(self.n_elements):
+    #             for j in range(3):
+    #                 a, b = self.vertices[i, j], self.vertices[i, (j + 1) % 3]
+    #                 self.gui.line((self.x[a][0], self.x[a][1]),
+    #                               (self.x[b][0], self.x[b][1]),
+    #                               radius=1,
+    #                               color=0x4FB99F)
+    #         self.gui.show(f'output/bunny{f:06d}.png')
+    #     else:
+    #         name = "output/bunny_"+str(self.exf_angle1)+"_"+str(self.exf_angle2)+\
+    #                "_"+str(self.exf_mag)+str(f).zfill(6)+".obj"
+    #         f = open(name, 'w')
+    #         for i in range(self.n_vertices):
+    #             f.write('v %.6f %.6f %.6f\n' % (self.ti_pos[i][0], self.ti_pos[i][1], self.ti_pos[i][2]))
+    #         for [p0, p1, p2] in self.boundary_triangles:
+    #             f.write('f %d %d %d\n' % (p0 + 1, p1 + 1, p2 + 1))
+    #         f.close()
 
     def Run(self, pn, is_test, frame_count, scene_info):
         rhs_np = np.zeros(self.n_vertices * self.dim, dtype=np.float64)
@@ -955,18 +981,25 @@ class PDSimulation:
             gui.show()
 
         frame_counter = 0
-        self.initial_com = self.calcCenterOfMass(np.arange(self.n_vertices))  # this is right
+        self.initial_com = calcCenterOfMass(np.arange(self.n_vertices), self.dim,
+                                            self.ti_mass.to_numpy(), self.ti_pos.to_numpy())  # this is right
         self.initial_rel_pos = self.ti_pos_init.to_numpy() - self.initial_com
         while frame_counter < frame_count:
-            self.build_sn()
-            self.warm_up()  # Warm up:
             print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
+            t_0 = time.time()
+            self.build_sn()
+            self.warm_up()  # Warm up
+
+            pn_start = time.time()
             # get info from pn
             self.copy(self.ti_pos, self.input_xn)
             self.copy(self.ti_vel, self.input_vn)
-            # print("input xn:\n", self.input_xn.to_numpy())
             pn_dis, _pn_pos, pn_v = pn.data_one_frame(self.input_xn, self.input_vn)
             # print("pn dis \n", self.pn_dis.to_numpy())
+            pn_end = time.time()
+            print("pn solve time: ", pn_end - pn_start)
+
+            pd_start = time.time()
             for itr in range(self.solver_max_iteration):
                 self.local_solve_build_bp_for_all_constraints()
                 self.build_rhs(rhs_np)
@@ -977,14 +1010,19 @@ class PDSimulation:
                 residual = self.check_residual()
                 if residual < self.solver_stop_residual:
                     break
+            pd_end = time.time()
+            print("pd solve time: ", pd_end - pd_start)
 
-            # Update velocity and positions
-            self.update_velocity_pos()
+            self.update_velocity_pos()      # Update velocity and positions
+            self.gradE = pn.get_gradE_from_pd(self.ti_pos)      # get info from pn
 
-            # get info from pn
-            self.gradE = pn.get_gradE_from_pd(self.ti_pos)
-            self.output_all(self.ti_pos_del.to_numpy(), pn_dis.to_numpy(), self.gradE, frame_counter, is_test)
+            t_out_start = time.time()
+            self.output_all_new(self.ti_pos_del.to_numpy(), pn_dis.to_numpy(), self.gradE, frame_counter, is_test)
+            t_out_end = time.time()
+            print("output time: ", t_out_end - t_out_start)
 
+            t_end = time.time()
+            print("whole time for one frame: ", t_end - t_0)
             # Show result
             frame_counter += 1
             filename = f'./results/frame_{frame_counter:05d}.png'
