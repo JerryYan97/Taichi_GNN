@@ -45,6 +45,7 @@ if __name__ == '__main__':
         scene_info['scene'].add_object(scene_info['model'])
         scene_info['boundary_pos'] = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
 
+
     # # ti.init()
     # pd = PDSimulation(test_case, dt)
     # pn = PNSimulation(test_case, dt)

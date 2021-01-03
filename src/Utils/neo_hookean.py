@@ -81,9 +81,14 @@ def fixed_corotated_first_piola_kirchoff_stress(F, la, mu):
 
 
 @ti.func
-def fixed_corotated_first_piola_kirchoff_stress_derivative(F, la, mu):
+def fixed_corotated_first_piola_kirchoff_stress_derivative(F, la, mu, dPdF, M_field, U_field, V_field, ele_idx, dt, vol0):
     if ti.static(F.n == 2):
         U, sig, V = svd(F)
+        for row_idx in ti.static(range(2)):
+            for col_idx in ti.static(range(2)):
+                U_field[ele_idx, row_idx, col_idx] = U[row_idx, col_idx]
+                V_field[ele_idx, row_idx, col_idx] = V[row_idx, col_idx]
+
         sigma = ti.Vector([sig[0, 0], sig[1, 1]])
         dE_div_dsigma = elasticity_gradient(sigma, la, mu)
         d2E_div_dsigma2 = project_pd(elasticity_hessian(sigma, la, mu))
@@ -94,26 +99,33 @@ def fixed_corotated_first_piola_kirchoff_stress_derivative(F, la, mu):
         rightCoef /= (2 * sum_sigma)
         B = project_pd(ti.Matrix([[leftCoef + rightCoef, leftCoef - rightCoef], [leftCoef - rightCoef, leftCoef + rightCoef]]))
 
-        M = ti.Matrix([[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
-        dPdF = ti.Matrix([[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])
-        M[0, 0] = d2E_div_dsigma2[0, 0]
-        M[0, 3] = d2E_div_dsigma2[0, 1]
-        M[1, 1] = B[0, 0]
-        M[1, 2] = B[0, 1]
-        M[2, 1] = B[1, 0]
-        M[2, 2] = B[1, 1]
-        M[3, 0] = d2E_div_dsigma2[1, 0]
-        M[3, 3] = d2E_div_dsigma2[1, 1]
-        for j in ti.static(range(2)):
-            for i in ti.static(range(2)):
-                for s in ti.static(range(2)):
-                    for r in ti.static(range(2)):
+        M_field[ele_idx, 0, 0] = d2E_div_dsigma2[0, 0]
+        M_field[ele_idx, 0, 3] = d2E_div_dsigma2[0, 1]
+        M_field[ele_idx, 1, 1] = B[0, 0]
+        M_field[ele_idx, 1, 2] = B[0, 1]
+        M_field[ele_idx, 2, 1] = B[1, 0]
+        M_field[ele_idx, 2, 2] = B[1, 1]
+        M_field[ele_idx, 3, 0] = d2E_div_dsigma2[1, 0]
+        M_field[ele_idx, 3, 3] = d2E_div_dsigma2[1, 1]
+        for j in range(2):
+            for i in range(2):
+                for s in range(2):
+                    for r in range(2):
                         ij = ti.static(j * 2 + i)
                         rs = ti.static(s * 2 + r)
-                        dPdF[ij, rs] = M[0, 0] * U[i, 0] * V[j, 0] * U[r, 0] * V[s, 0] + M[0, 3] * U[i, 0] * V[j, 0] * U[r, 1] * V[s, 1] + M[1, 1] * U[i, 0] * V[j, 1] * U[r, 0] * V[s, 1] + M[1, 2] * U[i, 0] * V[j, 1] * U[r, 1] * V[s, 0] + M[2, 1] * U[i, 1] * V[j, 0] * U[r, 0] * V[s, 1] + M[2, 2] * U[i, 1] * V[j, 0] * U[r, 1] * V[s, 0] + M[3, 0] * U[i, 1] * V[j, 1] * U[r, 0] * V[s, 0] + M[3, 3] * U[i, 1] * V[j, 1] * U[r, 1] * V[s, 1]
-        return dPdF
+                        dPdF_tmp = M_field[ele_idx, 0, 0] * U_field[ele_idx, i, 0] * V_field[ele_idx, j, 0] * U_field[ele_idx, r, 0] * V_field[ele_idx, s, 0] + M_field[ele_idx, 0, 3] * U_field[ele_idx, i, 0] * V_field[ele_idx, j, 0] * \
+                                       U_field[ele_idx, r, 1] * V_field[ele_idx, s, 1] + M_field[ele_idx, 1, 1] * U_field[ele_idx, i, 0] * V_field[ele_idx, j, 1] * U_field[ele_idx, r, 0] * V_field[ele_idx, s, 1] + M_field[ele_idx, 1, 2] * \
+                                       U_field[ele_idx, i, 0] * V_field[ele_idx, j, 1] * U_field[ele_idx, r, 1] * V_field[ele_idx, s, 0] + M_field[ele_idx, 2, 1] * U_field[ele_idx, i, 1] * V_field[ele_idx, j, 0] * U_field[ele_idx, r, 0] * \
+                                       V_field[ele_idx, s, 1] + M_field[ele_idx, 2, 2] * U_field[ele_idx, i, 1] * V_field[ele_idx, j, 0] * U_field[ele_idx, r, 1] * V_field[ele_idx, s, 0] + M_field[ele_idx, 3, 0] * U_field[ele_idx, i, 1] * \
+                                       V_field[ele_idx, j, 1] * U_field[ele_idx, r, 0] * V_field[ele_idx, s, 0] + M_field[ele_idx, 3, 3] * U_field[ele_idx, i, 1] * V_field[ele_idx, j, 1] * U_field[ele_idx, r, 1] * V_field[ele_idx, s, 1]
+                        dPdF[ele_idx, ij, rs] = dPdF_tmp * dt * dt * vol0
     else:
         U, sig, V = svd(F)
+        for row_idx in ti.static(range(3)):
+            for col_idx in ti.static(range(3)):
+                U_field[ele_idx, row_idx, col_idx] = U[row_idx, col_idx]
+                V_field[ele_idx, row_idx, col_idx] = V[row_idx, col_idx]
+
         sigma = ti.Vector([sig[0, 0], sig[1, 1], sig[2, 2]])
         sigmaProd = sigma[0] * sigma[1] * sigma[2]
         dE_div_dsigma = elasticity_gradient(sig, la, mu)
@@ -137,37 +149,45 @@ def fixed_corotated_first_piola_kirchoff_stress_derivative(F, la, mu):
         rightCoef /= (2 * sum_sigma)
         B2 = project_pd(ti.Matrix([[leftCoef + rightCoef, leftCoef - rightCoef], [leftCoef - rightCoef, leftCoef + rightCoef]]))
 
-        Z = ti.Vector([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        M = ti.Matrix.rows([Z, Z, Z, Z, Z, Z, Z, Z, Z])
-        dPdF = ti.Matrix.rows([Z, Z, Z, Z, Z, Z, Z, Z, Z])
-        M[0, 0] = d2E_div_dsigma2[0, 0]
-        M[0, 4] = d2E_div_dsigma2[0, 1]
-        M[0, 8] = d2E_div_dsigma2[0, 2]
-        M[4, 0] = d2E_div_dsigma2[1, 0]
-        M[4, 4] = d2E_div_dsigma2[1, 1]
-        M[4, 8] = d2E_div_dsigma2[1, 2]
-        M[8, 0] = d2E_div_dsigma2[2, 0]
-        M[8, 4] = d2E_div_dsigma2[2, 1]
-        M[8, 8] = d2E_div_dsigma2[2, 2]
-        M[1, 1] = B0[0, 0]
-        M[1, 3] = B0[0, 1]
-        M[3, 1] = B0[1, 0]
-        M[3, 3] = B0[1, 1]
-        M[5, 5] = B1[0, 0]
-        M[5, 7] = B1[0, 1]
-        M[7, 5] = B1[1, 0]
-        M[7, 7] = B1[1, 1]
-        M[2, 2] = B2[1, 1]
-        M[2, 6] = B2[1, 0]
-        M[6, 2] = B2[0, 1]
-        M[6, 6] = B2[0, 0]
-        for j in ti.static(range(3)):
-            for i in ti.static(range(3)):
-                for s in ti.static(range(3)):
-                    for r in ti.static(range(3)):
-                        ij = ti.static(j * 3 + i)
-                        rs = ti.static(s * 3 + r)
-                        dPdF[ij, rs] = M[0, 0] * U[i, 0] * V[j, 0] * U[r, 0] * V[s, 0] + M[0, 4] * U[i, 0] * V[j, 0] * U[r, 1] * V[s, 1] + M[0, 8] * U[i, 0] * V[j, 0] * U[r, 2] * V[s, 2] + M[4, 0] * U[i, 1] * V[j, 1] * U[r, 0] * V[s, 0] + M[4, 4] * U[i, 1] * V[j, 1] * U[r, 1] * V[s, 1] + M[4, 8] * U[i, 1] * V[j, 1] * U[r, 2] * V[s, 2] + M[8, 0] * U[i, 2] * V[j, 2] * U[r, 0] * V[s, 0] + M[8, 4] * U[i, 2] * V[j, 2] * U[r, 1] * V[s, 1] + M[8, 8] * U[i, 2] * V[j, 2] * U[r, 2] * V[s, 2] + M[1, 1] * U[i, 0] * V[j, 1] * U[r, 0] * V[s, 1] + M[1, 3] * U[i, 0] * V[j, 1] * U[r, 1] * V[s, 0] + M[3, 1] * U[i, 1] * V[j, 0] * U[r, 0] * V[s, 1] + M[3, 3] * U[i, 1] * V[j, 0] * U[r, 1] * V[s, 0] + M[5, 5] * U[i, 1] * V[j, 2] * U[r, 1] * V[s, 2] + M[5, 7] * U[i, 1] * V[j, 2] * U[r, 2] * V[s, 1] + M[7, 5] * U[i, 2] * V[j, 1] * U[r, 1] * V[s, 2] + M[7, 7] * U[i, 2] * V[j, 1] * U[r, 2] * V[s, 1] + M[2, 2] * U[i, 0] * V[j, 2] * U[r, 0] * V[s, 2] + M[2, 6] * U[i, 0] * V[j, 2] * U[r, 2] * V[s, 0] + M[6, 2] * U[i, 2] * V[j, 0] * U[r, 0] * V[s, 2] + M[6, 6] * U[i, 2] * V[j, 0] * U[r, 2] * V[s, 0]
-        return dPdF
-
-
+        M_field[ele_idx, 0, 0] = d2E_div_dsigma2[0, 0]
+        M_field[ele_idx, 0, 4] = d2E_div_dsigma2[0, 1]
+        M_field[ele_idx, 0, 8] = d2E_div_dsigma2[0, 2]
+        M_field[ele_idx, 4, 0] = d2E_div_dsigma2[1, 0]
+        M_field[ele_idx, 4, 4] = d2E_div_dsigma2[1, 1]
+        M_field[ele_idx, 4, 8] = d2E_div_dsigma2[1, 2]
+        M_field[ele_idx, 8, 0] = d2E_div_dsigma2[2, 0]
+        M_field[ele_idx, 8, 4] = d2E_div_dsigma2[2, 1]
+        M_field[ele_idx, 8, 8] = d2E_div_dsigma2[2, 2]
+        M_field[ele_idx, 1, 1] = B0[0, 0]
+        M_field[ele_idx, 1, 3] = B0[0, 1]
+        M_field[ele_idx, 3, 1] = B0[1, 0]
+        M_field[ele_idx, 3, 3] = B0[1, 1]
+        M_field[ele_idx, 5, 5] = B1[0, 0]
+        M_field[ele_idx, 5, 7] = B1[0, 1]
+        M_field[ele_idx, 7, 5] = B1[1, 0]
+        M_field[ele_idx, 7, 7] = B1[1, 1]
+        M_field[ele_idx, 2, 2] = B2[1, 1]
+        M_field[ele_idx, 2, 6] = B2[1, 0]
+        M_field[ele_idx, 6, 2] = B2[0, 1]
+        M_field[ele_idx, 6, 6] = B2[0, 0]
+        for j in range(3):
+            for i in range(3):
+                for s in range(3):
+                    for r in range(3):
+                        ij = j * 3 + i
+                        rs = s * 3 + r
+                        dPdF_tmp = M_field[ele_idx, 0, 0] * U_field[ele_idx, i, 0] * V_field[ele_idx, j, 0] * U_field[ele_idx, r, 0] * V_field[ele_idx, s, 0] + M_field[ele_idx, 0, 4] * U_field[ele_idx, i, 0] * V_field[ele_idx, j, 0] * \
+                                       U_field[ele_idx, r, 1] * V_field[ele_idx, s, 1] + M_field[ele_idx, 0, 8] * U_field[ele_idx, i, 0] * V_field[ele_idx, j, 0] * U_field[ele_idx, r, 2] * V_field[ele_idx, s, 2] + M_field[ele_idx, 4, 0] * \
+                                       U_field[ele_idx, i, 1] * V_field[ele_idx, j, 1] * U_field[ele_idx, r, 0] * V_field[ele_idx, s, 0] + M_field[ele_idx, 4, 4] * U_field[ele_idx, i, 1] * V_field[ele_idx, j, 1] * U_field[ele_idx, r, 1] * \
+                                       V_field[ele_idx, s, 1] + M_field[ele_idx, 4, 8] * U_field[ele_idx, i, 1] * V_field[ele_idx, j, 1] * U_field[ele_idx, r, 2] * V_field[ele_idx, s, 2] + M_field[ele_idx, 8, 0] * U_field[ele_idx, i, 2] * \
+                                       V_field[ele_idx, j, 2] * U_field[ele_idx, r, 0] * V_field[ele_idx, s, 0] + M_field[ele_idx, 8, 4] * U_field[ele_idx, i, 2] * V_field[ele_idx, j, 2] * U_field[ele_idx, r, 1] * V_field[ele_idx, s, 1] + \
+                                       M_field[ele_idx, 8, 8] * U_field[ele_idx, i, 2] * V_field[ele_idx, j, 2] * U_field[ele_idx, r, 2] * V_field[ele_idx, s, 2] + M_field[ele_idx, 1, 1] * U_field[ele_idx, i, 0] * V_field[ele_idx, j, 1] * \
+                                       U_field[ele_idx, r, 0] * V_field[ele_idx, s, 1] + M_field[ele_idx, 1, 3] * U_field[ele_idx, i, 0] * V_field[ele_idx, j, 1] * U_field[ele_idx, r, 1] * V_field[ele_idx, s, 0] + M_field[ele_idx, 3, 1] * \
+                                       U_field[ele_idx, i, 1] * V_field[ele_idx, j, 0] * U_field[ele_idx, r, 0] * V_field[ele_idx, s, 1] + M_field[ele_idx, 3, 3] * U_field[ele_idx, i, 1] * V_field[ele_idx, j, 0] * U_field[ele_idx, r, 1] * \
+                                       V_field[ele_idx, s, 0] + M_field[ele_idx, 5, 5] * U_field[ele_idx, i, 1] * V_field[ele_idx, j, 2] * U_field[ele_idx, r, 1] * V_field[ele_idx, s, 2] + M_field[ele_idx, 5, 7] * U_field[ele_idx, i, 1] * \
+                                       V_field[ele_idx, j, 2] * U_field[ele_idx, r, 2] * V_field[ele_idx, s, 1] + M_field[ele_idx, 7, 5] * U_field[ele_idx, i, 2] * V_field[ele_idx, j, 1] * U_field[ele_idx, r, 1] * V_field[ele_idx, s, 2] + \
+                                       M_field[ele_idx, 7, 7] * U_field[ele_idx, i, 2] * V_field[ele_idx, j, 1] * U_field[ele_idx, r, 2] * V_field[ele_idx, s, 1] + M_field[ele_idx, 2, 2] * U_field[ele_idx, i, 0] * V_field[ele_idx, j, 2] * \
+                                       U_field[ele_idx, r, 0] * V_field[ele_idx, s, 2] + M_field[ele_idx, 2, 6] * U_field[ele_idx, i, 0] * V_field[ele_idx, j, 2] * U_field[ele_idx, r, 2] * V_field[ele_idx, s, 0] + M_field[ele_idx, 6, 2] * \
+                                       U_field[ele_idx, i, 2] * V_field[ele_idx, j, 0] * U_field[ele_idx, r, 0] * V_field[ele_idx, s, 2] + M_field[ele_idx, 6, 6] * U_field[ele_idx, i, 2] * V_field[ele_idx, j, 0] * U_field[ele_idx, r, 2] * \
+                                       V_field[ele_idx, s, 0]
+                        dPdF[ele_idx, ij, rs] = dPdF_tmp * dt * dt * vol0

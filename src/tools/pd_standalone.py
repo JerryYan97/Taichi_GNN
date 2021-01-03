@@ -18,7 +18,7 @@ from Utils.math_tools import svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1
+test_case = 1001
 case_info = read(int(test_case))
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
