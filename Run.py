@@ -111,28 +111,6 @@ if __name__ == '__main__':
     #             pd.Run(pn, is_test, frame_count)
 
 
-    # foor loop generate
-    # pd = PDSimulation(test_case, dt)
-    # pn = PNSimulation(test_case, dt)
-    # pd.set_material(rho, E, nu, dt)
-    # pn.set_material(rho, E, nu, dt)
-    #
-    # for ang_idx1 in range(1):
-    #     for ang_idx2 in range(2):
-    #         for mag_idx in range(1):
-    #             # ti.reset()
-    #             #
-    #             # pd = PDSimulation(test_case, dt)
-    #             # pn = PNSimulation(test_case, dt)
-    #             pd.initial()
-    #             pn.initial()
-    #             pn.compute_restT_and_m()
-    #
-    #             pn.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), (mag_idx + 1))
-    #             pd.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), (mag_idx + 1))
-    #
-    #             pd.Run(pn, is_test, frame_count)
-
     # Separately generate
     pd = PDSimulation(case_info, dt)
     pn = PNSimulation(case_info, dt)
@@ -144,43 +122,3 @@ if __name__ == '__main__':
     pn.set_force(0, 0, 6)
     pd.set_force(0, 0, 6)
     pd.Run(pn, is_test, frame_count, scene_info)
-
-
-    # pd2 = PDSimulation(test_case, dt)
-    # pn2 = PNSimulation(test_case, dt)
-    # pd2.set_material(rho, E, nu, dt)
-    # pn2.set_material(rho, E, nu, dt)
-    # pd2.initial()
-    # pn2.initial()
-    # pn2.compute_restT_and_m()
-    # pn2.set_force(0 * (180.0 / sampled_angle1_num), 1 * (360.0 / sampled_angle2_num), (0 + 1))
-    # pd2.set_force(0 * (180.0 / sampled_angle1_num), 1 * (360.0 / sampled_angle2_num), (0 + 1))
-    # pd2.Run(pn2, is_test, frame_count)
-
-
-    # for i in range(running_times):
-    #     pd = PDSimulation(test_case, 2)
-    #     pn = PNSimulation(int(test_case), 2)
-    #     # pn.set_force(25, 6)
-    #     # pd.set_force(25, 6)
-    #     pn.set_force(12.3, 6.6)
-    #     pd.set_force(12.3, 6.6)
-    #
-    #     pd.set_material(rho, E, nu, dt)
-    #     pn.set_material(rho, E, nu, dt)
-    #     pn.compute_restT_and_m()
-    #     pn.zero.fill(0)
-    #     pd.Run(pn, is_test, frame_count)
-
-# pn->pd
-# if __name__ == '__main__':
-#     for i in range(running_times):
-#         # pn.generate_exforce()
-#         # pn.compute_exforce(pn.exf_ind, pn.mag_ind)
-#         pn.set_force(10, 12)
-#         pd.set_force(10, 12)
-#
-#         pd.set_material(rho, E, nu, dt)
-#         pn.set_material(rho, E, nu, dt)
-#         pd.compute_restT_and_m()
-#         pn.Run(pd, is_test, frame_count)
