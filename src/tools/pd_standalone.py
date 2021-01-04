@@ -18,15 +18,15 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 4
+test_case = 1005
 case_info = read(int(test_case))
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
 mesh_offset = case_info['mesh_offset']
 dim = case_info['dim']
-
-ti.init(arch=ti.cuda, default_fp=ti.f64, debug=True)
+# cpu 1.27 -- 1003,
+ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
 n_vertices = mesh.num_vertices
 
 # 2D and 3D scene settings:
@@ -75,7 +75,7 @@ ti_A_i = ti.field(real, shape=(dim * dim, dim * (dim + 1)))
 ti_q_idx_vec = ti.field(real, (n_elements, dim * (dim + 1)))
 ti_Bp = ti.Matrix.field(dim, dim, real, n_elements * 2)
 ti_Sn = ti.field(real, n_vertices * dim)
-ti_lhs_matrix = ti.field(real, shape=(n_vertices * dim, n_vertices * dim))
+ti_lhs_matrix = ti.field(real, shape=(n_vertices * dim, n_vertices * dim))  # 1003:7292*3 x 7292*3; 1005: 10019*3 x 10019*3
 # potential energy of each element(face) for linear coratated elasticity material.
 ti_phi = ti.field(real, n_elements)
 ti_weight_strain = ti.field(real, n_elements)
@@ -121,7 +121,7 @@ def set_exforce():
     else:
         exf_angle1 = 45.0
         exf_angle2 = 45.0
-        exf_mag = 1.0
+        exf_mag = 0.0002
         ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
     # print("External force:", ti_ex_force)
 
@@ -656,20 +656,26 @@ if __name__ == "__main__":
             os.remove(os.path.join(root, name))
 
     # video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
-
+    print("start")
     frame_counter = 0
     rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
 
     init()
 
+    print("set_exforce()")
     set_exforce()
+    print("init_mesh_DmInv(dirichlet, len(dirichlet))")
     init_mesh_DmInv(dirichlet, len(dirichlet))
+    print("precomputation()")
     precomputation()
+    print("ti_lhs_matrix.to_numpy()")
     lhs_matrix_np = ti_lhs_matrix.to_numpy()
+    print("s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)")
     s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
     # print("ti_mass:\n", ti_mass.to_numpy())
     # print("lhs matrix ti field:\n", lhs_matrix_np)
     # print("sparse lhs matrix:\n", s_lhs_matrix_np)
+    print("pre_fact_lhs_solve = factorized(s_lhs_matrix_np)")
     pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
     wait = input("PRESS ENTER TO CONTINUE.")
