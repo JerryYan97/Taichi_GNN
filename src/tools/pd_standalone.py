@@ -13,12 +13,12 @@ from Utils.reader import read
 from Utils.utils_visualization import draw_image, get_force_field, update_boundary_mesh
 from scipy import sparse
 from scipy.sparse.linalg import factorized
-from Utils.math_tools import svd
+from Utils.math_tools import svd, my_svd
 
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1001
+test_case = 4
 case_info = read(int(test_case))
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -26,7 +26,7 @@ mesh_scale = case_info['mesh_scale']
 mesh_offset = case_info['mesh_offset']
 dim = case_info['dim']
 
-ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
+ti.init(arch=ti.cuda, default_fp=ti.f64, debug=True)
 n_vertices = mesh.num_vertices
 
 # 2D and 3D scene settings:
@@ -408,7 +408,9 @@ def local_solve_build_bp_for_all_constraints():
         F_i = compute_Fi(i)
         ti_F[i] = F_i
         # Use current F_i construct current 'B * p' or Ri
-        U, sigma, V = svd(F_i)
+        # U, sigma, V = svd(F_i)
+        U, sigma, V = my_svd(F_i)
+        # U, sigma, V = ti.svd(F_i)
         ti_Bp[i] = U @ V.transpose()
 
         # Construct volume preservation constraints:

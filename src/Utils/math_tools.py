@@ -121,3 +121,126 @@ def solve(F, rhs):
         out_0, out_1, out_2, out_3, out_4, out_5, out_6, out_7, out_8 = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
         ti.external_func_call(func=so.solve_9, args=(in_0, in_1, in_2, in_3, in_4, in_5, in_6, in_7, in_8, in_9, in_10, in_11, in_12, in_13, in_14, in_15, in_16, in_17, in_18, in_19, in_20, in_21, in_22, in_23, in_24, in_25, in_26, in_27, in_28, in_29, in_30, in_31, in_32, in_33, in_34, in_35, in_36, in_37, in_38, in_39, in_40, in_41, in_42, in_43, in_44, in_45, in_46, in_47, in_48, in_49, in_50, in_51, in_52, in_53, in_54, in_55, in_56, in_57, in_58, in_59, in_60, in_61, in_62, in_63, in_64, in_65, in_66, in_67, in_68, in_69, in_70, in_71, in_72, in_73, in_74, in_75, in_76, in_77, in_78, in_79, in_80, in_81, in_82, in_83, in_84, in_85, in_86, in_87, in_88, in_89), outputs=(out_0, out_1, out_2, out_3, out_4, out_5, out_6, out_7, out_8))
         return ti.Vector([out_0, out_1, out_2, out_3, out_4, out_5, out_6, out_7, out_8])
+
+
+# Taichi SVD and Ctypes SVD replacement.
+# A transformation from wrapper.cpp and relevant files.
+
+@ti.func
+def Get_Eigen_Values(A_Sym, lambda_vec):
+    return A_Sym
+
+
+@ti.func
+def my_polar_decomposition2d(A, gu_rowi, gu_rowk, gu_c, gu_s):
+    x = ti.Vector([A[0, 0] + A[1, 1], A[1, 0] - A[0, 1]])
+    S_Sym = ti.Matrix([[0.0, 0.0], [0.0, 0.0]])
+    denominator = x.norm()
+    gu_c = 1.0
+    gu_s = 0.0
+    if denominator != 0.0:
+        # No need to use a tolerance here because x(0) and x(1) always have
+        # smaller magnitude then denominator, therefore overflow never happens.
+        gu_c = x[0] / denominator
+        gu_s = -x[1] / denominator
+    # auto& S = const_cast<MATRIX<T, 2>&>(S_Sym);
+    # S = A;
+    # R.rowRotation(S);
+    for i in ti.static(range(2)):
+        for j in ti.static(range(2)):
+            S_Sym[i, j] = A[i, j]
+    for j in ti.static(range(2)):
+        # tau1 = A[ti.static(gu_rowi), j]
+        # tau2 = A[ti.static(gu_rowk), j]
+        tau1 = A[0, j]
+        tau2 = A[1, j]
+        # S_Sym[gu_rowi, j] = gu_c * tau1 - gu_s * tau2
+        # S_Sym[gu_rowk, j] = gu_s * tau1 + gu_c * tau2
+        S_Sym[0, j] = gu_c * tau1 - gu_s * tau2
+        S_Sym[1, j] = gu_s * tau1 + gu_c * tau2
+    return S_Sym, gu_c, gu_s
+
+
+@ti.func
+def my_svd2d(F):
+    # ti.svd()
+    # GIVENS_ROTATION < T > gv(0, 1);
+    gv_rowi, gv_rowk, gv_c, gv_s = 0, 1, 1.0, 0.0
+    # GIVENS_ROTATION < T > gu(0, 1);
+    gu_rowi, gu_rowk, gu_c, gu_s = 0, 1, 1.0, 0.0
+
+    # Singular_Value_Decomposition(A, gu, Sigma, gv);
+    Sigma_vec = ti.Vector([0.0, 0.0])
+    S_Sym, gu_c, gu_s = my_polar_decomposition2d(F, gu_rowi, gu_rowk, gu_c, gu_s)
+
+    cosine, sine = 0.0, 0.0
+    x, y, z = S_Sym[0, 0], S_Sym[0, 1], S_Sym[1, 1]
+    y2 = y * y
+    if y2 == 0:
+        # S is already diagonal
+        cosine = 1.0
+        sine = 0.0
+        Sigma_vec[0] = x
+        Sigma_vec[1] = z
+    else:
+        tau = 0.5 * (x - z)
+        w = ti.sqrt(tau * tau + y2)
+        # w > y > 0
+        t = 0.0
+        if tau > 0.0:
+            # tau + w > w > y > 0 ==> division is safe
+            t = y / (tau + w)
+        else:
+            # tau - w < -w < -y < 0 ==> division is safe
+            t = y / (tau - w)
+        cosine = 1.0 / ti.sqrt(t * t + 1.0)
+        sine = -t * cosine
+        # V = [cosine -sine; sine cosine]
+        # Sigma = V'SV. Only compute the diagonals for efficiency.
+        # Also utilize symmetry of S and don't form V yet.
+        c2 = cosine * cosine
+        csy = 2.0 * cosine * sine * y
+        s2 = sine * sine
+        Sigma_vec[0] = c2 * x - csy + s2 * z
+        Sigma_vec[1] = s2 * x + csy + c2 * z
+    # Sorting
+    # Polar already guarantees negative sign is on the small magnitude singular value.
+    if Sigma_vec[0] < Sigma_vec[1]:
+        tmp = Sigma_vec[0]
+        Sigma_vec[0] = Sigma_vec[1]
+        Sigma_vec[1] = tmp
+        gv_c, gv_s = -sine, cosine
+    else:
+        gv_c, gv_s = cosine, sine
+    # U *= V;
+    new_c = gu_c * gv_c - gu_s * gv_s
+    new_s = gu_s * gv_c + gu_c * gv_s
+    gu_c = new_c
+    gu_s = new_s
+
+    # gu.fill(U);
+    U = ti.Matrix([[1.0, 0.0], [0.0, 1.0]])
+    U[0, 0] = gu_c
+    U[1, 0] = -gu_s
+    U[0, 1] = gu_s
+    U[1, 1] = gu_c
+    # gv.fill(V);
+    V = ti.Matrix([[1.0, 0.0], [0.0, 1.0]])
+    V[0, 0] = gv_c
+    V[1, 0] = -gv_s
+    V[0, 1] = gv_s
+    V[1, 1] = gv_c
+
+    return U, ti.Matrix([[Sigma_vec[0], 0.0], [0.0, Sigma_vec[1]]]), V
+
+
+@ti.func
+def my_svd(F):
+    # ti.svd()
+    if ti.static(F.n == 2):
+        ret = my_svd2d(F)
+        return ret
+    elif ti.static(F.n == 3):
+        raise Exception("SVD 3D is not implemented.")
+    else:
+        raise Exception("SVD only supports 2D and 3D matrices.")
