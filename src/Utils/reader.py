@@ -72,6 +72,7 @@ def read(testcase):
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
 
+        case_info['case_name'] = "Beam"
         case_info['mesh'] = mesh
         case_info['dim'] = 3
         case_info['dirichlet'] = dirichlet
@@ -94,6 +95,7 @@ def read(testcase):
 
         print("mesh elements:", mesh.elements)
 
+        case_info['case_name'] = "Tet"
         case_info['mesh'] = mesh
         case_info['dim'] = 3
         case_info['dirichlet'] = dirichlet
@@ -121,6 +123,7 @@ def read(testcase):
 
         print("mesh elements:", mesh.elements)
 
+        case_info['case_name'] = "Bunny1"
         case_info['mesh'] = mesh
         case_info['dim'] = 3
         case_info['dirichlet'] = dirichlet
@@ -144,6 +147,7 @@ def read(testcase):
 
         print("mesh elements:", mesh.elements)
 
+        case_info['case_name'] = "Bunny2"
         case_info['mesh'] = mesh
         case_info['dim'] = 3
         case_info['dirichlet'] = dirichlet
@@ -169,6 +173,7 @@ def read(testcase):
 
         print("mesh elements:", mesh.elements)
 
+        case_info['case_name'] = "Dragon"
         case_info['mesh'] = mesh
         case_info['dim'] = 3
         case_info['dirichlet'] = dirichlet

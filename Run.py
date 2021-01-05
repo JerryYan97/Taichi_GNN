@@ -25,14 +25,22 @@ cluster_num = 10
 
 # pd->pn
 if __name__ == '__main__':
-    # Run settings:
-    is_test = 0
-    # if is_test == 0:
-    #     if not os.path.exists("Outputs"):
-    #         os.makedirs("Outputs")
-    #     for root, dirs, files in os.walk("Outputs/"):
-    #         for name in files:
-    #             os.remove(os.path.join(root, name))
+    # Clean data in the folders:
+    is_test = 1  # 0: training data; 1: testing data.
+    for root, dirs, files in os.walk("SimData/PDAnimSeq"):
+        for name in files:
+            os.remove(os.path.join(root, name))
+    for root, dirs, files in os.walk("SimData/PNAnimSeq"):
+        for name in files:
+            os.remove(os.path.join(root, name))
+    if is_test == 0:
+        for root, dirs, files in os.walk("SimData/TrainingData"):
+            for name in files:
+                os.remove(os.path.join(root, name))
+    else:
+        for root, dirs, files in os.walk("SimData/TestingData"):
+            for name in files:
+                os.remove(os.path.join(root, name))
 
     # Case settings:
     case_info = read(test_case)

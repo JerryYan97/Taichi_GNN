@@ -110,11 +110,20 @@ def update_boundary_mesh(mesh_pos, boundary_pos, case_info):
     update_boundary_pos(mesh_pos, boundary_pos, boundary_triangles, case_info['boundary_tri_num'])
 
 
+def output_3d_seq(pos, boundary_tri, file_path):
+    f = open(file_path, 'w')
+    for [x, y, z] in pos:
+        f.write('v %.6f %.6f %.6f\n' % (x, y, z))
+    for [p0, p1, p2] in boundary_tri:
+        f.write('f %d %d %d\n' % (p0 + 1, p1 + 1, p2 + 1))
+    f.close()
+
+
 # For 2D: Angle is counter-clock wise and it uses [1, 0] direction as its start direction.
 # For 3D: It uses Spherical coordinate system with its origin at the [0, 0, 0].
 #         Angle1 will be used to determine the angle between y axis and the final direction.
 #         Angle2 will be used to determine the direction along the x-z plane with a start direction at [1, 0, 0].
-#         Angle1(Theta) should be a scalar in [0, 2 * pi). Angle2(Phi) should be a scalar in the range of [0, pi].
+#         Angle1(Theta) should be a scalar in [0, pi). Angle2(Phi) should be a scalar in the range of [0, 2 * pi].
 def get_force_field(mag, angle1, angle2=0.0, dim=2):
     if dim == 2:
         x = mag * ti.cos(ts.pi / 180.0 * angle1)
@@ -141,3 +150,6 @@ def rotate_matrix_y_axis(beta_degree):
                      [0.0, 1.0, 0.0, 0.0],
                      [np.sin(beta_radian), 0.0, np.cos(beta_radian), 0.0],
                      [0.0, 0.0, 0.0, 1.0]])
+
+
+
