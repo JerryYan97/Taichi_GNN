@@ -13,20 +13,20 @@ from Utils.reader import read
 from Utils.utils_visualization import draw_image, get_force_field, update_boundary_mesh
 from scipy import sparse
 from scipy.sparse.linalg import factorized
-from Utils.math_tools import svd
+from Utils.math_tools import svd, my_svd
 
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1
-case_info = read(int(test_case))
+test_case = 1001
+case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
 mesh_offset = case_info['mesh_offset']
 dim = case_info['dim']
-
-ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
+# cpu 1.27 -- 1003,
+ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
 n_vertices = mesh.num_vertices
 
 # 2D and 3D scene settings:
@@ -72,10 +72,9 @@ ti_Dm_inv = ti.Matrix.field(dim, dim, real, n_elements)  # The inverse of the in
 ti_F = ti.Matrix.field(dim, dim, real, n_elements)
 ti_A = ti.field(real, (n_elements * 2, dim * dim, dim * (dim + 1)))
 ti_A_i = ti.field(real, shape=(dim * dim, dim * (dim + 1)))
-ti_q_idx_vec = ti.field(real, (n_elements, dim * (dim + 1)))
+ti_q_idx_vec = ti.field(ti.int32, (n_elements, dim * (dim + 1)))
 ti_Bp = ti.Matrix.field(dim, dim, real, n_elements * 2)
 ti_Sn = ti.field(real, n_vertices * dim)
-ti_lhs_matrix = ti.field(real, shape=(n_vertices * dim, n_vertices * dim))
 # potential energy of each element(face) for linear coratated elasticity material.
 ti_phi = ti.field(real, n_elements)
 ti_weight_strain = ti.field(real, n_elements)
@@ -103,7 +102,6 @@ def init():
     ti_q_idx_vec.fill(0)
     ti_Bp.fill(0)
     ti_Sn.fill(0)
-    ti_lhs_matrix.fill(0)
     ti_phi.fill(0)
     ti_weight_strain.fill(0)
     ti_weight_volume.fill(0)
@@ -121,7 +119,7 @@ def set_exforce():
     else:
         exf_angle1 = 45.0
         exf_angle2 = 45.0
-        exf_mag = 1.0
+        exf_mag = 6.0
         ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
     # print("External force:", ti_ex_force)
 
@@ -232,7 +230,7 @@ def fill_idx_vec(ele_idx):
 
 
 @ti.kernel
-def precomputation():
+def precomputation(lhs_matrix_np: ti.ext_arr()):
     dimp = dim+1
     for e_it in range(n_elements):
         if ti.static(dim == 2):
@@ -334,24 +332,23 @@ def precomputation():
                             weight = ti_weight_strain[ele_idx]
                         else:
                             weight = ti_weight_volume[ele_idx]
-                        ti_lhs_matrix[lhs_row_idx, lhs_col_idx] += (ti_A[ele_idx, idx, A_row_idx] *
-                                                                    ti_A[ele_idx, idx, A_col_idx] * weight)
+                        lhs_matrix_np[lhs_row_idx, lhs_col_idx] += (ti_A[ele_idx, idx, A_row_idx] * ti_A[ele_idx, idx, A_col_idx] * weight)
 
     # Add positional constraints to the lhs matrix
     for i in range(n_vertices):
         if ti_boundary_labels[i] == 1:
             q_i_x_idx = i * dim
             q_i_y_idx = i * dim + 1
-            ti_lhs_matrix[q_i_x_idx, q_i_x_idx] += m_weight_positional  # This is the weight of positional constraints
-            ti_lhs_matrix[q_i_y_idx, q_i_y_idx] += m_weight_positional
+            lhs_matrix_np[q_i_x_idx, q_i_x_idx] += (m_weight_positional)  # This is the weight of positional constraints
+            lhs_matrix_np[q_i_y_idx, q_i_y_idx] += (m_weight_positional)
             if ti.static(dim == 3):
                 q_i_z_idx = i * dim + 2
-                ti_lhs_matrix[q_i_z_idx, q_i_z_idx] += m_weight_positional
+                lhs_matrix_np[q_i_z_idx, q_i_z_idx] += (m_weight_positional)
 
     # Construct lhs matrix without constraints
     for i in range(n_vertices):
         for d in ti.static(range(dim)):
-            ti_lhs_matrix[i * dim + d, i * dim + d] += ti_mass[i] / (dt * dt)
+            lhs_matrix_np[i * dim + d, i * dim + d] += (ti_mass[i] / (dt * dt))
 
 
 @ti.func
@@ -408,7 +405,9 @@ def local_solve_build_bp_for_all_constraints():
         F_i = compute_Fi(i)
         ti_F[i] = F_i
         # Use current F_i construct current 'B * p' or Ri
-        U, sigma, V = svd(F_i)
+        # U, sigma, V = svd(F_i)
+        U, sigma, V = my_svd(F_i)
+        # U, sigma, V = ti.svd(F_i)
         ti_Bp[i] = U @ V.transpose()
 
         # Construct volume preservation constraints:
@@ -654,20 +653,16 @@ if __name__ == "__main__":
             os.remove(os.path.join(root, name))
 
     # video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
-
     frame_counter = 0
     rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
+    lhs_matrix_np = np.zeros(shape=(n_vertices * dim, n_vertices * dim), dtype=np.float64)
 
     init()
 
     set_exforce()
     init_mesh_DmInv(dirichlet, len(dirichlet))
-    precomputation()
-    lhs_matrix_np = ti_lhs_matrix.to_numpy()
+    precomputation(lhs_matrix_np)
     s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
-    # print("ti_mass:\n", ti_mass.to_numpy())
-    # print("lhs matrix ti field:\n", lhs_matrix_np)
-    # print("sparse lhs matrix:\n", s_lhs_matrix_np)
     pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
     wait = input("PRESS ENTER TO CONTINUE.")

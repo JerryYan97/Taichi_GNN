@@ -4,8 +4,10 @@ print(sys.path)
 from Utils.JGSL_WATER import *
 import taichi as ti
 import numpy as np
-from Utils.neo_hookean import *
-from Utils.math_tools import *
+from Utils.neo_hookean import fixed_corotated_first_piola_kirchoff_stress
+from Utils.neo_hookean import fixed_corotated_energy
+from Utils.neo_hookean import fixed_corotated_first_piola_kirchoff_stress_derivative
+from Utils.math_tools import svd
 from Utils.Dijkstra import *
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
@@ -58,12 +60,23 @@ class PNSimulation:
         self.restT = ti.Matrix.field(self.dim, self.dim, real, self.n_elements)
         self.vertices = ti.field(ti.i32, (self.n_elements, self.dim + 1))
 
-        self.data_rhs = ti.field(real, shape=200000)
-        self.data_mat = ti.field(real, shape=(3, 20000000))
-        self.data_sol = ti.field(real, shape=200000)
+        # self.data_rhs = ti.field(real, shape=200000)
+        # self.data_mat = ti.field(real, shape=(3, 20000000))
+        # self.data_sol = ti.field(real, shape=200000)
+        self.data_rhs = np.zeros(shape=(200000,), dtype=np.float64)
+        self.data_mat = np.zeros(shape=(3, 20000000), dtype=np.float64)
+        self.data_sol = np.zeros(shape=(200000,), dtype=np.float64)
 
         self.gradE = ti.field(real, shape=200000)
         self.cnt = ti.field(ti.i32, shape=())
+
+        # Complie time optimization data structure
+        self.ti_dPdF_field = ti.field(real, (self.n_elements, self.dim * self.dim, self.dim * self.dim))
+        self.ti_intermediate_field = ti.field(real, (self.n_elements, self.dim * (self.dim + 1), self.dim * self.dim))
+        self.ti_M_field = ti.field(real, (self.n_elements, self.dim * self.dim, self.dim * self.dim))
+        self.ti_U_field = ti.field(real, (self.n_elements, self.dim * self.dim, self.dim * self.dim))
+        self.ti_V_field = ti.field(real, (self.n_elements, self.dim * self.dim, self.dim * self.dim))
+        self.ti_indMap_field = ti.field(real, (self.n_elements, self.dim * (self.dim + 1)))
         ################################ external force ######################################
         self.exf_ind = self.mag_ind = 0  # Used to label output .csv files.
         self.ex_force = ti.Vector.field(self.dim, real, 1)
@@ -198,26 +211,26 @@ class PNSimulation:
         return total_energy
 
     @ti.kernel
-    def compute_pd_gradient(self):
+    def compute_pd_gradient(self, data_rhs_np: ti.ext_arr()):
         if ti.static(self.dim == 2):
             for i in range(self.n_vertices):
                 for d in ti.static(range(self.dim)):
-                    self.data_rhs[i * self.dim + d] -= self.m[i] * (self.grad_x(d)[i] - self.xTilde(d)[i])
+                    data_rhs_np[i * self.dim + d] -= self.m[i] * (self.grad_x(d)[i] - self.xTilde(d)[i])
             for e in range(self.n_elements):
                 F = self.compute_T_grad(e) @ self.restT[e].inverse()
                 IB = self.restT[e].inverse()
                 vol0 = self.restT[e].determinant() / 2
                 P = fixed_corotated_first_piola_kirchoff_stress(F, self.la, self.mu) * self.dt * self.dt * vol0
-                self.data_rhs[self.vertices[e, 1] * 2 + 0] -= P[0, 0] * IB[0, 0] + P[0, 1] * IB[0, 1]
-                self.data_rhs[self.vertices[e, 1] * 2 + 1] -= P[1, 0] * IB[0, 0] + P[1, 1] * IB[0, 1]
-                self.data_rhs[self.vertices[e, 2] * 2 + 0] -= P[0, 0] * IB[1, 0] + P[0, 1] * IB[1, 1]
-                self.data_rhs[self.vertices[e, 2] * 2 + 1] -= P[1, 0] * IB[1, 0] + P[1, 1] * IB[1, 1]
-                self.data_rhs[self.vertices[e, 0] * 2 + 0] -= -P[0, 0] * IB[0, 0] - P[0, 1] * IB[0, 1] - P[0, 0] * IB[1, 0] - P[0, 1] * IB[1, 1]
-                self.data_rhs[self.vertices[e, 0] * 2 + 1] -= -P[1, 0] * IB[0, 0] - P[1, 1] * IB[0, 1] - P[1, 0] * IB[1, 0] - P[1, 1] * IB[1, 1]
+                data_rhs_np[self.vertices[e, 1] * 2 + 0] -= P[0, 0] * IB[0, 0] + P[0, 1] * IB[0, 1]
+                data_rhs_np[self.vertices[e, 1] * 2 + 1] -= P[1, 0] * IB[0, 0] + P[1, 1] * IB[0, 1]
+                data_rhs_np[self.vertices[e, 2] * 2 + 0] -= P[0, 0] * IB[1, 0] + P[0, 1] * IB[1, 1]
+                data_rhs_np[self.vertices[e, 2] * 2 + 1] -= P[1, 0] * IB[1, 0] + P[1, 1] * IB[1, 1]
+                data_rhs_np[self.vertices[e, 0] * 2 + 0] -= -P[0, 0] * IB[0, 0] - P[0, 1] * IB[0, 1] - P[0, 0] * IB[1, 0] - P[0, 1] * IB[1, 1]
+                data_rhs_np[self.vertices[e, 0] * 2 + 1] -= -P[1, 0] * IB[0, 0] - P[1, 1] * IB[0, 1] - P[1, 0] * IB[1, 0] - P[1, 1] * IB[1, 1]
         else:
             for i in range(self.n_vertices):
                 for d in ti.static(range(self.dim)):
-                    self.data_rhs[i * self.dim + d] -= self.m[i] * (self.grad_x(d)[i] - self.xTilde(d)[i])
+                    data_rhs_np[i * self.dim + d] -= self.m[i] * (self.grad_x(d)[i] - self.xTilde(d)[i])
             for e in range(self.n_elements):
                 F = self.compute_T_grad(e) @ self.restT[e].inverse()
                 IB = self.restT[e].inverse()
@@ -232,165 +245,209 @@ class PNSimulation:
                 R30 = IB[2, 0] * P[0, 0] + IB[2, 1] * P[0, 1] + IB[2, 2] * P[0, 2]
                 R31 = IB[2, 0] * P[1, 0] + IB[2, 1] * P[1, 1] + IB[2, 2] * P[1, 2]
                 R32 = IB[2, 0] * P[2, 0] + IB[2, 1] * P[2, 1] + IB[2, 2] * P[2, 2]
-                self.data_rhs[self.vertices[e, 1] * 3 + 0] -= R10
-                self.data_rhs[self.vertices[e, 1] * 3 + 1] -= R11
-                self.data_rhs[self.vertices[e, 1] * 3 + 2] -= R12
-                self.data_rhs[self.vertices[e, 2] * 3 + 0] -= R20
-                self.data_rhs[self.vertices[e, 2] * 3 + 1] -= R21
-                self.data_rhs[self.vertices[e, 2] * 3 + 2] -= R22
-                self.data_rhs[self.vertices[e, 3] * 3 + 0] -= R30
-                self.data_rhs[self.vertices[e, 3] * 3 + 1] -= R31
-                self.data_rhs[self.vertices[e, 3] * 3 + 2] -= R32
-                self.data_rhs[self.vertices[e, 0] * 3 + 0] -= -R10 - R20 - R30
-                self.data_rhs[self.vertices[e, 0] * 3 + 1] -= -R11 - R21 - R31
-                self.data_rhs[self.vertices[e, 0] * 3 + 2] -= -R12 - R22 - R32
+                data_rhs_np[self.vertices[e, 1] * 3 + 0] -= R10
+                data_rhs_np[self.vertices[e, 1] * 3 + 1] -= R11
+                data_rhs_np[self.vertices[e, 1] * 3 + 2] -= R12
+                data_rhs_np[self.vertices[e, 2] * 3 + 0] -= R20
+                data_rhs_np[self.vertices[e, 2] * 3 + 1] -= R21
+                data_rhs_np[self.vertices[e, 2] * 3 + 2] -= R22
+                data_rhs_np[self.vertices[e, 3] * 3 + 0] -= R30
+                data_rhs_np[self.vertices[e, 3] * 3 + 1] -= R31
+                data_rhs_np[self.vertices[e, 3] * 3 + 2] -= R32
+                data_rhs_np[self.vertices[e, 0] * 3 + 0] -= -R10 - R20 - R30
+                data_rhs_np[self.vertices[e, 0] * 3 + 1] -= -R11 - R21 - R31
+                data_rhs_np[self.vertices[e, 0] * 3 + 2] -= -R12 - R22 - R32
 
     def get_gradE_from_pd(self, pd_pos):
         self.copy(pd_pos, self.grad_x)
         # self.copy(pd_pos, self.x)
-        self.compute_pd_gradient()
-        self.copy(self.data_rhs, self.gradE)
+        self.compute_pd_gradient(self.data_rhs)
+        self.gradE.from_numpy(self.data_rhs)
+        # self.copy(self.data_rhs, self.gradE)
         # self.copy(pd_pos, self.x)
         # self.compute_x_xtilde()
         return self.gradE
 
     @ti.kernel
-    def compute_hessian_and_gradient(self):
+    def compute_hessian_and_gradient(self, data_mat_np: ti.ext_arr(), data_rhs_np: ti.ext_arr()):
         self.cnt[None] = 0
         # inertia
         for i in range(self.n_vertices):
             for d in ti.static(range(self.dim)):
                 c = self.cnt[None] + i * self.dim + d  # 2 * n_p
-                self.data_mat[0, c] = i * self.dim + d
-                self.data_mat[1, c] = i * self.dim + d
-                self.data_mat[2, c] = self.m[i]
-                self.data_rhs[i * self.dim + d] -= self.m[i] * (self.x(d)[i] - self.xTilde(d)[i])
+                # self.data_mat[0, c] = i * self.dim + d
+                data_mat_np[0, c] = i * self.dim + d
+                data_mat_np[1, c] = i * self.dim + d
+                data_mat_np[2, c] = self.m[i]
+                data_rhs_np[i * self.dim + d] -= self.m[i] * (self.x(d)[i] - self.xTilde(d)[i])
         self.cnt[None] += self.n_vertices * self.dim
         # elasticity
         for e in range(self.n_elements):
             F = self.compute_T(e) @ self.restT[e].inverse()  # 2 * 2
             IB = self.restT[e].inverse()  # 2 * 2
             vol0 = self.restT[e].determinant() / self.dim / (self.dim - 1)
-            dPdF = fixed_corotated_first_piola_kirchoff_stress_derivative(F, self.la, self.mu) * self.dt * self.dt * vol0  # 4 * 4
-            P = fixed_corotated_first_piola_kirchoff_stress(F, self.la, self.mu) * self.dt * self.dt * vol0  # 2 * 2
+            fixed_corotated_first_piola_kirchoff_stress_derivative(F, self.la, self.mu,
+                                                                   self.ti_dPdF_field, self.ti_M_field, self.ti_U_field,
+                                                                   self.ti_V_field, e, self.dt, vol0)
+            P = fixed_corotated_first_piola_kirchoff_stress(F, self.la, self.mu) * self.dt * self.dt * vol0
             if ti.static(self.dim == 2):
-                intermediate = ti.Matrix([[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0],
-                                          [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]])  # 6 * 4
-                for colI in ti.static(range(4)):
-                    _000 = dPdF[0, colI] * IB[0, 0]
-                    _010 = dPdF[0, colI] * IB[1, 0]
-                    _101 = dPdF[2, colI] * IB[0, 1]
-                    _111 = dPdF[2, colI] * IB[1, 1]
-                    _200 = dPdF[1, colI] * IB[0, 0]
-                    _210 = dPdF[1, colI] * IB[1, 0]
-                    _301 = dPdF[3, colI] * IB[0, 1]
-                    _311 = dPdF[3, colI] * IB[1, 1]
-                    intermediate[2, colI] = _000 + _101
-                    intermediate[3, colI] = _200 + _301
-                    intermediate[4, colI] = _010 + _111
-                    intermediate[5, colI] = _210 + _311
-                    intermediate[0, colI] = -intermediate[2, colI] - intermediate[4, colI]
-                    intermediate[1, colI] = -intermediate[3, colI] - intermediate[5, colI]
-                indMap = ti.Vector([self.vertices[e, 0] * 2, self.vertices[e, 0] * 2 + 1,
-                                    self.vertices[e, 1] * 2, self.vertices[e, 1] * 2 + 1,
-                                    self.vertices[e, 2] * 2, self.vertices[e, 2] * 2 + 1])  # 6
-                for colI in ti.static(range(6)):
-                    _000 = intermediate[colI, 0] * IB[0, 0]
-                    _010 = intermediate[colI, 0] * IB[1, 0]
-                    _101 = intermediate[colI, 2] * IB[0, 1]
-                    _111 = intermediate[colI, 2] * IB[1, 1]
-                    _200 = intermediate[colI, 1] * IB[0, 0]
-                    _210 = intermediate[colI, 1] * IB[1, 0]
-                    _301 = intermediate[colI, 3] * IB[0, 1]
-                    _311 = intermediate[colI, 3] * IB[1, 1]
+                for colI in range(4):
+                    _000 = self.ti_dPdF_field[e, 0, colI] * IB[0, 0]
+                    _010 = self.ti_dPdF_field[e, 0, colI] * IB[1, 0]
+                    _101 = self.ti_dPdF_field[e, 2, colI] * IB[0, 1]
+                    _111 = self.ti_dPdF_field[e, 2, colI] * IB[1, 1]
+                    _200 = self.ti_dPdF_field[e, 1, colI] * IB[0, 0]
+                    _210 = self.ti_dPdF_field[e, 1, colI] * IB[1, 0]
+                    _301 = self.ti_dPdF_field[e, 3, colI] * IB[0, 1]
+                    _311 = self.ti_dPdF_field[e, 3, colI] * IB[1, 1]
+                    self.ti_intermediate_field[e, 2, colI] = _000 + _101
+                    self.ti_intermediate_field[e, 3, colI] = _200 + _301
+                    self.ti_intermediate_field[e, 4, colI] = _010 + _111
+                    self.ti_intermediate_field[e, 5, colI] = _210 + _311
+                    self.ti_intermediate_field[e, 0, colI] = -self.ti_intermediate_field[e, 2, colI] - self.ti_intermediate_field[
+                        e, 4, colI]
+                    self.ti_intermediate_field[e, 1, colI] = -self.ti_intermediate_field[e, 3, colI] - self.ti_intermediate_field[
+                        e, 5, colI]
+
+                self.ti_indMap_field[e, 0] = self.vertices[e, 0] * 2
+                self.ti_indMap_field[e, 1] = self.vertices[e, 0] * 2 + 1
+                self.ti_indMap_field[e, 2] = self.vertices[e, 1] * 2
+                self.ti_indMap_field[e, 3] = self.vertices[e, 1] * 2 + 1
+                self.ti_indMap_field[e, 4] = self.vertices[e, 2] * 2
+                self.ti_indMap_field[e, 5] = self.vertices[e, 2] * 2 + 1
+
+                for colI in range(6):
+                    _000 = self.ti_intermediate_field[e, colI, 0] * IB[0, 0]
+                    _010 = self.ti_intermediate_field[e, colI, 0] * IB[1, 0]
+                    _101 = self.ti_intermediate_field[e, colI, 2] * IB[0, 1]
+                    _111 = self.ti_intermediate_field[e, colI, 2] * IB[1, 1]
+                    _200 = self.ti_intermediate_field[e, colI, 1] * IB[0, 0]
+                    _210 = self.ti_intermediate_field[e, colI, 1] * IB[1, 0]
+                    _301 = self.ti_intermediate_field[e, colI, 3] * IB[0, 1]
+                    _311 = self.ti_intermediate_field[e, colI, 3] * IB[1, 1]
                     c = self.cnt[None] + e * 36 + colI * 6 + 0
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[2], indMap[colI], _000 + _101
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, 2], self.ti_indMap_field[
+                        e, colI], _000 + _101
                     c = self.cnt[None] + e * 36 + colI * 6 + 1
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[3], indMap[colI], _200 + _301
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, 3], self.ti_indMap_field[
+                        e, colI], _200 + _301
                     c = self.cnt[None] + e * 36 + colI * 6 + 2
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[4], indMap[colI], _010 + _111
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, 4], self.ti_indMap_field[
+                        e, colI], _010 + _111
                     c = self.cnt[None] + e * 36 + colI * 6 + 3
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[5], indMap[colI], _210 + _311
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, 5], self.ti_indMap_field[
+                        e, colI], _210 + _311
                     c = self.cnt[None] + e * 36 + colI * 6 + 4
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[0], indMap[
-                        colI], - _000 - _101 - _010 - _111
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, 0], self.ti_indMap_field[
+                        e, colI], - _000 - _101 - _010 - _111
                     c = self.cnt[None] + e * 36 + colI * 6 + 5
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[1], indMap[
-                        colI], - _200 - _301 - _210 - _311
-                self.data_rhs[self.vertices[e, 1] * 2 + 0] -= P[0, 0] * IB[0, 0] + P[0, 1] * IB[0, 1]
-                self.data_rhs[self.vertices[e, 1] * 2 + 1] -= P[1, 0] * IB[0, 0] + P[1, 1] * IB[0, 1]
-                self.data_rhs[self.vertices[e, 2] * 2 + 0] -= P[0, 0] * IB[1, 0] + P[0, 1] * IB[1, 1]
-                self.data_rhs[self.vertices[e, 2] * 2 + 1] -= P[1, 0] * IB[1, 0] + P[1, 1] * IB[1, 1]
-                self.data_rhs[self.vertices[e, 0] * 2 + 0] -= -P[0, 0] * IB[0, 0] - P[0, 1] * IB[0, 1] - P[0, 0] * IB[1, 0] - P[
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, 1], self.ti_indMap_field[
+                        e, colI], - _200 - _301 - _210 - _311
+                data_rhs_np[self.vertices[e, 1] * 2 + 0] -= P[0, 0] * IB[0, 0] + P[0, 1] * IB[0, 1]
+                data_rhs_np[self.vertices[e, 1] * 2 + 1] -= P[1, 0] * IB[0, 0] + P[1, 1] * IB[0, 1]
+                data_rhs_np[self.vertices[e, 2] * 2 + 0] -= P[0, 0] * IB[1, 0] + P[0, 1] * IB[1, 1]
+                data_rhs_np[self.vertices[e, 2] * 2 + 1] -= P[1, 0] * IB[1, 0] + P[1, 1] * IB[1, 1]
+                data_rhs_np[self.vertices[e, 0] * 2 + 0] -= -P[0, 0] * IB[0, 0] - P[0, 1] * IB[0, 1] - P[0, 0] * IB[1, 0] - P[
                     0, 1] * IB[1, 1]
-                self.data_rhs[self.vertices[e, 0] * 2 + 1] -= -P[1, 0] * IB[0, 0] - P[1, 1] * IB[0, 1] - P[1, 0] * IB[1, 0] - P[
+                data_rhs_np[self.vertices[e, 0] * 2 + 1] -= -P[1, 0] * IB[0, 0] - P[1, 1] * IB[0, 1] - P[1, 0] * IB[1, 0] - P[
                     1, 1] * IB[1, 1]
             else:
-                Z = ti.Vector([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-                intermediate = ti.Matrix.rows([Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z, Z])
-                for colI in ti.static(range(9)):
-                    intermediate[3, colI] = IB[0, 0] * dPdF[0, colI] + IB[0, 1] * dPdF[3, colI] + IB[0, 2] * dPdF[
-                        6, colI]
-                    intermediate[4, colI] = IB[0, 0] * dPdF[1, colI] + IB[0, 1] * dPdF[4, colI] + IB[0, 2] * dPdF[
-                        7, colI]
-                    intermediate[5, colI] = IB[0, 0] * dPdF[2, colI] + IB[0, 1] * dPdF[5, colI] + IB[0, 2] * dPdF[
-                        8, colI]
-                    intermediate[6, colI] = IB[1, 0] * dPdF[0, colI] + IB[1, 1] * dPdF[3, colI] + IB[1, 2] * dPdF[
-                        6, colI]
-                    intermediate[7, colI] = IB[1, 0] * dPdF[1, colI] + IB[1, 1] * dPdF[4, colI] + IB[1, 2] * dPdF[
-                        7, colI]
-                    intermediate[8, colI] = IB[1, 0] * dPdF[2, colI] + IB[1, 1] * dPdF[5, colI] + IB[1, 2] * dPdF[
-                        8, colI]
-                    intermediate[9, colI] = IB[2, 0] * dPdF[0, colI] + IB[2, 1] * dPdF[3, colI] + IB[2, 2] * dPdF[
-                        6, colI]
-                    intermediate[10, colI] = IB[2, 0] * dPdF[1, colI] + IB[2, 1] * dPdF[4, colI] + IB[2, 2] * dPdF[
-                        7, colI]
-                    intermediate[11, colI] = IB[2, 0] * dPdF[2, colI] + IB[2, 1] * dPdF[5, colI] + IB[2, 2] * dPdF[
-                        8, colI]
-                    intermediate[0, colI] = -intermediate[3, colI] - intermediate[6, colI] - intermediate[9, colI]
-                    intermediate[1, colI] = -intermediate[4, colI] - intermediate[7, colI] - intermediate[10, colI]
-                    intermediate[2, colI] = -intermediate[5, colI] - intermediate[8, colI] - intermediate[11, colI]
-                indMap = ti.Vector([self.vertices[e, 0] * 3, self.vertices[e, 0] * 3 + 1, self.vertices[e, 0] * 3 + 2,
-                                    self.vertices[e, 1] * 3, self.vertices[e, 1] * 3 + 1, self.vertices[e, 1] * 3 + 2,
-                                    self.vertices[e, 2] * 3, self.vertices[e, 2] * 3 + 1, self.vertices[e, 2] * 3 + 2,
-                                    self.vertices[e, 3] * 3, self.vertices[e, 3] * 3 + 1, self.vertices[e, 3] * 3 + 2])
-                for rowI in ti.static(range(12)):
+                for colI in range(9):
+                    self.ti_intermediate_field[e, 3, colI] = IB[0, 0] * self.ti_dPdF_field[e, 0, colI] + IB[0, 1] * self.ti_dPdF_field[
+                        e, 3, colI] + IB[0, 2] * self.ti_dPdF_field[e, 6, colI]
+                    self.ti_intermediate_field[e, 4, colI] = IB[0, 0] * self.ti_dPdF_field[e, 1, colI] + IB[0, 1] * self.ti_dPdF_field[
+                        e, 4, colI] + IB[0, 2] * self.ti_dPdF_field[e, 7, colI]
+                    self.ti_intermediate_field[e, 5, colI] = IB[0, 0] * self.ti_dPdF_field[e, 2, colI] + IB[0, 1] * self.ti_dPdF_field[
+                        e, 5, colI] + IB[0, 2] * self.ti_dPdF_field[e, 8, colI]
+                    self.ti_intermediate_field[e, 6, colI] = IB[1, 0] * self.ti_dPdF_field[e, 0, colI] + IB[1, 1] * self.ti_dPdF_field[
+                        e, 3, colI] + IB[1, 2] * self.ti_dPdF_field[e, 6, colI]
+                    self.ti_intermediate_field[e, 7, colI] = IB[1, 0] * self.ti_dPdF_field[e, 1, colI] + IB[1, 1] * self.ti_dPdF_field[
+                        e, 4, colI] + IB[1, 2] * self.ti_dPdF_field[e, 7, colI]
+                    self.ti_intermediate_field[e, 8, colI] = IB[1, 0] * self.ti_dPdF_field[e, 2, colI] + IB[1, 1] * self.ti_dPdF_field[
+                        e, 5, colI] + IB[1, 2] * self.ti_dPdF_field[e, 8, colI]
+                    self.ti_intermediate_field[e, 9, colI] = IB[2, 0] * self.ti_dPdF_field[e, 0, colI] + IB[2, 1] * self.ti_dPdF_field[
+                        e, 3, colI] + IB[2, 2] * self.ti_dPdF_field[e, 6, colI]
+                    self.ti_intermediate_field[e, 10, colI] = IB[2, 0] * self.ti_dPdF_field[e, 1, colI] + IB[2, 1] * \
+                                                         self.ti_dPdF_field[e, 4, colI] + IB[2, 2] * self.ti_dPdF_field[
+                                                             e, 7, colI]
+                    self.ti_intermediate_field[e, 11, colI] = IB[2, 0] * self.ti_dPdF_field[e, 2, colI] + IB[2, 1] * \
+                                                         self.ti_dPdF_field[e, 5, colI] + IB[2, 2] * self.ti_dPdF_field[
+                                                             e, 8, colI]
+                    self.ti_intermediate_field[e, 0, colI] = -self.ti_intermediate_field[e, 3, colI] - self.ti_intermediate_field[
+                        e, 6, colI] - self.ti_intermediate_field[e, 9, colI]
+                    self.ti_intermediate_field[e, 1, colI] = -self.ti_intermediate_field[e, 4, colI] - self.ti_intermediate_field[
+                        e, 7, colI] - self.ti_intermediate_field[e, 10, colI]
+                    self.ti_intermediate_field[e, 2, colI] = -self.ti_intermediate_field[e, 5, colI] - self.ti_intermediate_field[
+                        e, 8, colI] - self.ti_intermediate_field[e, 11, colI]
+
+                self.ti_indMap_field[e, 0] = self.vertices[e, 0] * 3
+                self.ti_indMap_field[e, 1] = self.vertices[e, 0] * 3 + 1
+                self.ti_indMap_field[e, 2] = self.vertices[e, 0] * 3 + 2
+                self.ti_indMap_field[e, 3] = self.vertices[e, 1] * 3
+                self.ti_indMap_field[e, 4] = self.vertices[e, 1] * 3 + 1
+                self.ti_indMap_field[e, 5] = self.vertices[e, 1] * 3 + 2
+                self.ti_indMap_field[e, 6] = self.vertices[e, 2] * 3
+                self.ti_indMap_field[e, 7] = self.vertices[e, 2] * 3 + 1
+                self.ti_indMap_field[e, 8] = self.vertices[e, 2] * 3 + 2
+                self.ti_indMap_field[e, 9] = self.vertices[e, 3] * 3
+                self.ti_indMap_field[e, 10] = self.vertices[e, 3] * 3 + 1
+                self.ti_indMap_field[e, 11] = self.vertices[e, 3] * 3 + 2
+
+                for rowI in range(12):
                     c = self.cnt[None] + e * 144 + rowI * 12 + 0
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[rowI], indMap[3], IB[0, 0] * intermediate[
-                        rowI, 0] + IB[0, 1] * intermediate[rowI, 3] + IB[0, 2] * intermediate[rowI, 6]
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, rowI], self.ti_indMap_field[e, 3], \
+                                                                                    IB[0, 0] * self.ti_intermediate_field[e, rowI, 0] + \
+                                                                                    IB[0, 1] * self.ti_intermediate_field[e, rowI, 3] + \
+                                                                                    IB[0, 2] * self.ti_intermediate_field[e, rowI, 6]
                     c = self.cnt[None] + e * 144 + rowI * 12 + 1
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[rowI], indMap[4], IB[0, 0] * intermediate[
-                        rowI, 1] + IB[0, 1] * intermediate[rowI, 4] + IB[0, 2] * intermediate[rowI, 7]
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, rowI], self.ti_indMap_field[e, 4], \
+                                                                                    IB[0, 0] * self.ti_intermediate_field[e, rowI, 1] + \
+                                                                                    IB[0, 1] * self.ti_intermediate_field[e, rowI, 4] + \
+                                                                                    IB[0, 2] * self.ti_intermediate_field[e, rowI, 7]
                     c = self.cnt[None] + e * 144 + rowI * 12 + 2
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[rowI], indMap[5], IB[0, 0] * intermediate[
-                        rowI, 2] + IB[0, 1] * intermediate[rowI, 5] + IB[0, 2] * intermediate[rowI, 8]
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, rowI], self.ti_indMap_field[e, 5], \
+                                                                                    IB[0, 0] * self.ti_intermediate_field[e, rowI, 2] + \
+                                                                                    IB[0, 1] * self.ti_intermediate_field[e, rowI, 5] + \
+                                                                                    IB[0, 2] * self.ti_intermediate_field[e, rowI, 8]
                     c = self.cnt[None] + e * 144 + rowI * 12 + 3
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[rowI], indMap[6], IB[1, 0] * intermediate[
-                        rowI, 0] + IB[1, 1] * intermediate[rowI, 3] + IB[1, 2] * intermediate[rowI, 6]
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, rowI], self.ti_indMap_field[e, 6], \
+                                                                                    IB[1, 0] * self.ti_intermediate_field[e, rowI, 0] + \
+                                                                                    IB[1, 1] * self.ti_intermediate_field[e, rowI, 3] + \
+                                                                                    IB[1, 2] * self.ti_intermediate_field[e, rowI, 6]
                     c = self.cnt[None] + e * 144 + rowI * 12 + 4
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[rowI], indMap[7], IB[1, 0] * intermediate[
-                        rowI, 1] + IB[1, 1] * intermediate[rowI, 4] + IB[1, 2] * intermediate[rowI, 7]
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, rowI], self.ti_indMap_field[e, 7], \
+                                                                                    IB[1, 0] * self.ti_intermediate_field[e, rowI, 1] + \
+                                                                                    IB[1, 1] * self.ti_intermediate_field[e, rowI, 4] + \
+                                                                                    IB[1, 2] * self.ti_intermediate_field[e, rowI, 7]
                     c = self.cnt[None] + e * 144 + rowI * 12 + 5
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[rowI], indMap[8], IB[1, 0] * intermediate[
-                        rowI, 2] + IB[1, 1] * intermediate[rowI, 5] + IB[1, 2] * intermediate[rowI, 8]
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, rowI], self.ti_indMap_field[e, 8], \
+                                                                                    IB[1, 0] * self.ti_intermediate_field[e, rowI, 2] + \
+                                                                                    IB[1, 1] * self.ti_intermediate_field[e, rowI, 5] + \
+                                                                                    IB[1, 2] * self.ti_intermediate_field[e, rowI, 8]
                     c = self.cnt[None] + e * 144 + rowI * 12 + 6
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[rowI], indMap[9], IB[2, 0] * intermediate[
-                        rowI, 0] + IB[2, 1] * intermediate[rowI, 3] + IB[2, 2] * intermediate[rowI, 6]
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, rowI], self.ti_indMap_field[e, 9], \
+                                                                                    IB[2, 0] * self.ti_intermediate_field[e, rowI, 0] + \
+                                                                                    IB[2, 1] * self.ti_intermediate_field[e, rowI, 3] + \
+                                                                                    IB[2, 2] * self.ti_intermediate_field[e, rowI, 6]
                     c = self.cnt[None] + e * 144 + rowI * 12 + 7
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[rowI], indMap[10], IB[2, 0] * intermediate[
-                        rowI, 1] + IB[2, 1] * intermediate[rowI, 4] + IB[2, 2] * intermediate[rowI, 7]
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, rowI], self.ti_indMap_field[e, 10], \
+                                                                                    IB[2, 0] * self.ti_intermediate_field[e, rowI, 1] + \
+                                                                                    IB[2, 1] * self.ti_intermediate_field[e, rowI, 4] + \
+                                                                                    IB[2, 2] * self.ti_intermediate_field[e, rowI, 7]
                     c = self.cnt[None] + e * 144 + rowI * 12 + 8
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[rowI], indMap[11], IB[2, 0] * intermediate[
-                        rowI, 2] + IB[2, 1] * intermediate[rowI, 5] + IB[2, 2] * intermediate[rowI, 8]
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, rowI], self.ti_indMap_field[e, 11], \
+                                                                                    IB[2, 0] * self.ti_intermediate_field[e, rowI, 2] + \
+                                                                                    IB[2, 1] * self.ti_intermediate_field[e, rowI, 5] + \
+                                                                                    IB[2, 2] * self.ti_intermediate_field[e, rowI, 8]
                     c = self.cnt[None] + e * 144 + rowI * 12 + 9
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[rowI], indMap[0], - self.data_mat[2, c - 9] - \
-                                                                     self.data_mat[2, c - 6] - self.data_mat[2, c - 3]
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, rowI], self.ti_indMap_field[e, 0], - \
+                    data_mat_np[2, c - 9] - data_mat_np[2, c - 6] - data_mat_np[2, c - 3]
                     c = self.cnt[None] + e * 144 + rowI * 12 + 10
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[rowI], indMap[1], - self.data_mat[2, c - 9] - \
-                                                                     self.data_mat[2, c - 6] - self.data_mat[2, c - 3]
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, rowI], self.ti_indMap_field[e, 1], - \
+                    data_mat_np[2, c - 9] - data_mat_np[2, c - 6] - data_mat_np[2, c - 3]
                     c = self.cnt[None] + e * 144 + rowI * 12 + 11
-                    self.data_mat[0, c], self.data_mat[1, c], self.data_mat[2, c] = indMap[rowI], indMap[2], - self.data_mat[2, c - 9] - \
-                                                                     self.data_mat[2, c - 6] - self.data_mat[2, c - 3]
+                    data_mat_np[0, c], data_mat_np[1, c], data_mat_np[2, c] = self.ti_indMap_field[e, rowI], self.ti_indMap_field[e, 2], - \
+                    data_mat_np[2, c - 9] - data_mat_np[2, c - 6] - data_mat_np[2, c - 3]
                 R10 = IB[0, 0] * P[0, 0] + IB[0, 1] * P[0, 1] + IB[0, 2] * P[0, 2]
                 R11 = IB[0, 0] * P[1, 0] + IB[0, 1] * P[1, 1] + IB[0, 2] * P[1, 2]
                 R12 = IB[0, 0] * P[2, 0] + IB[0, 1] * P[2, 1] + IB[0, 2] * P[2, 2]
@@ -400,18 +457,18 @@ class PNSimulation:
                 R30 = IB[2, 0] * P[0, 0] + IB[2, 1] * P[0, 1] + IB[2, 2] * P[0, 2]
                 R31 = IB[2, 0] * P[1, 0] + IB[2, 1] * P[1, 1] + IB[2, 2] * P[1, 2]
                 R32 = IB[2, 0] * P[2, 0] + IB[2, 1] * P[2, 1] + IB[2, 2] * P[2, 2]
-                self.data_rhs[self.vertices[e, 1] * 3 + 0] -= R10
-                self.data_rhs[self.vertices[e, 1] * 3 + 1] -= R11
-                self.data_rhs[self.vertices[e, 1] * 3 + 2] -= R12
-                self.data_rhs[self.vertices[e, 2] * 3 + 0] -= R20
-                self.data_rhs[self.vertices[e, 2] * 3 + 1] -= R21
-                self.data_rhs[self.vertices[e, 2] * 3 + 2] -= R22
-                self.data_rhs[self.vertices[e, 3] * 3 + 0] -= R30
-                self.data_rhs[self.vertices[e, 3] * 3 + 1] -= R31
-                self.data_rhs[self.vertices[e, 3] * 3 + 2] -= R32
-                self.data_rhs[self.vertices[e, 0] * 3 + 0] -= -R10 - R20 - R30
-                self.data_rhs[self.vertices[e, 0] * 3 + 1] -= -R11 - R21 - R31
-                self.data_rhs[self.vertices[e, 0] * 3 + 2] -= -R12 - R22 - R32
+                data_rhs_np[self.vertices[e, 1] * 3 + 0] -= R10
+                data_rhs_np[self.vertices[e, 1] * 3 + 1] -= R11
+                data_rhs_np[self.vertices[e, 1] * 3 + 2] -= R12
+                data_rhs_np[self.vertices[e, 2] * 3 + 0] -= R20
+                data_rhs_np[self.vertices[e, 2] * 3 + 1] -= R21
+                data_rhs_np[self.vertices[e, 2] * 3 + 2] -= R22
+                data_rhs_np[self.vertices[e, 3] * 3 + 0] -= R30
+                data_rhs_np[self.vertices[e, 3] * 3 + 1] -= R31
+                data_rhs_np[self.vertices[e, 3] * 3 + 2] -= R32
+                data_rhs_np[self.vertices[e, 0] * 3 + 0] -= -R10 - R20 - R30
+                data_rhs_np[self.vertices[e, 0] * 3 + 1] -= -R11 - R21 - R31
+                data_rhs_np[self.vertices[e, 0] * 3 + 2] -= -R12 - R22 - R32
         self.cnt[None] += self.n_elements * (self.dim + 1) * self.dim * (self.dim + 1) * self.dim
 
     @ti.kernel
@@ -420,10 +477,10 @@ class PNSimulation:
             self.xPrev[i] = self.x[i]
 
     @ti.kernel
-    def apply_sol(self, alpha: real):
+    def apply_sol(self, alpha: real, data_sol: ti.ext_arr()):
         for i in range(self.n_vertices):
             for d in ti.static(range(self.dim)):
-                self.x(d)[i] = self.xPrev(d)[i] + self.data_sol[i * self.dim + d] * alpha
+                self.x(d)[i] = self.xPrev(d)[i] + data_sol[i * self.dim + d] * alpha
 
     @ti.kernel
     def compute_x_xtilde(self):
@@ -443,11 +500,11 @@ class PNSimulation:
             self.del_p[i] = self.x[i] - self.xn[i]
 
     @ti.kernel
-    def output_residual(self) -> real:
+    def output_residual(self, data_sol: ti.ext_arr()) -> real:
         residual = 0.0
         for i in range(self.n_vertices):
             for d in ti.static(range(self.dim)):
-                residual = ti.max(residual, ti.abs(self.data_sol[i * self.dim + d]))
+                residual = ti.max(residual, ti.abs(data_sol[i * self.dim + d]))
         # print("PN Search Direction Residual : ", residual / self.dt)
         return residual
 
@@ -526,6 +583,7 @@ class PNSimulation:
         for i in x:
             y[i] = x[i]
 
+
     # TODO: this one do not need to work, since we use pd->pn
     def output_all(self, pd_dis, pn_dis, grad_E, frame, T):
         frame = str(frame).zfill(5)
@@ -592,23 +650,24 @@ class PNSimulation:
             self.data_mat.fill(0)
             self.data_rhs.fill(0)
             self.data_sol.fill(0)
-            self.compute_hessian_and_gradient()
+            # print(self.data_mat)
+            self.compute_hessian_and_gradient(self.data_mat, self.data_rhs)
             # print("cnt: ", self.cnt[None])
             # print("dara mat: \n", self.data_mat.to_numpy())
             # print("dara rhs: \n", self.data_rhs.to_numpy())
-            self.data_sol.from_numpy(solve_linear_system3(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
+            self.data_sol = solve_linear_system3(self.data_mat, self.data_rhs,
                                                           self.n_vertices * self.dim, self.dirichlet,
-                                                          self.zero.to_numpy(), False, 0, self.cnt[None]))
-            if self.output_residual() < 1e-4 * self.dt:
+                                                          self.zero.to_numpy(), False, 0, self.cnt[None])
+            if self.output_residual(self.data_sol) < 1e-4 * self.dt:
                 break
             E0 = self.compute_energy()
             self.save_xPrev()
             alpha = 1.0
-            self.apply_sol(alpha)
+            self.apply_sol(alpha, self.data_sol)
             E = self.compute_energy()
             while E > E0:
                 alpha *= 0.5
-                self.apply_sol(alpha)
+                self.apply_sol(alpha, self.data_sol)
                 E = self.compute_energy()
         self.compute_v()
         # print("del_p: \n", self.del_p.to_numpy())
@@ -649,9 +708,9 @@ class PNSimulation:
                 self.data_rhs.fill(0)
                 self.data_sol.fill(0)
                 self.compute_hessian_and_gradient()
-                self.data_sol.from_numpy(solve_linear_system3(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
-                                                              self.n_vertices * self.dim, self.dirichlet,
-                                                              self.zero.to_numpy(), False, 0, self.cnt[None]))
+                self.data_sol = solve_linear_system3(self.data_mat, self.data_rhs,
+                                                           self.n_vertices * self.dim, self.dirichlet,
+                                                           self.zero.to_numpy(), False, 0, self.cnt[None])
                 if self.output_residual() < 1e-4 * self.dt:
                     break
                 E0 = self.compute_energy()
@@ -726,18 +785,20 @@ class PNSimulation:
                 self.data_mat.fill(0)
                 self.data_rhs.fill(0)
                 self.data_sol.fill(0)
+                self.ti_intermediate_field.fill(0)
+                self.ti_M_field.fill(0)
                 self.compute_hessian_and_gradient()
                 # print("cnt: ", self.cnt[None])
                 # print("dara mat: \n", self.data_mat.to_numpy())
                 # print("dara rhs: \n", self.data_rhs.to_numpy())
-                if self.dim == 2:
-                    self.data_sol.from_numpy(solve_linear_system(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
-                                                                 self.n_vertices * self.dim, np.array(self.dirichlet),
-                                                                 self.zero.to_numpy(), False, 0, self.cnt[None]))
-                else:
-                    self.data_sol.from_numpy(solve_linear_system3(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
-                                                                  self.n_vertices * self.dim, np.array(self.dirichlet),
-                                                                  self.zero.to_numpy(), False, 0, self.cnt[None]))
+                # if self.dim == 2:
+                #     self.data_sol.from_numpy(solve_linear_system(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
+                #                                                  self.n_vertices * self.dim, np.array(self.dirichlet),
+                #                                                  self.zero.to_numpy(), False, 0, self.cnt[None]))
+                # else:
+                self.data_sol.from_numpy(solve_linear_system3(self.data_mat.to_numpy(), self.data_rhs.to_numpy(),
+                                                              self.n_vertices * self.dim, np.array(self.dirichlet),
+                                                              self.zero.to_numpy(), False, 0, self.cnt[None]))
                 if self.output_residual() < 1e-4 * self.dt:
                     break
                 E0 = self.compute_energy()

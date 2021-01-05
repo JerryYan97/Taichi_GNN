@@ -5,9 +5,10 @@ from src.Simulators.PD3D import *
 from src.Utils.reader import read
 import torch
 import os
+import numpy as np
 
-ti.init(arch=ti.cpu, default_fp=ti.f64, debug=False)
-# ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
+# ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
+ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 
 rho = 1e2
 E = 1e4
@@ -17,7 +18,7 @@ dt = 0.01
 running_times = 1
 frame_count = 80
 
-test_case = 1001
+test_case = 1004
 cluster_num = 10
 
 # NOTE: Please remember to save your data. It will delete all files in Outputs/ or Outputs_T/ when you exe Run.py.
@@ -26,12 +27,12 @@ cluster_num = 10
 if __name__ == '__main__':
     # Run settings:
     is_test = 0
-    if is_test == 0:
-        if not os.path.exists("Outputs"):
-            os.makedirs("Outputs")
-        for root, dirs, files in os.walk("Outputs/"):
-            for name in files:
-                os.remove(os.path.join(root, name))
+    # if is_test == 0:
+    #     if not os.path.exists("Outputs"):
+    #         os.makedirs("Outputs")
+    #     for root, dirs, files in os.walk("Outputs/"):
+    #         for name in files:
+    #             os.remove(os.path.join(root, name))
 
     # Case settings:
     case_info = read(test_case)
@@ -119,6 +120,6 @@ if __name__ == '__main__':
     pd.initial()
     pn.initial()
     pn.compute_restT_and_m()
-    pn.set_force(0, 0, 6)
-    pd.set_force(0, 0, 6)
+    pn.set_force(45, 45, 0.06)
+    pd.set_force(45, 45, 0.06)
     pd.Run(pn, is_test, frame_count, scene_info)
