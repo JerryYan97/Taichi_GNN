@@ -18,15 +18,15 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1
-case_info = read(int(test_case))
+test_case = 1001
+case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
 mesh_offset = case_info['mesh_offset']
 dim = case_info['dim']
 # cpu 1.27 -- 1003,
-ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
+ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
 n_vertices = mesh.num_vertices
 
 # 2D and 3D scene settings:
@@ -119,7 +119,7 @@ def set_exforce():
     else:
         exf_angle1 = 45.0
         exf_angle2 = 45.0
-        exf_mag = 0.0002
+        exf_mag = 6.0
         ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
     # print("External force:", ti_ex_force)
 

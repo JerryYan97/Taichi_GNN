@@ -380,6 +380,10 @@ if __name__ == "__main__":
         gui.set_image(scene.img)
         gui.show()
 
+    data_rhs = np.zeros(shape=(200000,), dtype=np.float64)
+    data_mat = np.zeros(shape=(3, 20000000), dtype=np.float64)
+    data_sol = np.zeros(shape=(200000,), dtype=np.float64)
+
     # Compile time duration record
     # Before optimization: 73.18037104606628 s
     # After unrolling optimization: 2.7542989253997803 s -  0.002396106719970703 s
@@ -387,9 +391,9 @@ if __name__ == "__main__":
         print("==================== Frame: ", f, " ====================")
         compute_xn_and_xTilde()
         while True:
-            data_rhs = np.zeros(shape=(200000,), dtype=np.float64)
-            data_mat = np.zeros(shape=(3, 20000000), dtype=np.float64)
-            data_sol = np.zeros(shape=(200000,), dtype=np.float64)
+            data_rhs.fill(0)
+            data_mat.fill(0)
+            data_sol.fill(0)
             ti_intermediate_field.fill(0)
             ti_M_field.fill(0)
             # time_start = time.time()

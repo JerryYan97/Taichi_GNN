@@ -7,8 +7,8 @@ import torch
 import os
 import numpy as np
 
-ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
-# ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
+# ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
+ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 
 rho = 1e2
 E = 1e4

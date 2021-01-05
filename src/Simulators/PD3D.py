@@ -128,11 +128,11 @@ class PDSimulation:
         self.ti_A = ti.field(real, (self.n_elements * 2, self.dim * self.dim, self.dim * (self.dim + 1)))
         self.ti_A_i = ti.field(real, shape=(self.dim * self.dim, self.dim * (self.dim + 1)))
         # A_i = ti.field(real, shape=(dim * dim, dim * (dim + 1)))
-        self.ti_q_idx_vec = ti.field(real, (self.n_elements, self.dim * (self.dim + 1)))
+        self.ti_q_idx_vec = ti.field(ti.int32, (self.n_elements, self.dim * (self.dim + 1)))
         self.ti_Bp = ti.Matrix.field(self.dim, self.dim, real, self.n_elements * 2)
         # ti_rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
         self.ti_Sn = ti.field(real, self.n_vertices * self.dim)
-        self.ti_lhs_matrix = ti.field(real, shape=(self.n_vertices * self.dim, self.n_vertices * self.dim))
+        # self.ti_lhs_matrix = ti.field(real, shape=(self.n_vertices * self.dim, self.n_vertices * self.dim))
         # potential energy of each element(face) for linear coratated elasticity material.
         self.ti_phi = ti.field(real, self.n_elements)
         self.ti_weight_strain = ti.field(real, self.n_elements)   # self.mu * 2 * self.volume
@@ -141,16 +141,6 @@ class PDSimulation:
         self.mesh.enable_connectivity()
 
         self.pos_init_out = []
-
-    def initial_scene(self):
-        if self.dim == 3:
-            self.camera = t3.Camera()
-            self.scene = t3.Scene()
-            # self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
-            self.model = t3.Model(t3.DynamicMesh(n_faces=len(self.boundary_triangles) * 2,
-                                                 n_pos=self.case_info['mesh'].num_vertices,
-                                                 n_nrm=len(self.boundary_triangles) * 2))
-            set_3D_scene(self.scene, self.camera, self.model, self.case_info)
 
     def initial(self):
         if self.dim == 2:
@@ -182,7 +172,7 @@ class PDSimulation:
         self.ti_q_idx_vec.fill(0)
         self.ti_Bp.fill(0)
         self.ti_Sn.fill(0)
-        self.ti_lhs_matrix.fill(0)
+        # self.ti_lhs_matrix.fill(0)
         self.ti_phi.fill(0)
         self.ti_weight_strain.fill(0)
         self.ti_weight_volume.fill(0)
@@ -325,7 +315,7 @@ class PDSimulation:
                 ele_idx, 11] = idx_d_x_idx, idx_d_y_idx, idx_d_z_idx
 
     @ti.kernel
-    def precomputation(self):
+    def precomputation(self, lhs_matrix_np: ti.ext_arr()):
         dimp = self.dim + 1
         # print("Precomputation starts")
         for e_it in range(self.n_elements):
@@ -431,8 +421,8 @@ class PDSimulation:
                                 weight = self.ti_weight_strain[ele_idx]
                             else:
                                 weight = self.ti_weight_volume[ele_idx]
-                            self.ti_lhs_matrix[lhs_row_idx, lhs_col_idx] += (self.ti_A[ele_idx, idx, A_row_idx] *
-                                                                             self.ti_A[ele_idx, idx, A_col_idx] * weight)
+                            lhs_matrix_np[lhs_row_idx, lhs_col_idx] += (self.ti_A[ele_idx, idx, A_row_idx] *
+                                                                        self.ti_A[ele_idx, idx, A_col_idx] * weight)
 
         # print("Position constraints starts")
         # Add positional constraints to the lhs matrix
@@ -440,17 +430,17 @@ class PDSimulation:
             if self.ti_boundary_labels[i] == 1:
                 q_i_x_idx = i * self.dim
                 q_i_y_idx = i * self.dim + 1
-                self.ti_lhs_matrix[q_i_x_idx, q_i_x_idx] += self.m_weight_positional  # This is the weight of positional constraints
-                self.ti_lhs_matrix[q_i_y_idx, q_i_y_idx] += self.m_weight_positional
+                lhs_matrix_np[q_i_x_idx, q_i_x_idx] += self.m_weight_positional  # This is the weight of positional constraints
+                lhs_matrix_np[q_i_y_idx, q_i_y_idx] += self.m_weight_positional
                 if ti.static(self.dim == 3):
                     q_i_z_idx = i * self.dim + 2
-                    self.ti_lhs_matrix[q_i_z_idx, q_i_z_idx] += self.m_weight_positional
+                    lhs_matrix_np[q_i_z_idx, q_i_z_idx] += self.m_weight_positional
 
         # print("lhs matrix starts")
         # Construct lhs matrix without constraints
         for i in range(self.n_vertices):
             for d in ti.static(range(self.dim)):
-                self.ti_lhs_matrix[i * self.dim + d, i * self.dim + d] += self.ti_mass[i] / (self.dt * self.dt)
+                lhs_matrix_np[i * self.dim + d, i * self.dim + d] += self.ti_mass[i] / (self.dt * self.dt)
         # print("ti_lhs_mat: after add mass:")
         # print(ti_lhs_matrix[None])
 
@@ -956,11 +946,12 @@ class PDSimulation:
 
     def Run(self, pn, is_test, frame_count, scene_info):
         rhs_np = np.zeros(self.n_vertices * self.dim, dtype=np.float64)
+        lhs_matrix_np = np.zeros(shape=(self.n_vertices * self.dim, self.n_vertices * self.dim), dtype=np.float64)
 
         # Init Taichi global variables
         self.init_mesh_DmInv(self.dirichlet, len(self.dirichlet))
-        self.precomputation()
-        lhs_matrix_np = self.ti_lhs_matrix.to_numpy()
+        self.precomputation(lhs_matrix_np)
+        # lhs_matrix_np = self.ti_lhs_matrix.to_numpy()
         s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
         pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
