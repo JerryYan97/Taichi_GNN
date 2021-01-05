@@ -3,13 +3,12 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 import taichi as ti
 # import taichi_three as t3
 import numpy as np
-import pymesh
 from Utils.JGSL_WATER import *
 from Utils.neo_hookean import fixed_corotated_first_piola_kirchoff_stress
 from Utils.neo_hookean import fixed_corotated_energy
 from Utils.neo_hookean import fixed_corotated_first_piola_kirchoff_stress_derivative
 from Utils.reader import read
-from Utils.math_tools import svd
+from Utils.math_tools import svd, my_svd
 from Utils.utils_visualization import draw_image, update_boundary_mesh, get_force_field
 
 ##############################################################################
@@ -35,8 +34,8 @@ density = 100
 n_particles = mesh.num_vertices
 if dim == 2:
     n_elements = mesh.num_faces
-if dim == 3:
-    n_elements = mesh.elements.shape[0]
+else:
+    n_elements = mesh.num_elements
     import tina
     scene = tina.Scene(culling=False, clipping=True)
     tina_mesh = tina.SimpleMesh()
@@ -65,10 +64,6 @@ ti_U_field = ti.field(real, (n_elements, dim * dim, dim * dim))
 ti_V_field = ti.field(real, (n_elements, dim * dim, dim * dim))
 ti_indMap_field = ti.field(real, (n_elements, dim * (dim + 1)))
 
-data_rhs = ti.field(real, shape=200000)
-data_mat = ti.field(real, shape=(3, 20000000))
-data_sol = ti.field(real, shape=200000)
-
 
 # external force -- Angle: from [1, 0] -- counter-clock wise
 ex_force = ti.Vector.field(dim, real, 1)
@@ -89,6 +84,7 @@ def initial():
     restT.fill(0)
     ################################ external force ######################################
     ex_force.fill(0)
+
 
 def set_exforce():
     if dim == 2:
@@ -158,12 +154,13 @@ def compute_energy() -> real:
         F = compute_T(e) @ restT[e].inverse()
         vol0 = restT[e].determinant() / dim / (dim - 1)
         U, sig, V = svd(F)
+        # U, sig, V = my_svd(F)
         total_energy += fixed_corotated_energy(sig, la, mu) * dt * dt * vol0
     return total_energy
 
 
 @ti.kernel
-def compute_hessian_and_gradient():
+def compute_hessian_and_gradient(data_mat: ti.ext_arr(), data_rhs: ti.ext_arr()):
     cnt[None] = 0
     # inertia
     for i in range(n_particles):
@@ -316,7 +313,7 @@ def save_xPrev():
 
 
 @ti.kernel
-def apply_sol(alpha : real):
+def apply_sol(alpha : real, data_sol: ti.ext_arr()):
     for i in range(n_particles):
         for d in ti.static(range(dim)):
             x(d)[i] = xPrev(d)[i] + data_sol[i * dim + d] * alpha
@@ -329,13 +326,17 @@ def compute_v():
 
 
 @ti.kernel
-def output_residual() -> real:
+def output_residual(data_sol: ti.ext_arr()) -> real:
     residual = 0.0
     for i in range(n_particles):
         for d in ti.static(range(dim)):
             residual = ti.max(residual, ti.abs(data_sol[i * dim + d]))
     print("Search Direction Residual : ", residual / dt)
     return residual
+
+
+def my_solve_linear_system():
+    pass
 
 
 # def write_image(f):
@@ -386,35 +387,49 @@ if __name__ == "__main__":
         print("==================== Frame: ", f, " ====================")
         compute_xn_and_xTilde()
         while True:
-            data_mat.fill(0)
-            data_rhs.fill(0)
-            data_sol.fill(0)
+            data_rhs = np.zeros(shape=(200000,), dtype=np.float64)
+            data_mat = np.zeros(shape=(3, 20000000), dtype=np.float64)
+            data_sol = np.zeros(shape=(200000,), dtype=np.float64)
             ti_intermediate_field.fill(0)
             ti_M_field.fill(0)
-            time_start = time.time()
-            compute_hessian_and_gradient()
-            time_end = time.time()
-            print("compute_hessian_and_gradient time duration:", time_end - time_start, 's')
+            # time_start = time.time()
+            compute_hessian_and_gradient(data_mat, data_rhs)
+            # time_end = time.time()
+            # print("compute_hessian_and_gradient time duration:", time_end - time_start, 's')
+
+            # time_start = time.time()
             if dim == 2:
-                data_sol.from_numpy(solve_linear_system(data_mat.to_numpy(), data_rhs.to_numpy(), n_particles * dim,
-                                                         np.array(dirichlet), zero.to_numpy(), False, 0, cnt[None]))
+                data_sol = solve_linear_system(data_mat, data_rhs, n_particles * dim,
+                                                         np.array(dirichlet), zero.to_numpy(), False, 0, cnt[None])
             else:
-                data_sol.from_numpy(solve_linear_system3(data_mat.to_numpy(), data_rhs.to_numpy(), n_particles * dim,
-                                                         np.array(dirichlet), zero.to_numpy(), False, 0, cnt[None]))
-            if output_residual() < 1e-4 * dt:
+                data_sol = solve_linear_system3(data_mat, data_rhs, n_particles * dim,
+                                                         np.array(dirichlet), zero.to_numpy(), False, 0, cnt[None])
+            # time_end = time.time()
+            # print("to_numpy() and solve linear system time:", time_end - time_start, 's')
+
+            if output_residual(data_sol) < 1e-4 * dt:
                 break
+
+            # time_start = time.time()
             E0 = compute_energy()
             save_xPrev()
             alpha = 1.0
-            apply_sol(alpha)
+            apply_sol(alpha, data_sol)
             E = compute_energy()
             while E > E0:
                 alpha *= 0.5
-                apply_sol(alpha)
+                apply_sol(alpha, data_sol)
                 E = compute_energy()
+            # time_end = time.time()
+            # print("Energy computation time:", time_end - time_start, 's')
+
+        # time_start = time.time()
         compute_v()
         particle_pos = x.to_numpy()
         vertices_ = vertices.to_numpy()
+        # time_end = time.time()
+        # print("Compute v and particles to numpy() time:", time_end - time_start, 's')
+
         # write_image(f)
         frame_counter += 1
         filename = f'./results/frame_{frame_counter:05d}.png'
@@ -427,3 +442,11 @@ if __name__ == "__main__":
             scene.render()
             gui.set_image(scene.img)
             gui.show()
+
+
+# Case 1 performance record:
+# Energy computation time: 0.00030803680419921875 s
+# compute_hessian_and_gradient time duration: 0.00013208389282226562 s
+# to_numpy() and solve linear system time: 0.17334318161010742 s --> after change to numpy: 0.06917214393615723 s
+# Compute v and particles to numpy() time: 0.0004885196685791016 s
+

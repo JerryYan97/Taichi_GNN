@@ -4,7 +4,6 @@ import sys
 import os
 
 from .graph_tools import find_boundary
-from tina import translate, scale
 from .utils_visualization import rotate_matrix_y_axis
 
 def read(testcase):
@@ -63,6 +62,7 @@ def read(testcase):
         case_info['mesh_offset'] = mesh_offset
         return case_info
     elif testcase == 1001:
+        from tina import translate, scale
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/box3D_v518_t2112.msh")
         dirichlet_list = []
         for i in range(mesh.num_vertices):
@@ -85,6 +85,7 @@ def read(testcase):
         case_info['light_dir'] = [-0.2, -0.6, 0.0]
         return case_info
     elif testcase == 1002:
+        from tina import translate, scale
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/tet.msh")
         dirichlet_list = [0, 1, 2]
         dirichlet = np.array(dirichlet_list)
@@ -106,6 +107,7 @@ def read(testcase):
         case_info['light_dir'] = [-0.8, -0.6, -1.0]
         return case_info
     elif testcase == 1003:
+        from tina import translate, scale
         # Bunny with bottom fixed
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/bunny3K.msh")
         dirichlet_list = []
@@ -132,6 +134,7 @@ def read(testcase):
         case_info['light_dir'] = [-0.8, -0.6, -1.0]
         return case_info
     elif testcase == 1004:
+        from tina import translate, scale
         # Bunny with 4 fixed points
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/bunny3K.msh")
         dirichlet_list = [665, 777, 1928, 1986]
@@ -152,6 +155,7 @@ def read(testcase):
         case_info['light_dir'] = [-0.8, -0.6, -1.0]
         return case_info
     elif testcase == 1005:
+        from tina import translate, scale
         # Dragon with bottom fixed
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/dragon_res4_10019v_38693t.msh")
         dirichlet_list = []

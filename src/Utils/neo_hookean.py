@@ -76,6 +76,7 @@ def fixed_corotated_first_piola_kirchoff_stress(F, la, mu):
     J = F.determinant()
     JFinvT = cofactor(F)
     U, sig, V = svd(F)
+    # U, sig, V = my_svd(F)
     R = U @ V.transpose()
     return 2 * mu * (F - R) + la * (J - 1) * JFinvT
 
@@ -84,6 +85,7 @@ def fixed_corotated_first_piola_kirchoff_stress(F, la, mu):
 def fixed_corotated_first_piola_kirchoff_stress_derivative(F, la, mu, dPdF, M_field, U_field, V_field, ele_idx, dt, vol0):
     if ti.static(F.n == 2):
         U, sig, V = svd(F)
+        # U, sig, V = my_svd(F)
         for row_idx in ti.static(range(2)):
             for col_idx in ti.static(range(2)):
                 U_field[ele_idx, row_idx, col_idx] = U[row_idx, col_idx]
@@ -121,6 +123,7 @@ def fixed_corotated_first_piola_kirchoff_stress_derivative(F, la, mu, dPdF, M_fi
                         dPdF[ele_idx, ij, rs] = dPdF_tmp * dt * dt * vol0
     else:
         U, sig, V = svd(F)
+        # U, sig, V = my_svd(F)
         for row_idx in ti.static(range(3)):
             for col_idx in ti.static(range(3)):
                 U_field[ele_idx, row_idx, col_idx] = U[row_idx, col_idx]
