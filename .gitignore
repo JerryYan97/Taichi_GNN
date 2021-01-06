@@ -19,10 +19,10 @@ src/tools/backup
 src/tools/modelVisualization
 src/tools/PD_PN_Compare
 src/tools/results
-SimData/PDAnimSeq/
-SimData/PNAnimSeq/
-SimData/TestingData/
-SimData/TrainingData/
+SimData/PDAnimSeq/*.obj
+SimData/PNAnimSeq/*.obj
+SimData/TestingData/*.csv
+SimData/TrainingData/*.csv
 SimData/TmpRenderedImgs/
 Saved_Cluster
 

@@ -25,8 +25,11 @@ cluster_num = 10
 
 # pd->pn
 if __name__ == '__main__':
-    # Clean data in the folders:
+    # Create relevant folders and clean data in the folders:
     is_test = 1  # 0: training data; 1: testing data.
+    os.makedirs('SimData/PDAnimSeq/', exist_ok=True)
+    os.makedirs('SimData/PNAnimSeq/', exist_ok=True)
+    os.makedirs('SimData/TmpRenderedImgs/', exist_ok=True)
     for root, dirs, files in os.walk("SimData/PDAnimSeq"):
         for name in files:
             os.remove(os.path.join(root, name))
@@ -34,10 +37,12 @@ if __name__ == '__main__':
         for name in files:
             os.remove(os.path.join(root, name))
     if is_test == 0:
+        os.makedirs('SimData/TrainingData/', exist_ok=True)
         for root, dirs, files in os.walk("SimData/TrainingData"):
             for name in files:
                 os.remove(os.path.join(root, name))
     else:
+        os.makedirs('SimData/TestingData/', exist_ok=True)
         for root, dirs, files in os.walk("SimData/TestingData"):
             for name in files:
                 os.remove(os.path.join(root, name))
