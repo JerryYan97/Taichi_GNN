@@ -1,11 +1,9 @@
 import numpy as np
 import scipy.sparse as sp
 import torch
-# from multiprocessing import Pool
 import multiprocessing as mp
 from .reader import *
 from .Dijkstra import Dijkstra
-# from .utils_visualization import printProgressBar
 import os
 from collections import defaultdict
 from torch_geometric.data import InMemoryDataset, Data
@@ -16,16 +14,50 @@ from os import system
 from scipy.sparse import lil_matrix
 
 
+def mp_load_data(workload_list, proc_idx, filepath, files, node_num, edge_idx, cluster, transform, dim):
+    sample_list = []
+    for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
+        fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
+        if dim == 2:
+            other = fperframe[:, 4:]
+            pn_dis = fperframe[:, 2:4]
+            pd_dis = fperframe[:, 0:2]  # a[start:stop] items start through stop-1
+        else:
+            other = fperframe[:, 6:]
+            pn_dis = fperframe[:, 3:6]
+            pd_dis = fperframe[:, 0:3]  # a[start:stop] items start through stop-1
+        y_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((node_num, -1)))
+        x_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((node_num, -1)))
+        sample = Data(x=x_data, edge_index=edge_idx, y=y_data, cluster=cluster)
+        if transform:
+            sample = transform(sample)
+        sample_list.append(sample)
+
+    print("proc", proc_idx, "-- start idx:", workload_list[proc_idx][0], " end idx:", workload_list[proc_idx][1])
+    return sample_list
+
+
 class SIM_Data_Geo(InMemoryDataset):
     def __init__(self, filepath, mesh_edge_idx,
                  i_features_num, o_features_num,
-                 mesh, cluster, clusters_num,
+                 mesh, cluster, clusters_num, dim,
                  transform=None, pre_transform=None):
         super(SIM_Data_Geo, self).__init__(None, transform, pre_transform)
+        import time
+
+        # Section 5-1
+        t5_1_start = time.time()
         self._files = []
         for _, _, files in os.walk(filepath):
             self._files.extend(files)
+        t5_1_end = time.time()
+        print("t5-1:", t5_1_end - t5_1_start)
+
+        # Section 5-2
+        t5_2_start = time.time()
         self._files.sort()
+        t5_2_end = time.time()
+        print("t5-2:", t5_2_end - t5_2_start)
         self._edge_idx = mesh_edge_idx
         self._filepath = filepath
         self._input_features_num = i_features_num
@@ -35,19 +67,32 @@ class SIM_Data_Geo(InMemoryDataset):
         self._cluster = cluster
         self._cluster_num = clusters_num
 
+        # Section 5-3 multi-processing
+        pool = mp.Pool()
         sample_list = []
-        for idx in range(self.len()):
-            fperframe = np.genfromtxt(self._filepath + "/" + self._files[idx], delimiter=',')
-            other = fperframe[:, 4:]
-            pn_dis = fperframe[:, 2:4]
-            pd_dis = fperframe[:, 0:2]  # a[start:stop] items start through stop-1
-            y_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((self.node_num, -1)))
-            x_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((self.node_num, -1)))
-            sample = Data(x=x_data, edge_index=self._edge_idx, y=y_data, cluster=self._cluster)
-            if self.transform:
-                sample = self.transform(sample)
-            sample_list.append(sample)
+        # Divide workloads:
+        cpu_cnt = os.cpu_count()
+        files_cnt = self.len()
+        files_per_proc_cnt = files_cnt // cpu_cnt
+        workload_list = []
+        proc_list = []
+        for i in range(cpu_cnt):
+            # [[proc1 first file idx, proc1 last file idx] ... []]
+            cur_proc_workload = [i * files_per_proc_cnt, (i + 1) * files_per_proc_cnt - 1]
+            if i == cpu_cnt - 1:
+                # Last workload may needs to do more than others.
+                cur_proc_workload[1] = files_cnt - 1
+            workload_list.append(cur_proc_workload)
+        # Call multi-processing func:
+        for i in range(cpu_cnt):
+            proc_list.append(pool.apply_async(func=mp_load_data,
+                                              args=(workload_list, i, self._filepath, self._files, self.node_num,
+                                                    self._edge_idx, self._cluster, self.transform, dim,)))
+        # Get multi-processing res:
+        for i in range(cpu_cnt):
+            sample_list.extend(proc_list[i].get())
 
+        print("Sample list length:", len(sample_list))
         self.data, self.slices = self.collate(sample_list)
 
     @property
@@ -87,7 +132,11 @@ def load_cluster(file_dir, test_case):
     return cluster, cluster_num
 
 
-def load_txt_data(test_case, path="/Outputs"):
+# Load data record:
+# case 1001 -- 9.8G (Without optimization):
+# t1: 0.003854036331176758  t2: 0.03281879425048828  t3: 0.00013327598571777344  t4: 0.0012357234954833984
+#
+def load_data(test_case, path="/Outputs"):
     file_dir = os.getcwd()
     file_dir = file_dir + path
 
@@ -95,25 +144,73 @@ def load_txt_data(test_case, path="/Outputs"):
     mesh = case_info['mesh']
 
     edges = set()
-    for [i, j, k] in mesh.faces:
-        edges.add((i, j))
-        edges.add((j, k))
-        edges.add((k, i))
     edge_index = np.zeros(shape=(2, 0), dtype=np.int32)
-    for [i, j, k] in mesh.faces:
-        if (j, i) not in edges:
-            edge_index = np.hstack((edge_index, [[j], [i]]))
+    if case_info['dim'] == 2:
+        for [i, j, k] in mesh.faces:
+            edges.add((i, j))
+            edges.add((j, k))
+            edges.add((k, i))
+        for [i, j, k] in mesh.faces:
+            if (j, i) not in edges:
+                edge_index = np.hstack((edge_index, [[j], [i]]))
+                edge_index = np.hstack((edge_index, [[i], [j]]))
+            if (k, j) not in edges:
+                edge_index = np.hstack((edge_index, [[j], [k]]))
+                edge_index = np.hstack((edge_index, [[k], [j]]))
+            if (i, k) not in edges:
+                edge_index = np.hstack((edge_index, [[k], [i]]))
+                edge_index = np.hstack((edge_index, [[i], [k]]))
+        edge_index = torch.LongTensor(edge_index)
+        cluster, cluster_num = load_cluster(os.getcwd(), test_case)
+        return SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, cluster, cluster_num, 2)
+    else:
+        import time
+        t1_start = time.time()
+        # Load Section 1
+        for [i, j, k, m] in mesh.elements:
+            edges.add((i, j))
+            edges.add((j, i))
+            edges.add((i, k))
+            edges.add((k, i))
+            edges.add((i, m))
+            edges.add((m, i))
+
+            edges.add((j, k))
+            edges.add((k, j))
+            edges.add((j, m))
+            edges.add((m, j))
+
+            edges.add((k, m))
+            edges.add((m, k))
+        t1_end = time.time()
+
+        t2_start = time.time()
+        # Load Section 2
+        for (i, j) in edges:
             edge_index = np.hstack((edge_index, [[i], [j]]))
-        if (k, j) not in edges:
-            edge_index = np.hstack((edge_index, [[j], [k]]))
-            edge_index = np.hstack((edge_index, [[k], [j]]))
-        if (i, k) not in edges:
-            edge_index = np.hstack((edge_index, [[k], [i]]))
-            edge_index = np.hstack((edge_index, [[i], [k]]))
-    edge_index = torch.LongTensor(edge_index)
-    cluster, cluster_num = load_cluster(os.getcwd(), test_case)
-    dataset = SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, cluster, cluster_num)
-    return dataset
+        t2_end = time.time()
+
+        print("t1:", t1_end - t1_start, " t2:", t2_end - t2_start)
+
+        # Load Section 3
+        t3_start = time.time()
+        edge_index = torch.LongTensor(edge_index)
+        t3_end = time.time()
+        print("t3:", t3_end - t3_start)
+
+        # Load Section 4
+        t4_start = time.time()
+        cluster, cluster_num = load_cluster(os.getcwd(), test_case)
+        t4_end = time.time()
+        print("t4:", t4_end - t4_start)
+
+        # Load Section 5
+        t5_start = time.time()
+        tmp_data = SIM_Data_Geo(file_dir, edge_index, 24, 3, mesh, cluster, cluster_num, 3)
+        t5_end = time.time()
+        print("t5:", t5_end - t5_start)
+
+        return tmp_data, case_info
 
 
 def normalize(mx):

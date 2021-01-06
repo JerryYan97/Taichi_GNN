@@ -37,7 +37,7 @@ PATH = "TrainedNN/state_dict_model_zero_loss_1k.pt"
 dim = 2
 
 # Model and optimizer
-simDataset = load_txt_data(4, "/Outputs_T")  # load test data
+simDataset = load_data(1001, "/SimData/TestingData")  # load test data
 test_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=False)
 # model = GCN_CNN(nfeat=simDataset.input_features_num,
 #                 nhid=args.hidden,
