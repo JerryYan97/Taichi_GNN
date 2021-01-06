@@ -54,6 +54,8 @@ if args.cuda:
 # t1: 0.0037581920623779297  t2: 0.03488945960998535  t3: 0.000118255615234375  t4: 0.0011484622955322266
 # t5-1: 0.016495704650878906  t5-2: 0.004931211471557617  t5-3: 184.7452096939087
 # t5: 186.16088032722473
+# After opt:
+# ~50s in total
 load_data_t_start = time.time()
 simDataset, case_info = load_data(1001, "/SimData/TrainingData")
 load_data_t_end = time.time()

@@ -285,17 +285,33 @@ def spt_parallel_func(shared_adj_mat, src_list, vertices_num, idx):
                 dist[v] = dist[u] + shared_adj_mat[u, v]
     return dist
 
+# Old one
+# def childlist_helper_parallel_func(childlist_item, parent_list, src_list, spt_list):
+#     min_dis = 100000.0
+#     parent_id = -1
+#     for p in parent_list:
+#         list_idx = src_list.index(p)
+#         dis = spt_list[list_idx][childlist_item]
+#         if dis < min_dis:
+#             parent_id = p
+#             min_dis = dis
+#     return parent_id
 
-def childlist_helper_parallel_func(childlist_item, parent_list, src_list, spt_list):
-    min_dis = 100000.0
-    parent_id = -1
-    for p in parent_list:
-        list_idx = src_list.index(p)
-        dis = spt_list[list_idx][childlist_item]
-        if dis < min_dis:
-            parent_id = p
-            min_dis = dis
-    return parent_id
+
+def childlist_helper_parallel_func(workload_list, proc_idx, childlist, parent_list, src_list, spt_list):
+    parent_id_list = []
+    for childlist_idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
+        childlist_item = childlist[childlist_idx]
+        min_dis = 100000.0
+        parent_id = -1
+        for p in parent_list:
+            list_idx = src_list.index(p)
+            dis = spt_list[list_idx][childlist_item]
+            if dis < min_dis:
+                parent_id = p
+                min_dis = dis
+        parent_id_list.append(parent_id)
+    return parent_id_list
 
 
 class MeshKmeansHelper():
@@ -321,17 +337,38 @@ class MeshKmeansHelper():
             self._spt_list.append(res_list[i].get())
 
     def generate_belongs(self, child_list, parent_list, pool):
-        belonging = [None] * len(child_list)
-        res_list = []
+        belonging = []
+
+        # Divide workloads
+        cpu_cnt = os.cpu_count()
+        child_list_len = len(child_list)
+        works_per_proc_cnt = child_list_len // cpu_cnt
+        workloads_list = []
+        proc_list = []
+        for i in range(cpu_cnt):
+            cur_proc_workload = [i * works_per_proc_cnt, (i + 1) * works_per_proc_cnt - 1]
+            if i == cpu_cnt - 1:
+                cur_proc_workload[1] = child_list_len - 1
+            workloads_list.append(cur_proc_workload)
+
         # Parallel call
-        for t in range(len(child_list)):
-            res_list.append(pool.apply_async(func=childlist_helper_parallel_func,
-                                             args=(child_list[t], parent_list, self._src_list, self._spt_list,)))
+        for t in range(cpu_cnt):
+            proc_list.append(pool.apply_async(func=childlist_helper_parallel_func,
+                                              args=(workloads_list, t, child_list, parent_list,
+                                                    self._src_list, self._spt_list,)))
         # Get results
-        for t in range(len(child_list)):
-            belonging[t] = res_list[t].get()
-            if t % 10 == 0:
-                print("section 1 progress:", (float(t) / len(child_list)) * 100.0, "%")
+        for t in range(cpu_cnt):
+            belonging.extend(proc_list[t].get())
+        # Old
+        # # Parallel call
+        # for t in range(len(child_list)):
+        #     res_list.append(pool.apply_async(func=childlist_helper_parallel_func,
+        #                                      args=(child_list[t], parent_list, self._src_list, self._spt_list,)))
+        # # Get results
+        # for t in range(len(child_list)):
+        #     belonging[t] = res_list[t].get()
+        #     if t % 10 == 0:
+        #         print("section 1 progress:", (float(t) / len(child_list)) * 100.0, "%")
         return belonging
 
     def get_dist(self, src_idx, dst_idx):
