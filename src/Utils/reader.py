@@ -12,6 +12,7 @@ def read(testcase):
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/demo3_mesh.obj")
         dirichlet = np.array([i for i in range(11)])
         mesh_scale, mesh_offset = 0.6, 0.4
+        case_info['case_name'] = "Bar2d"
         case_info['mesh'] = mesh
         case_info['dim'] = 2
         case_info['dirichlet'] = dirichlet
@@ -23,6 +24,7 @@ def read(testcase):
         dirichlet = np.array([i for i in range(12)])
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.4
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 1.3
+        case_info['case_name'] = "Sharkey2d"
         case_info['mesh'] = mesh
         case_info['dim'] = 2
         case_info['dirichlet'] = dirichlet
@@ -39,7 +41,7 @@ def read(testcase):
 
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
-
+        case_info['case_name'] = "PLetter2d"
         case_info['mesh'] = mesh
         case_info['dim'] = 2
         case_info['dirichlet'] = dirichlet
@@ -55,6 +57,7 @@ def read(testcase):
         dirichlet = np.array(dirichlet_list)
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
+        case_info['case_name'] = "Hammer2d"
         case_info['mesh'] = mesh
         case_info['dim'] = 2
         case_info['dirichlet'] = dirichlet

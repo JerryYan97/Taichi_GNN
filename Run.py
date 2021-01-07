@@ -16,12 +16,11 @@ nu = 0.4
 dt = 0.01
 
 running_times = 1
-frame_count = 80
+frame_count = 50
 
-test_case = 1
-cluster_num = 10
+test_case = 1001
 
-# NOTE: Please remember to save your data. It will delete all files in Outputs/ or Outputs_T/ when you exe Run.py.
+# NOTE: Please remember to save your data. It will delete all files in xxAnimSeq/ or xxData/ when you exe Run.py.
 
 # pd->pn
 if __name__ == '__main__':
@@ -51,78 +50,57 @@ if __name__ == '__main__':
     case_info = read(test_case)
     scene_info = {}
     # 3D visualization variables init:
-    if case_info['dim'] == 3:
+    if case_info['dim'] == 2:
+        scene_info['gui'] = ti.GUI('2D Simulation Data Generator -- PD -> PN', background_color=0xf7f7f7)
+    else:
         import tina
+        scene_info['gui'] = ti.GUI('3D Simulation Data Generator -- PD -> PN')
         scene_info['scene'] = tina.Scene(culling=False, clipping=True)
         scene_info['tina_mesh'] = tina.SimpleMesh()
         scene_info['model'] = tina.MeshTransform(scene_info['tina_mesh'])
         scene_info['scene'].add_object(scene_info['model'])
         scene_info['boundary_pos'] = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
 
-    # # ti.init()
-    # pd = PDSimulation(test_case, dt)
-    # pn = PNSimulation(test_case, dt)
-    # sampled_angle1_num = 16
-    # sampled_angle2_num = 16
-    # angle1_idx = 10
-    # angle2_idx = 10
-    # mag_idx = 5
-    # pn.set_force(angle1_idx*(180.0/sampled_angle1_num), angle2_idx*(360.0/sampled_angle2_num), 0.001*(mag_idx+1))
-    # pd.set_force(angle1_idx*(180.0/sampled_angle1_num), angle2_idx*(360.0/sampled_angle2_num), 0.001*(mag_idx+1))
-    # pd.set_material(rho, E, nu, dt)
-    # pn.set_material(rho, E, nu, dt)
-    #
-    # pn.initial()
-    # pn.compute_restT_and_m()
-    #
-    # pd.Run(pn, is_test, frame_count)
-
-    #TODO: ti.init wrong???
-    # pn = PNSimulation(test_case, 0.01)
-    # sampled_angle1_num = 16
-    # sampled_angle2_num = 16
-    # angle1_idx = 10
-    # angle2_idx = 10
-    # mag_idx = 5
-    # pn.set_force(angle1_idx * (180.0 / sampled_angle1_num), angle2_idx * (360.0 / sampled_angle2_num),
-    #              0.001 * (mag_idx + 1))
-    # pn.set_material(rho, E, nu, dt)
-    # pn.initial()
-    # pn.Run2()
-
-    # TODO: generate large size of data
-    # is_test = int(input("Data generation mode [0 -- training data /1 -- test data]:"))
-    # if is_test == 0:
-    #     if not os.path.exists("Outputs"):
-    #         os.makedirs("Outputs")
-    #     for root, dirs, files in os.walk("Outputs/"):
-    #         for name in files:
-    #             os.remove(os.path.join(root, name))
-    # else:
-    #     if not os.path.exists("Outputs_T"):
-    #         os.makedirs("Outputs_T")
-    #     for root, dirs, files in os.walk("Outputs_T/"):
-    #         for name in files:
-    #             os.remove(os.path.join(root, name))
-    # Large scale data generation
+    # Large scale data generation -- 3D
     # sampled_angle1_num = 8
     # sampled_angle2_num = 8
     # sampled_mag_num = 5
-    # pd = PDSimulation(test_case, dt)
-    # pn = PNSimulation(test_case, dt)
+    # pd = PDSimulation(case_info, dt)
+    # pn = PNSimulation(case_info, dt)
     # pd.set_material(rho, E, nu, dt)
     # pn.set_material(rho, E, nu, dt)
-    # pd.initial_scene()
     # for ang_idx1 in range(sampled_angle1_num):
     #     for ang_idx2 in range(sampled_angle2_num):
     #         for mag_idx in range(sampled_mag_num):
     #             pd.initial()
     #             pn.initial()
     #             pn.compute_restT_and_m()
-    #
-    #             pn.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), (mag_idx + 5))
-    #             pd.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), (mag_idx + 5))
-    #             pd.Run(pn, is_test, frame_count)
+    #             force_info = {'dim': case_info['dim'],
+    #                           'exf_angle1': ang_idx1*(180.0 / sampled_angle1_num),
+    #                           'exf_angle2': ang_idx2 * (360.0 / sampled_angle2_num),
+    #                           'exf_mag': (mag_idx + 5)}
+    #             pn.set_force(force_info)
+    #             pd.set_force(force_info)
+    #             pd.Run(pn, is_test, frame_count, scene_info)
+
+    # Large scale data generation -- 2D
+    # sampled_angle_num = 16
+    # sampled_mag_num = 9
+    # pd = PDSimulation(case_info, dt)
+    # pn = PNSimulation(case_info, dt)
+    # pd.set_material(rho, E, nu, dt)
+    # pn.set_material(rho, E, nu, dt)
+    # for angle_idx in range(sampled_angle_num):
+    #     for mag_idx in range(sampled_mag_num):
+    #         pd.initial()
+    #         pn.initial()
+    #         pn.compute_restT_and_m()
+    #         force_info = {'dim': case_info['dim'],
+    #                       'exf_angle': angle_idx * (360.0 / sampled_angle_num),
+    #                       'exf_mag': (mag_idx + 1)}
+    #         pn.set_force(force_info)
+    #         pd.set_force(force_info)
+    #         pd.Run(pn, is_test, frame_count, scene_info)
 
     # Separately generate 2D and 3D
     pd = PDSimulation(case_info, dt)

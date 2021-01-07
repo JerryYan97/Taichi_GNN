@@ -43,25 +43,48 @@ def calcR(A_pq):
     return R
 
 
-def f(adj_v, pos, initial_rel_pos, mass, dim):
-    init_rel_pos = initial_rel_pos[adj_v, :]
-    new_pos = pos[adj_v, :]
-    com = calcCenterOfMass(adj_v, dim, mass, pos)
-    curr_rel_pos = new_pos - com[None, :]
-    A_pq = calcA_pq(curr_rel_pos, init_rel_pos, dim)
-    A_qq = calcA_qq(init_rel_pos, dim)
-    A_final = np.matmul(A_pq, A_qq).reshape((1, -1))
-    return A_final
+def get_local_trans_parallel_call(workloads_list, proc_idx, adj_list, pos, initial_rel_pos, mass, dim):
+    a_final_list = []
+    for vert_idx in range(workloads_list[proc_idx][0], workloads_list[proc_idx][1] + 1):
+        adj_v = adj_list[vert_idx]
+        init_rel_adj_pos = initial_rel_pos[adj_v, :]
+        cur_adj_pos = pos[adj_v, :]
+        com = calcCenterOfMass(adj_v, dim, mass, pos)
+        cur_rel_pos = cur_adj_pos - com[None, :]
+        A_pq = calcA_pq(cur_rel_pos, init_rel_adj_pos, dim)
+        A_qq = calcA_qq(init_rel_adj_pos, dim)
+        A_final = np.matmul(A_pq, A_qq).reshape((1, -1))
+        a_final_list.append(A_final)
+    return a_final_list
 
 
 def get_local_transformation(n_vertices, mesh, pos, init_pos, mass, dim):
-    cores = mp.cpu_count()
-    Pool = mp.Pool(processes=cores)
+    pool = mp.Pool()
+    # Divide workloads
+    cpu_cnt = mp.cpu_count()
+    works_per_proc_cnt = n_vertices // cpu_cnt
+    workloads_list = []
+    proc_list = []
+    for i in range(cpu_cnt):
+        cur_proc_workload = [i * works_per_proc_cnt, (i + 1) * works_per_proc_cnt - 1]
+        if i == cpu_cnt - 1:
+            cur_proc_workload[1] = n_vertices - 1
+        workloads_list.append(cur_proc_workload)
+
     adj_list = []
     for i in range(n_vertices):
-        adj_list.append(np.sort(np.append(mesh.get_vertex_adjacent_vertices(i), i)))
-    multi_res = [Pool.apply_async(f, (adj, pos, init_pos, mass, dim)) for adj in adj_list]
-    return multi_res
+        adj_list.append(np.append(mesh.get_vertex_adjacent_vertices(i), i))
+
+    # Parallel call
+    for t in range(cpu_cnt):
+        proc_list.append(pool.apply_async(func=get_local_trans_parallel_call,
+                                          args=(workloads_list, t, adj_list, pos, init_pos, mass, dim,)))
+
+    # Get results
+    a_finals_list = []
+    for t in range(cpu_cnt):
+        a_finals_list.extend(proc_list[t].get())
+    return a_finals_list
 
 
 @ti.data_oriented
@@ -200,9 +223,9 @@ class PDSimulation:
         if force_info['dim'] != self.case_info['dim']:
             raise AttributeError("Input force dim is not equal to the simulator's dim!")
         if force_info['dim'] == 2:
-            exf_angle = force_info['exf_angle']
-            exf_mag = force_info['exf_mag']
-            self.ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle))
+            self.exf_angle = force_info['exf_angle']
+            self.exf_mag = force_info['exf_mag']
+            self.ti_ex_force[0] = ti.Vector(get_force_field(self.exf_mag, self.exf_angle))
         else:
             self.exf_angle1 = force_info['exf_angle1']
             self.exf_angle2 = force_info['exf_angle2']
@@ -725,18 +748,29 @@ class PDSimulation:
         self.lhs_matrix.fill(0.0)
         self.precomputation()
 
-
     def output_network_data(self, pd_dis, pn_dis, grad_E, frame, T):
         vel = self.ti_vel.to_numpy()
         gradE = grad_E.to_numpy()
-        exf = np.array([self.ti_ex_force[0][0], self.ti_ex_force[0][1], self.ti_ex_force[0][2]])
+        if self.dim == 2:
+            exf = np.array([self.ti_ex_force[0][0], self.ti_ex_force[0][1]])
+        else:
+            exf = np.array([self.ti_ex_force[0][0], self.ti_ex_force[0][1], self.ti_ex_force[0][2]])
+
         frame = str(frame).zfill(5)
         if T == 0:
-            out_name = "SimData/TrainingData/Train_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + "_" + \
-                       str(self.exf_angle2) + "_" + str(self.exf_mag) + "_" + frame + ".csv"
+            if self.dim == 2:
+                out_name = "SimData/TrainingData/Train_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
+                           "_" + str(self.exf_mag) + "_" + frame + ".csv"
+            else:
+                out_name = "SimData/TrainingData/Train_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + \
+                           "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + "_" + frame + ".csv"
         else:
-            out_name = "SimData/TestingData/Test_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + "_" + \
-                       str(self.exf_angle2) + "_" + str(self.exf_mag) + "_" + frame + ".csv"
+            if self.dim == 2:
+                out_name = "SimData/TestingData/Test_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
+                            "_" + str(self.exf_mag) + "_" + frame + ".csv"
+            else:
+                out_name = "SimData/TestingData/Test_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + \
+                           "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + "_" + frame + ".csv"
 
         ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim
         out = np.ones([self.n_vertices, ele_count], dtype=float)
@@ -746,15 +780,27 @@ class PDSimulation:
         ttt = time.time()
         print("solve As: ", ttt - tt)
         i = 0
-        for res in A_finals:
-            out[i, 0:3] = pd_dis[i, :]  # pd pos
-            out[i, 3:6] = pn_dis[i, :]  # pn pos
-            out[i, 6:15] = res.get()
-            out[i, 15:18] = gradE[i * 3: i * 3 + 3]
-            out[i, 18:21] = exf
-            out[i, 21:24] = vel[i, :]
-            out[i, 24:27] = self.pos_init_out[i, :]
-            i = i + 1
+        if self.dim == 2:
+            for res in A_finals:
+                out[i, 0:2] = pd_dis[i, :]  # pd pos
+                out[i, 2:4] = pn_dis[i, :]  # pn pos
+                out[i, 4:8] = res
+                out[i, 8:10] = gradE[i * 2: i * 2 + 2]
+                out[i, 10:12] = exf
+                out[i, 12:14] = vel[i, :]
+                out[i, 14:16] = self.pos_init_out[i, :]
+                i = i + 1
+        else:
+            for res in A_finals:
+                out[i, 0:3] = pd_dis[i, :]  # pd pos
+                out[i, 3:6] = pn_dis[i, :]  # pn pos
+                out[i, 6:15] = res
+                out[i, 15:18] = gradE[i * 3: i * 3 + 3]
+                out[i, 18:21] = exf
+                out[i, 21:24] = vel[i, :]
+                out[i, 24:27] = self.pos_init_out[i, :]
+                i = i + 1
+
         tttt = time.time()
         print("append As: ", tttt - ttt)
         np.savetxt(out_name, out, delimiter=',')
@@ -767,7 +813,6 @@ class PDSimulation:
                       str(self.exf_angle2) + "_"+str(self.exf_mag)+"_"+str(f).zfill(6)+".obj"
             output_3d_seq(self.ti_pos.to_numpy(), self.boundary_triangles, name_pd)
             output_3d_seq(pn_pos.to_numpy(), self.boundary_triangles, name_pn)
-
 
     def Run(self, pn, is_test, frame_count, scene_info):
         rhs_np = np.zeros(self.n_vertices * self.dim, dtype=np.float64)
@@ -782,11 +827,11 @@ class PDSimulation:
 
         if self.dim == 2:
             # video_manager = ti.VideoManager(output_dir='SimData/TmpRenderedImgs', framerate=24, automatic_build=False)
-            gui = ti.GUI('2D Simulation Data Generator -- PD -> PN', background_color=0xf7f7f7)
+            gui = scene_info['gui']
             filename = f'./SimData/TmpRenderedImgs/frame_rest.png'
             draw_image(gui, filename, self.ti_pos.to_numpy(), self.mesh_offset, self.mesh_scale, self.ti_elements.to_numpy(), self.n_elements)
         else:
-            gui = ti.GUI('3D Simulation Data Generator -- PD -> PN')
+            gui = scene_info['gui']
             scene_info['model'].set_transform(self.case_info['transformation_mat'])
             update_boundary_mesh(self.ti_pos, scene_info['boundary_pos'], self.case_info)
             scene_info['scene'].input(gui)
