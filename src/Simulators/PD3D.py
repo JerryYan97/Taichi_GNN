@@ -2,7 +2,7 @@ import sys, os, time
 import taichi as ti
 import numpy as np
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
-from Utils.utils_visualization import draw_image, set_3D_scene, update_boundary_mesh, get_force_field, get_ring_force_field
+from Utils.utils_visualization import draw_image, update_boundary_mesh, get_force_field, get_ring_force_field, output_3d_seq
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
 from scipy import sparse
@@ -83,6 +83,8 @@ def get_local_transformation(n_vertices, mesh, pos, init_pos, mass, dim):
     a_finals_list = []
     for t in range(cpu_cnt):
         a_finals_list.extend(proc_list[t].get())
+    pool.close()
+    pool.join()
     return a_finals_list
 
 
@@ -97,13 +99,12 @@ class PDSimulation:
         self.mesh_scale = self.case_info['mesh_scale']
         self.mesh_offset = self.case_info['mesh_offset']
         self.dim = self.case_info['dim']
-        self.center = self.case_info['center']
-        self.min_sphere_radius = self.case_info['min_sphere_radius']
         self.n_vertices = self.mesh.num_vertices
         if self.dim == 2:
             self.n_elements = self.mesh.num_faces
         else:
             self.n_elements = self.mesh.num_elements
+            self.min_sphere_radius = self.case_info['min_sphere_radius']
 
         ################################ material and parms ######################################
         self.rho = 100
@@ -159,6 +160,7 @@ class PDSimulation:
         self.ti_weight_volume = ti.field(real, self.n_elements)   # self.lam * self.dim * self.volume
         if self.dim == 3:
             self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
+            self.center = self.case_info['center']
         self.mesh.enable_connectivity()
 
         self.pos_init_out = []
@@ -183,6 +185,7 @@ class PDSimulation:
             self.ti_elements.from_numpy(self.mesh.faces)
         else:
             self.ti_elements.from_numpy(self.mesh.elements)
+            self.ti_center = ti.Vector([self.center[0], self.center[1], self.center[2]])
 
         self.ti_pos.from_numpy(self.mesh.vertices)
         self.ti_pos_init.from_numpy(self.mesh.vertices)
@@ -215,7 +218,6 @@ class PDSimulation:
         self.qi.fill(0)
         ################################ force field ################################
         self.ti_ex_force.fill(0)
-        self.ti_center = ti.Vector([self.center[0], self.center[1], self.center[2]])
 
     def set_material(self, _rho, _ym, _nu, _dt):
         self.dt = _dt
@@ -225,18 +227,24 @@ class PDSimulation:
         self.mu = self.E / (2 * (1 + self.nu))
         self.lam = self.E * self.nu / ((1 + self.nu) * (1 - 2 * self.nu))
 
+    @ti.kernel
+    def set_dir_force(self, dir_force: ti.template()):
+            for i in range(self.n_vertices):
+                self.ti_ex_force[i] = dir_force
+
     def set_force(self, force_info):
         if force_info['dim'] != self.case_info['dim']:
             raise AttributeError("Input force dim is not equal to the simulator's dim!")
         if force_info['dim'] == 2:
             self.exf_angle = force_info['exf_angle']
             self.exf_mag = force_info['exf_mag']
-            self.ti_ex_force[0] = ti.Vector(get_force_field(self.exf_mag, self.exf_angle))
+            dir_force = ti.Vector(get_force_field(self.exf_mag, self.exf_angle))
         else:
             self.exf_angle1 = force_info['exf_angle1']
             self.exf_angle2 = force_info['exf_angle2']
             self.exf_mag = force_info['exf_mag']
-            self.ti_ex_force[0] = ti.Vector(get_force_field(self.exf_mag, self.exf_angle1, self.exf_angle2, 3))
+            dir_force = ti.Vector(get_force_field(self.exf_mag, self.exf_angle1, self.exf_angle2, 3))
+        self.set_dir_force(dir_force)
 
     @ti.kernel
     def set_ring_force_3D(self):
@@ -244,7 +252,6 @@ class PDSimulation:
             self.ti_ex_force[i] = get_ring_force_field(self.ring_mag, self.ring_width,
                                                        self.ti_center, self.ti_pos[i],
                                                        self.ring_angle, 3)
-
     @ti.kernel
     def set_ring_circle_force_3D(self):
         for i in range(self.n_vertices):
@@ -866,7 +873,7 @@ class PDSimulation:
         while frame_counter < frame_count:
             print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
             t_0 = time.time()
-            self.set_ring_force_3D()
+            # self.set_ring_force_3D()
             self.build_sn()
             self.warm_up()  # Warm up
 

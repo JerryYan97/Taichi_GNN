@@ -113,6 +113,7 @@ if __name__ == '__main__':
 
     force_info = {'dim': case_info['dim']}
     if case_info['dim'] == 2:
+        force_info['force_type'] = ''
         force_info['exf_angle'] = -45.0
         force_info['exf_mag'] = 6
     else:

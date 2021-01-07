@@ -74,6 +74,9 @@ def read(testcase):
         dirichlet = np.array(dirichlet_list)
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
+        center = (mesh.bbox[0] + mesh.bbox[1]) / 2.0
+        tmp = mesh.bbox[1] - mesh.bbox[0]
+        min_sphere_radius = np.linalg.norm(np.array([tmp[0], tmp[1], tmp[2]])) / 2.0
 
         case_info['case_name'] = "Beam"
         case_info['mesh'] = mesh
@@ -87,6 +90,8 @@ def read(testcase):
         case_info['init_scale'] = 1.0
         case_info['transformation_mat'] = translate([0.0, -1.0, -5.0]) @ rotate_matrix_y_axis(-45.0) @ scale(1.0)
         case_info['light_dir'] = [-0.2, -0.6, 0.0]
+        case_info['center'] = center
+        case_info['min_sphere_radius'] = min_sphere_radius
         return case_info
     elif testcase == 1002:
         from tina import translate, scale
