@@ -2,7 +2,7 @@ import taichi as ti
 # import taichi_three as t3
 import taichi_glsl as ts
 import numpy as np
-
+import math
 
 # PN result: Red (Top Layer)
 # PD result: Blue (Bottom Layer)
@@ -141,3 +141,75 @@ def rotate_matrix_y_axis(beta_degree):
                      [0.0, 1.0, 0.0, 0.0],
                      [np.sin(beta_radian), 0.0, np.cos(beta_radian), 0.0],
                      [0.0, 0.0, 0.0, 1.0]])
+
+
+# mag: magnitude of the Force
+# center: bbox center of the mesh
+# pos: the mesh point position that want to get the force
+# angle: default: along x axis, used to change the force field
+# width: larger than this value, zero force
+@ti.func
+def get_ring_force_field(mag, width, center, pos, angle, dim) -> ti.Vector:
+    radian = math.pi / 180.0 * angle
+    p1 = center
+    p2 = center + ti.Vector([0.0, 1.0*width, 0.0])
+    p3 = center + ti.Vector([ti.cos(radian)*width, 0.0, ti.sin(radian)*width])
+    a = (p2[1]-p1[1])*(p3[2]-p1[2])-(p3[1]-p1[1])*(p2[2]-p1[2])
+    b = (p2[2]-p1[2])*(p3[0]-p1[0])-(p3[2]-p1[2])*(p2[0]-p1[0])
+    c = (p2[0]-p1[0])*(p3[1]-p1[1])-(p3[0]-p1[0])*(p2[1]-p1[1])
+    d = -a*p1[0]-b*p1[1]-c*p1[2]
+    t = (a*pos[0]+b*pos[1]+c*pos[2]+d)/(a*a+b*b+c*c)
+    p = ti.Vector([pos[0]-a*t, pos[1]-b*t, pos[2]-c*t])
+    T = ti.Vector([0.0, 0.0, 0.0])
+    if (p-pos).norm() <= width:
+        l = (p-center).norm()
+        L = l * l / ti.sqrt((p[0]-center[0])*(p[0]-center[0])+(p[2]-center[2])*(p[2]-center[2]))
+        ss = (p3-center).dot((p-center))                        # print("l: ", l, "L: ", L)
+        p4 = center + (ss * (p3 - center)).normalized() * L     # print("p4: ", p4)
+        s = (p4-p).dot(p3-center) * p[1]
+        if ti.abs(p[1]) < 0.000000001:
+            T = (ss * ti.Vector([0.0, -1.0, 0.0])).normalized()
+            T = mag * T
+        else:
+            T = (s*(p4-p)).normalized()                         # print("p4-p3: ", p4-p3)
+            T = mag * T
+    return T
+
+
+@ti.func
+def get_ring_circle_force_field(mag, width, center, pos, angle, min_radius, dim) -> ti.Vector:
+    radian = math.pi / 180.0 * angle
+    p1 = center
+    p2 = center + ti.Vector([0.0, 1.0*width, 0.0])
+    p3 = center + ti.Vector([ti.cos(radian)*width, 0.0, ti.sin(radian)*width])
+    a = (p2[1]-p1[1])*(p3[2]-p1[2])-(p3[1]-p1[1])*(p2[2]-p1[2])
+    b = (p2[2]-p1[2])*(p3[0]-p1[0])-(p3[2]-p1[2])*(p2[0]-p1[0])
+    c = (p2[0]-p1[0])*(p3[1]-p1[1])-(p3[0]-p1[0])*(p2[1]-p1[1])
+    d = -a*p1[0]-b*p1[1]-c*p1[2]
+    t = (a*pos[0]+b*pos[1]+c*pos[2]+d)/(a*a+b*b+c*c)
+    p = ti.Vector([pos[0]-a*t, pos[1]-b*t, pos[2]-c*t])
+    T = ti.Vector([0.0, 0.0, 0.0])
+    # if (p-center).norm() > min_radius:
+    if (p-pos).norm() <= width and (p-center).norm() > min_radius:
+        l = (p-center).norm()
+        L = l * l / ti.sqrt((p[0]-center[0])*(p[0]-center[0])+(p[2]-center[2])*(p[2]-center[2]))
+        ss = (p3-center).dot((p-center))                        # print("l: ", l, "L: ", L)
+        p4 = center + (ss * (p3 - center)).normalized() * L     # print("p4: ", p4)
+        s = (p4-p).dot(p3-center) * p[1]
+        if ti.abs(p[1]) < 0.000000001:
+            T = (ss * ti.Vector([0.0, -1.0, 0.0])).normalized()
+            T = mag * T
+        else:
+            T = (s*(p4-p)).normalized()                          # print("p4-p3: ", p4-p3)
+            T = mag * T
+    return T
+
+
+if __name__ == '__main__':
+    # little test about the circle force
+    mag = 1.0
+    width = 1.0
+    center = ti.Vector([0.0, 0.0, 0.0])
+    pos = ti.Vector([-0.3, 0.2, 0.0])
+    aaa = get_ring_force_field(mag, width, center, pos, 30.0, 3)
+    print(aaa)

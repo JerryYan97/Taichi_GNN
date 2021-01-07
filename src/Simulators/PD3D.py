@@ -2,14 +2,14 @@ import sys, os, time
 import taichi as ti
 import numpy as np
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
-from Utils.utils_visualization import draw_image, set_3D_scene, update_boundary_mesh, get_force_field
+from Utils.utils_visualization import draw_image, set_3D_scene, update_boundary_mesh, get_force_field, get_ring_force_field
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
 from scipy import sparse
 from scipy.sparse.linalg import factorized
 from Utils.math_tools import svd
 import multiprocessing as mp
-
+from enum import Enum
 real = ti.f64
 
 
@@ -75,6 +75,8 @@ class PDSimulation:
         self.mesh_scale = self.case_info['mesh_scale']
         self.mesh_offset = self.case_info['mesh_offset']
         self.dim = self.case_info['dim']
+        self.center = self.case_info['center']
+        self.min_sphere_radius = self.case_info['min_sphere_radius']
         self.n_vertices = self.mesh.num_vertices
         if self.dim == 2:
             self.n_elements = self.mesh.num_faces
@@ -101,11 +103,7 @@ class PDSimulation:
         self.init_pos = self.mesh.vertices.astype(np.float32)
         self.init_pos = self.init_pos[:, :self.dim]
         ################################ force field ################################
-        self.ti_ex_force = ti.Vector.field(self.dim, real, 1)
-        self.npex_f = np.zeros((self.dim, 1))
-        self.exf_angle1 = 0.0
-        self.exf_angle2 = 0.0
-        self.exf_mag = 0.0
+        self.ti_ex_force = ti.Vector.field(self.dim, real, self.n_vertices)
 
         self.input_xn = ti.Vector.field(self.dim, real, self.n_vertices)
         self.input_vn = ti.Vector.field(self.dim, real, self.n_vertices)
@@ -141,6 +139,15 @@ class PDSimulation:
         self.mesh.enable_connectivity()
 
         self.pos_init_out = []
+        self.ti_center = []
+        self.exf_name = ""
+        self.ring_mag = 1.0
+        self.ring_angle = 0.0
+        self.ring_width = 0.2
+        self.ring_circle_radius = 0.2
+        self.dir_mag = 1.0
+        self.dir_ang1 = 45.0
+        self.dir_ang2 = 45.0
 
     def initial(self):
         if self.dim == 2:
@@ -184,7 +191,7 @@ class PDSimulation:
         self.qi.fill(0)
         ################################ force field ################################
         self.ti_ex_force.fill(0)
-
+        self.ti_center = ti.Vector([self.center[0], self.center[1], self.center[2]])
 
     def set_material(self, _rho, _ym, _nu, _dt):
         self.dt = _dt
@@ -194,20 +201,46 @@ class PDSimulation:
         self.mu = self.E / (2 * (1 + self.nu))
         self.lam = self.E * self.nu / ((1 + self.nu) * (1 - 2 * self.nu))
 
-    def set_force(self, ang1, ang2, mag):
-        if self.dim == 2:
-            exf_angle = -45.0
-            exf_mag = 6
-            self.ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle))
+    def set_force(self, name, mag, ang1, ang2=0.0, width=0.0, radius=0.0):
+        self.exf_name = name
+        if name == "ring":
+            self.ring_mag = mag
+            self.ring_angle = ang1
+            self.ring_width = width
+        elif name == "directional":
+            self.dir_mag = mag
+            self.dir_ang1 = ang1
+            self.dir_ang2 = ang2
+        elif name == "ring_circle":
+            self.ring_mag = mag
+            self.ring_angle = ang1
+            self.ring_width = width
+            self.ring_circle_radius = radius
+
+    @ti.kernel
+    def set_dir_force_3D(self):
+        if ti.static(self.dim == 2):
+            for i in range(self.n_vertices):
+                self.ti_ex_force[i] = ti.Vector(get_force_field(self.dir_mag, self.dir_ang1))
         else:
-            # exf_angle1 = 45.0
-            # exf_angle2 = 45.0
-            # exf_mag = 6
-            self.exf_angle1 = ang1
-            self.exf_angle2 = ang2
-            self.exf_mag = mag
-            self.ti_ex_force[0] = ti.Vector(get_force_field(self.exf_mag, self.exf_angle1, self.exf_angle2, 3))
+            for i in range(self.n_vertices):
+                self.ti_ex_force[i] = ti.Vector(get_force_field(self.dir_mag, self.dir_ang1, self.dir_ang2, 3))
             print("force: ", self.ti_ex_force[0][0], " ", self.ti_ex_force[0][1], " ", self.ti_ex_force[0][2])
+
+    @ti.kernel
+    def set_ring_force_3D(self):
+        for i in range(self.n_vertices):
+            self.ti_ex_force[i] = get_ring_force_field(self.ring_mag, self.ring_width,
+                                                       self.ti_center, self.ti_pos[i],
+                                                       self.ring_angle, 3)
+
+    @ti.kernel
+    def set_ring_circle_force_3D(self):
+        for i in range(self.n_vertices):
+            self.ex_force[i] = get_ring_force_field(self.ring_mag, self.ring_width,
+                                                    self.ti_center, self.x[i], self.ring_angle,
+                                                    self.ring_circle_radius * self.min_sphere_radius, 3)
+
 
     @ti.func
     def set_ti_A_i(self, ele_idx, row, col, val):
@@ -357,7 +390,6 @@ class PDSimulation:
                     self.set_ti_A_i(t * self.n_elements + i, 3, 1, -b - d)
                     self.set_ti_A_i(t * self.n_elements + i, 3, 3, b)
                     self.set_ti_A_i(t * self.n_elements + i, 3, 5, d)
-
                 else:
                     # Get (Dm)^-1 for this element:
                     Dm_inv_i = self.ti_Dm_inv[i]
@@ -409,7 +441,6 @@ class PDSimulation:
         for ele_idx in range(self.n_elements):
             for t in range(2):
                 self.fill_idx_vec(ele_idx)
-
                 # May need more considerations:
                 for A_row_idx in range(self.dim * (self.dim + 1)):
                     for A_col_idx in range(self.dim * (self.dim + 1)):
@@ -423,7 +454,6 @@ class PDSimulation:
                                 weight = self.ti_weight_volume[ele_idx]
                             lhs_matrix_np[lhs_row_idx, lhs_col_idx] += (self.ti_A[ele_idx, idx, A_row_idx] *
                                                                         self.ti_A[ele_idx, idx, A_col_idx] * weight)
-
         # print("Position constraints starts")
         # Add positional constraints to the lhs matrix
         for i in range(self.n_vertices):
@@ -462,8 +492,8 @@ class PDSimulation:
         if ti.static(self.dim == 2):
             sigma_star_11_k, sigma_star_22_k = 1.0, 1.0
             for itr in ti.static(range(10)):
-                first_term = (sigma_star_11_k * sigma_star_22_k - sigma[0, 0] * sigma_star_22_k - sigma[
-                    1, 1] * sigma_star_11_k + 1.0) / (sigma_star_11_k ** 2 + sigma_star_22_k ** 2)
+                first_term = (sigma_star_11_k * sigma_star_22_k - sigma[0, 0] * sigma_star_22_k - sigma[1, 1]
+                              * sigma_star_11_k + 1.0) / (sigma_star_11_k ** 2 + sigma_star_22_k ** 2)
                 D1_kplus1 = first_term * sigma_star_22_k
                 D2_kplus1 = first_term * sigma_star_11_k
                 sigma_star_11_k = D1_kplus1 + sigma[0, 0]
@@ -521,13 +551,13 @@ class PDSimulation:
             Sn_idx2 = vert_idx * self.dim + 1
             pos_i = self.ti_pos[vert_idx]
             vel_i = self.ti_vel[vert_idx]
-            self.ti_Sn[Sn_idx1] = pos_i[0] + self.dt * vel_i[0] + (self.dt ** 2) * self.ti_ex_force[0][0] / self.ti_mass[
+            self.ti_Sn[Sn_idx1] = pos_i[0] + self.dt * vel_i[0] + (self.dt ** 2) * self.ti_ex_force[vert_idx][0] / self.ti_mass[
                 vert_idx]  # x-direction;
-            self.ti_Sn[Sn_idx2] = pos_i[1] + self.dt * vel_i[1] + (self.dt ** 2) * self.ti_ex_force[0][1] / self.ti_mass[
+            self.ti_Sn[Sn_idx2] = pos_i[1] + self.dt * vel_i[1] + (self.dt ** 2) * self.ti_ex_force[vert_idx][1] / self.ti_mass[
                 vert_idx]  # y-direction;
             if ti.static(self.dim == 3):
                 Sn_idx3 = vert_idx * self.dim + 2
-                self.ti_Sn[Sn_idx3] = pos_i[2] + self.dt * vel_i[2] + (self.dt ** 2) * self.ti_ex_force[0][2] / self.ti_mass[vert_idx]
+                self.ti_Sn[Sn_idx3] = pos_i[2] + self.dt * vel_i[2] + (self.dt ** 2) * self.ti_ex_force[vert_idx][2] / self.ti_mass[vert_idx]
 
     @ti.kernel
     def compute_x_xtilde(self):
@@ -806,21 +836,19 @@ class PDSimulation:
         self.lhs_matrix.fill(0.0)
         self.precomputation()
 
-    def output_all(self, pd_dis, pn_dis, grad_E, frame, T):
+    def output_all_legacy(self, pd_dis, pn_dis, grad_E, frame, T):
         frame = str(frame).zfill(5)
-        if T == 0:
-            out_name = "Outputs/output"+str(self.exf_angle1)+"_"+str(self.exf_angle2)+"_"+\
-                       str(self.exf_mag)+"_"+frame+".csv"
-        elif T == 1:
-            out_name = "Outputs_T/output"+str(self.exf_angle1)+"_"+str(self.exf_angle2)+"_"+\
-                       str(self.exf_mag)+"_"+frame+".csv"
-        elif T == 2:
-            out_name = "Outputs2/output"+str(self.exf_angle1)+"_"+str(self.exf_angle2)+"_"+\
-                       str(self.exf_mag)+"_"+frame+".csv"
-        elif T == 3:
-            out_name = "Outputs3/output"+str(self.exf_angle1)+"_"+str(self.exf_angle2)+"_"+\
-                       str(self.exf_mag)+"_"+frame+".csv"
-
+        F_name = ["Outputs/out", "Outputs_T/out", "Outputs2/out", "Outputs3/out",
+                  "Bunny1/out", "Bunny2/out", "Bunny3/out", "Bunny4/out", "Bunny5/out", "Bunny6/out",
+                  "Dragon1/out", "Dragon2/out", "Dragon3/out", "Dragon4/out", "Dragon5/out", "Dragon6/out"]
+        if self.exf_name is "directional":          # Directional
+            f_name = "D_"+str(self.dir_ang1)+"_"+str(self.dir_ang2)+"_"+str(self.dir_mag)+"_"+frame+".csv"
+        elif self.exf_name is "ring":               # Ring
+            f_name = "R_"+str(self.ring_angle)+"_"+str(self.ring_width)+"_"+str(self.ring_mag)+"_"+frame+".csv"
+        elif self.exf_name is "ring_circle":        # Ring Circle
+            f_name = "RC_" + str(self.ring_angle)+"_"+str(self.ring_width)+"_"+str(self.ring_mag)+"_"+\
+                     str(self.ring_circle_radius)+"_"+frame+".csv"
+        out_name = F_name[T] + f_name
         if not os.path.exists(out_name):
             with open(out_name, 'w+') as f:
                 f.close()
@@ -878,24 +906,25 @@ class PDSimulation:
     def output_all_new(self, pd_dis, pn_dis, grad_E, frame, T):
         vel = self.ti_vel.to_numpy()
         gradE = grad_E.to_numpy()
-        exf = np.array([self.ti_ex_force[0][0], self.ti_ex_force[0][1], self.ti_ex_force[0][2]])
+        exf = self.ti_ex_force.to_numpy()
         frame = str(frame).zfill(5)
-        if T == 0:
-            out_name = "Outputs/output" + str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + \
-                       str(self.exf_mag) + "_" + frame + ".csv"
-        elif T == 1:
-            out_name = "Outputs_T/output" + str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + \
-                       str(self.exf_mag) + "_" + frame + ".csv"
-        elif T == 2:
-            out_name = "Outputs2/output" + str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + \
-                       str(self.exf_mag) + "_" + frame + ".csv"
-        elif T == 3:
-            out_name = "Outputs3/output" + str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + \
-                       str(self.exf_mag) + "_" + frame + ".csv"
-
+        F_name = ["Outputs/out", "Outputs_T/out", "Outputs2/out", "Outputs3/out",
+                  "Bunny1/out", "Bunny2/out", "Bunny3/out",
+                  "Bunny4/out", "Bunny5/out", "Bunny6/out",
+                  "Dragon1/out", "Dragon2/out", "Dragon3/out",
+                  "Dragon4/out", "Dragon5/out", "Dragon6/out"]
+        if self.exf_name is "directional":          # Directional
+            f_name = "D_"+str(self.dir_ang1)+"_"+str(self.dir_ang2)+"_"+str(self.dir_mag)+"_"+frame+".csv"
+        elif self.exf_name is "ring":               # Ring
+            f_name = "R_"+str(self.ring_angle)+"_"+str(self.ring_width)+"_"+str(self.ring_mag)+"_"+frame+".csv"
+        elif self.exf_name is "ring_circle":        # Ring Circle
+            f_name = "RC_" + str(self.ring_angle)+"_"+str(self.ring_width)+"_"+str(self.ring_mag)+"_"+\
+                     str(self.ring_circle_radius)+"_"+frame+".csv"
+        out_name = F_name[T] + f_name
         # if not os.path.exists(out_name):
         #     with open(out_name, 'w+') as f:
         #         f.close()
+
         # pd pos + pn pos + local transform + residual + force
         ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim
         out = np.ones([self.n_vertices, ele_count], dtype=float)
@@ -910,39 +939,13 @@ class PDSimulation:
             out[i, 3:6] = pn_dis[i, :]  # pn pos
             out[i, 6:15] = res.get()
             out[i, 15:18] = gradE[i * 3: i * 3 + 3]
-            out[i, 18:21] = exf
+            out[i, 18:21] = exf[i, :]
             out[i, 21:24] = vel[i, :]
             out[i, 24:27] = self.pos_init_out[i, :]
             i = i + 1
         tttt = time.time()
         print("append As: ", tttt - ttt)
         # np.savetxt(out_name, out, delimiter=',')
-
-
-    # def write_image(self, f):
-    #     if not os.path.exists("output"):
-    #         os.makedirs("output")
-    #     for root, dirs, files in os.walk("output/"):
-    #         for name in files:
-    #             os.remove(os.path.join(root, name))
-    #     if self.dim == 2:
-    #         for i in range(self.n_elements):
-    #             for j in range(3):
-    #                 a, b = self.vertices[i, j], self.vertices[i, (j + 1) % 3]
-    #                 self.gui.line((self.x[a][0], self.x[a][1]),
-    #                               (self.x[b][0], self.x[b][1]),
-    #                               radius=1,
-    #                               color=0x4FB99F)
-    #         self.gui.show(f'output/bunny{f:06d}.png')
-    #     else:
-    #         name = "output/bunny_"+str(self.exf_angle1)+"_"+str(self.exf_angle2)+\
-    #                "_"+str(self.exf_mag)+str(f).zfill(6)+".obj"
-    #         f = open(name, 'w')
-    #         for i in range(self.n_vertices):
-    #             f.write('v %.6f %.6f %.6f\n' % (self.ti_pos[i][0], self.ti_pos[i][1], self.ti_pos[i][2]))
-    #         for [p0, p1, p2] in self.boundary_triangles:
-    #             f.write('f %d %d %d\n' % (p0 + 1, p1 + 1, p2 + 1))
-    #         f.close()
 
     def Run(self, pn, is_test, frame_count, scene_info):
         rhs_np = np.zeros(self.n_vertices * self.dim, dtype=np.float64)
@@ -975,14 +978,15 @@ class PDSimulation:
         self.initial_com = calcCenterOfMass(np.arange(self.n_vertices), self.dim,
                                             self.ti_mass.to_numpy(), self.ti_pos.to_numpy())  # this is right
         self.initial_rel_pos = self.ti_pos_init.to_numpy() - self.initial_com
+        # self.set_dir_force_3D()
         while frame_counter < frame_count:
             print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
             t_0 = time.time()
+            self.set_ring_force_3D()
             self.build_sn()
             self.warm_up()  # Warm up
 
-            pn_start = time.time()
-            # get info from pn
+            pn_start = time.time()      # get info from pn
             self.copy(self.ti_pos, self.input_xn)
             self.copy(self.ti_vel, self.input_vn)
             pn_dis, _pn_pos, pn_v = pn.data_one_frame(self.input_xn, self.input_vn)

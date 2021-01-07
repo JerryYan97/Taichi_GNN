@@ -10,7 +10,7 @@ import numpy as np
 import taichi as ti
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
-from Utils.utils_visualization import draw_image, get_force_field, update_boundary_mesh
+from Utils.utils_visualization import draw_image, get_force_field, update_boundary_mesh, get_ring_force_field, get_ring_circle_force_field
 from scipy import sparse
 from scipy.sparse.linalg import factorized
 from Utils.math_tools import svd, my_svd
@@ -18,13 +18,15 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1001
+test_case = 1003
 case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
 mesh_offset = case_info['mesh_offset']
 dim = case_info['dim']
+center = case_info['center']
+min_sphere_radius = case_info['min_sphere_radius']
 # cpu 1.27 -- 1003,
 ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
 n_vertices = mesh.num_vertices
@@ -55,8 +57,7 @@ dt = 0.01
 solver_max_iteration = 50
 solver_stop_residual = 0.0001
 # external force -- counter-clock wise
-ti_ex_force = ti.Vector.field(dim, real, 1)
-
+ti_ex_force = ti.Vector.field(dim, real, n_vertices)
 
 # Taichi variables' initialization:
 ti_mass = ti.field(real, n_vertices)
@@ -79,6 +80,8 @@ ti_Sn = ti.field(real, n_vertices * dim)
 ti_phi = ti.field(real, n_elements)
 ti_weight_strain = ti.field(real, n_elements)
 ti_weight_volume = ti.field(real, n_elements)
+
+ti_center = ti.Vector([center[0], center[1], center[2]])
 
 
 def init():
@@ -111,17 +114,20 @@ def init():
 # Backup Settings:
 # Bunny: ti.Vector([0.0, 0.0, 0.1])
 # Dragon:
+@ti.kernel
 def set_exforce():
-    if dim == 2:
-        exf_angle = -45.0
-        exf_mag = 6
-        ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle))
+    if ti.static(dim == 2):
+        for i in range(n_vertices):
+            ti_ex_force[i] = ti.Vector(get_force_field(6, -45.0))
     else:
-        exf_angle1 = 45.0
-        exf_angle2 = 45.0
-        exf_mag = 6.0
-        ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
-    # print("External force:", ti_ex_force)
+        for i in range(n_vertices):
+            ti_ex_force[i] = ti.Vector(get_force_field(6.0, 45.0, 45.0, 3))
+
+
+@ti.kernel
+def set_ring_force_3D():
+    for i in range(n_vertices):
+        ti_ex_force[i] = get_ring_circle_force_field(0.4, 0.3, ti_center, ti_pos[i], 0.0, 0.2*min_sphere_radius, 3)
 
 
 @ti.func
@@ -432,11 +438,11 @@ def build_sn():
         Sn_idx2 = vert_idx*dim+1
         pos_i = ti_pos[vert_idx]
         vel_i = ti_vel[vert_idx]
-        ti_Sn[Sn_idx1] = pos_i[0] + dt * vel_i[0] + (dt ** 2) * ti_ex_force[0][0] / ti_mass[vert_idx]  # x-direction;
-        ti_Sn[Sn_idx2] = pos_i[1] + dt * vel_i[1] + (dt ** 2) * ti_ex_force[0][1] / ti_mass[vert_idx]  # y-direction;
+        ti_Sn[Sn_idx1] = pos_i[0] + dt * vel_i[0] + (dt ** 2) * ti_ex_force[vert_idx][0] / ti_mass[vert_idx]  # x-direction;
+        ti_Sn[Sn_idx2] = pos_i[1] + dt * vel_i[1] + (dt ** 2) * ti_ex_force[vert_idx][1] / ti_mass[vert_idx]  # y-direction;
         if ti.static(dim == 3):
             Sn_idx3 = vert_idx * dim + 2
-            ti_Sn[Sn_idx3] = pos_i[2] + dt * vel_i[2] + (dt ** 2) * ti_ex_force[0][2] / ti_mass[vert_idx]
+            ti_Sn[Sn_idx3] = pos_i[2] + dt * vel_i[2] + (dt ** 2) * ti_ex_force[vert_idx][2] / ti_mass[vert_idx]
 
 
 @ti.func
@@ -659,7 +665,7 @@ if __name__ == "__main__":
 
     init()
 
-    set_exforce()
+    # set_exforce()
     init_mesh_DmInv(dirichlet, len(dirichlet))
     precomputation(lhs_matrix_np)
     s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
@@ -686,6 +692,7 @@ if __name__ == "__main__":
     plot_array = []
 
     while frame_counter < 1000:
+        set_ring_force_3D()
         build_sn()
         # Warm up:
         warm_up()

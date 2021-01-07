@@ -11,7 +11,7 @@ from Utils.math_tools import svd
 from Utils.Dijkstra import *
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
-from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh, get_force_field
+from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh, get_force_field, get_ring_force_field
 ##############################################################################
 real = ti.f64
 
@@ -26,6 +26,8 @@ class PNSimulation:
         self.mesh_scale = self.case_info['mesh_scale']
         self.mesh_offset = self.case_info['mesh_offset']
         self.dim = self.case_info['dim']
+        self.center = self.case_info['center']
+        self.min_sphere_radius = self.case_info['min_sphere_radius']
         ################################ material ######################################
         self.dt = _dt
         self.E = 1e4
@@ -60,9 +62,6 @@ class PNSimulation:
         self.restT = ti.Matrix.field(self.dim, self.dim, real, self.n_elements)
         self.vertices = ti.field(ti.i32, (self.n_elements, self.dim + 1))
 
-        # self.data_rhs = ti.field(real, shape=200000)
-        # self.data_mat = ti.field(real, shape=(3, 20000000))
-        # self.data_sol = ti.field(real, shape=200000)
         self.data_rhs = np.zeros(shape=(200000,), dtype=np.float64)
         self.data_mat = np.zeros(shape=(3, 20000000), dtype=np.float64)
         self.data_sol = np.zeros(shape=(200000,), dtype=np.float64)
@@ -79,7 +78,7 @@ class PNSimulation:
         self.ti_indMap_field = ti.field(real, (self.n_elements, self.dim * (self.dim + 1)))
         ################################ external force ######################################
         self.exf_ind = self.mag_ind = 0  # Used to label output .csv files.
-        self.ex_force = ti.Vector.field(self.dim, real, 1)
+        self.ex_force = ti.Vector.field(self.dim, real, self.n_vertices)
         ################################ shape matching ######################################
         if self.dim == 2:
             self.initial_com = ti.Vector([0.0, 0.0])
@@ -90,15 +89,17 @@ class PNSimulation:
         self.qi = ti.Vector.field(self.dim, real, self.n_vertices)
         self.init_pos = self.mesh.vertices.astype(np.float32)[:, :self.dim]
 
+        self.ti_center = []
+        self.exf_name = ""
+        self.ring_mag = 1.0
+        self.ring_angle = 0.0
+        self.ring_width = 0.2
+        self.ring_circle_radius = 0.2
+        self.dir_mag = 1.0
+        self.dir_ang1 = 45.0
+        self.dir_ang2 = 45.0
+
     def initial(self):
-        # if self.dim == 3:
-        #     self.camera = t3.Camera()
-        #     self.scene = t3.Scene()
-        #     self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
-        #     self.model = t3.Model(t3.DynamicMesh(n_faces=len(self.boundary_triangles) * 2,
-        #                                          n_pos=self.case_info['mesh'].num_vertices,
-        #                                          n_nrm=len(self.boundary_triangles) * 2))
-        #     set_3D_scene(self.scene, self.camera, self.model, self.case_info)
         self.x.from_numpy(self.mesh.vertices.astype(np.float64))
         if self.dim == 2:
             self.vertices.from_numpy(self.mesh.faces)
@@ -125,6 +126,7 @@ class PNSimulation:
         self.restT.fill(0)
         ################################ external force ######################################
         self.ex_force.fill(0)
+        self.ti_center = ti.Vector([self.center[0], self.center[1], self.center[2]])
 
     def set_material(self, _rho, _ym, _nu, _dt):
         self.dt = _dt
@@ -133,18 +135,47 @@ class PNSimulation:
         self.nu = _nu
         self.mu = self.E / (2.0 * (1.0 + self.nu))
         self.la = self.E * self.nu / ((1.0 + self.nu) * (1.0 - 2.0 * self.nu))
-        print("mu: ", self.mu, "la: ", self.la)
+        # print("mu: ", self.mu, "la: ", self.la)
 
-    def set_force(self, ang1, ang2, mag):
-        if self.dim == 2:
-            exf_angle = -45.0
-            exf_mag = 6
-            self.ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle))
+    def set_force(self, name, mag, ang1, ang2=0.0, width=0.0, radius=0.0):
+        self.exf_name = name
+        if name == "ring":
+            self.ring_mag = mag
+            self.ring_angle = ang1
+            self.ring_width = width
+        elif name == "directional":
+            self.dir_mag = mag
+            self.dir_ang1 = ang1
+            self.dir_ang2 = ang2
+        elif name == "ring_circle":
+            self.ring_mag = mag
+            self.ring_angle = ang1
+            self.ring_width = width
+            self.ring_circle_radius = radius
+
+    @ti.kernel
+    def set_dir_force_3D(self):
+        if ti.static(self.dim == 2):
+            for i in range(self.n_vertices):
+                self.ex_force[i] = ti.Vector(get_force_field(self.dir_mag, self.dir_ang1))
         else:
-            exf_angle1 = ang1
-            exf_angle2 = ang2
-            exf_mag = mag
-            self.ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
+            for i in range(self.n_vertices):
+                self.ex_force[i] = ti.Vector(get_force_field(self.dir_mag, self.dir_ang1,
+                                                             self.dir_ang2, 3))
+
+    @ti.kernel
+    def set_ring_force_3D(self):
+        for i in range(self.n_vertices):
+            self.ex_force[i] = get_ring_force_field(self.ring_mag, self.ring_width,
+                                                    self.ti_center, self.x[i],
+                                                    self.ring_angle, 3)
+
+    @ti.kernel
+    def set_ring_circle_force_3D(self):
+        for i in range(self.n_vertices):
+            self.ex_force[i] = get_ring_force_field(self.ring_mag, self.ring_width,
+                                                    self.ti_center, self.x[i], self.ring_angle,
+                                                    self.ring_circle_radius * self.min_sphere_radius, 3)
 
     @ti.func
     def compute_T(self, i):
@@ -186,15 +217,15 @@ class PNSimulation:
             for i in range(self.n_vertices):
                 self.xn[i] = self.x[i]
                 self.xTilde[i] = self.x[i] + self.dt * self.v[i]
-                self.xTilde(0)[i] += self.dt * self.dt * (self.ex_force[0][0]/self.m[i])
-                self.xTilde(1)[i] += self.dt * self.dt * (self.ex_force[0][1]/self.m[i])
+                self.xTilde(0)[i] += self.dt * self.dt * (self.ex_force[i][0]/self.m[i])
+                self.xTilde(1)[i] += self.dt * self.dt * (self.ex_force[i][1]/self.m[i])
         if ti.static(self.dim == 3):
             for i in range(self.n_vertices):
                 self.xn[i] = self.x[i]
                 self.xTilde[i] = self.x[i] + self.dt * self.v[i]
-                self.xTilde(0)[i] += self.dt * self.dt * (self.ex_force[0][0] / self.m[i])
-                self.xTilde(1)[i] += self.dt * self.dt * (self.ex_force[0][1] / self.m[i])
-                self.xTilde(2)[i] += self.dt * self.dt * (self.ex_force[0][2] / self.m[i])
+                self.xTilde(0)[i] += self.dt * self.dt * (self.ex_force[i][0] / self.m[i])
+                self.xTilde(1)[i] += self.dt * self.dt * (self.ex_force[i][1] / self.m[i])
+                self.xTilde(2)[i] += self.dt * self.dt * (self.ex_force[i][2] / self.m[i])
 
     @ti.kernel
     def compute_energy(self) -> real:
@@ -585,7 +616,7 @@ class PNSimulation:
 
 
     # TODO: this one do not need to work, since we use pd->pn
-    def output_all(self, pd_dis, pn_dis, grad_E, frame, T):
+    def output_all_legacy(self, pd_dis, pn_dis, grad_E, frame, T):
         frame = str(frame).zfill(5)
         if T == 0:
             out_name = "Outputs/3Doutput"+str(self.exf_ind)+"_"+str(self.mag_ind)+"_"+frame+".txt"
@@ -634,10 +665,14 @@ class PNSimulation:
             out[i, 10] = self.ex_force[0][2]
         np.savetxt(out_name, out)
 
-    # def set_res(self, r):
-    #     self.res = r
-
     def data_one_frame(self, input_p, input_v):
+        if self.exf_name is "directional":       # Directional
+            self.set_dir_force_3D()
+        elif self.exf_name is "ring":            # Ring
+            self.set_ring_force_3D()
+        elif self.exf_name is "ring_circle":
+            self.set_ring_circle_force_3D()
+
         self.copy(input_p, self.x)
         self.copy(input_v, self.v)
         self.compute_xn_and_xTilde()
@@ -650,14 +685,13 @@ class PNSimulation:
             self.data_mat.fill(0)
             self.data_rhs.fill(0)
             self.data_sol.fill(0)
-            # print(self.data_mat)
             self.compute_hessian_and_gradient(self.data_mat, self.data_rhs)
             # print("cnt: ", self.cnt[None])
             # print("dara mat: \n", self.data_mat.to_numpy())
             # print("dara rhs: \n", self.data_rhs.to_numpy())
             self.data_sol = solve_linear_system3(self.data_mat, self.data_rhs,
-                                                          self.n_vertices * self.dim, self.dirichlet,
-                                                          self.zero.to_numpy(), False, 0, self.cnt[None])
+                                                 self.n_vertices * self.dim, self.dirichlet,
+                                                 self.zero.to_numpy(), False, 0, self.cnt[None])
             if self.output_residual(self.data_sol) < 1e-4 * self.dt:
                 break
             E0 = self.compute_energy()
