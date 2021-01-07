@@ -2,14 +2,14 @@ import sys, os, time
 import taichi as ti
 import numpy as np
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
-from Utils.utils_visualization import draw_image, update_boundary_mesh, get_force_field, output_3d_seq
+from Utils.utils_visualization import draw_image, set_3D_scene, update_boundary_mesh, get_force_field, get_ring_force_field
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
 from scipy import sparse
 from scipy.sparse.linalg import factorized
 from Utils.math_tools import svd
 import multiprocessing as mp
-
+from enum import Enum
 real = ti.f64
 
 def calcCenterOfMass(vind, dim, mass, pos):
@@ -97,6 +97,8 @@ class PDSimulation:
         self.mesh_scale = self.case_info['mesh_scale']
         self.mesh_offset = self.case_info['mesh_offset']
         self.dim = self.case_info['dim']
+        self.center = self.case_info['center']
+        self.min_sphere_radius = self.case_info['min_sphere_radius']
         self.n_vertices = self.mesh.num_vertices
         if self.dim == 2:
             self.n_elements = self.mesh.num_faces
@@ -123,11 +125,7 @@ class PDSimulation:
         self.init_pos = self.mesh.vertices.astype(np.float32)
         self.init_pos = self.init_pos[:, :self.dim]
         ################################ force field ################################
-        self.ti_ex_force = ti.Vector.field(self.dim, real, 1)
-        self.npex_f = np.zeros((self.dim, 1))
-        self.exf_angle1 = 0.0
-        self.exf_angle2 = 0.0
-        self.exf_mag = 0.0
+        self.ti_ex_force = ti.Vector.field(self.dim, real, self.n_vertices)
 
         self.input_xn = ti.Vector.field(self.dim, real, self.n_vertices)
         self.input_vn = ti.Vector.field(self.dim, real, self.n_vertices)
@@ -164,6 +162,15 @@ class PDSimulation:
         self.mesh.enable_connectivity()
 
         self.pos_init_out = []
+        self.ti_center = []
+        self.exf_name = ""
+        self.ring_mag = 1.0
+        self.ring_angle = 0.0
+        self.ring_width = 0.2
+        self.ring_circle_radius = 0.2
+        self.dir_mag = 1.0
+        self.dir_ang1 = 45.0
+        self.dir_ang2 = 45.0
 
 
     def initial(self):
@@ -208,7 +215,7 @@ class PDSimulation:
         self.qi.fill(0)
         ################################ force field ################################
         self.ti_ex_force.fill(0)
-
+        self.ti_center = ti.Vector([self.center[0], self.center[1], self.center[2]])
 
     def set_material(self, _rho, _ym, _nu, _dt):
         self.dt = _dt
@@ -230,6 +237,21 @@ class PDSimulation:
             self.exf_angle2 = force_info['exf_angle2']
             self.exf_mag = force_info['exf_mag']
             self.ti_ex_force[0] = ti.Vector(get_force_field(self.exf_mag, self.exf_angle1, self.exf_angle2, 3))
+
+    @ti.kernel
+    def set_ring_force_3D(self):
+        for i in range(self.n_vertices):
+            self.ti_ex_force[i] = get_ring_force_field(self.ring_mag, self.ring_width,
+                                                       self.ti_center, self.ti_pos[i],
+                                                       self.ring_angle, 3)
+
+    @ti.kernel
+    def set_ring_circle_force_3D(self):
+        for i in range(self.n_vertices):
+            self.ex_force[i] = get_ring_force_field(self.ring_mag, self.ring_width,
+                                                    self.ti_center, self.x[i], self.ring_angle,
+                                                    self.ring_circle_radius * self.min_sphere_radius, 3)
+
 
     @ti.func
     def set_ti_A_i(self, ele_idx, row, col, val):
@@ -379,7 +401,6 @@ class PDSimulation:
                     self.set_ti_A_i(t * self.n_elements + i, 3, 1, -b - d)
                     self.set_ti_A_i(t * self.n_elements + i, 3, 3, b)
                     self.set_ti_A_i(t * self.n_elements + i, 3, 5, d)
-
                 else:
                     # Get (Dm)^-1 for this element:
                     Dm_inv_i = self.ti_Dm_inv[i]
@@ -431,7 +452,6 @@ class PDSimulation:
         for ele_idx in range(self.n_elements):
             for t in range(2):
                 self.fill_idx_vec(ele_idx)
-
                 # May need more considerations:
                 for A_row_idx in range(self.dim * (self.dim + 1)):
                     for A_col_idx in range(self.dim * (self.dim + 1)):
@@ -445,7 +465,6 @@ class PDSimulation:
                                 weight = self.ti_weight_volume[ele_idx]
                             lhs_matrix_np[lhs_row_idx, lhs_col_idx] += (self.ti_A[ele_idx, idx, A_row_idx] *
                                                                         self.ti_A[ele_idx, idx, A_col_idx] * weight)
-
         # print("Position constraints starts")
         # Add positional constraints to the lhs matrix
         for i in range(self.n_vertices):
@@ -484,8 +503,8 @@ class PDSimulation:
         if ti.static(self.dim == 2):
             sigma_star_11_k, sigma_star_22_k = 1.0, 1.0
             for itr in ti.static(range(10)):
-                first_term = (sigma_star_11_k * sigma_star_22_k - sigma[0, 0] * sigma_star_22_k - sigma[
-                    1, 1] * sigma_star_11_k + 1.0) / (sigma_star_11_k ** 2 + sigma_star_22_k ** 2)
+                first_term = (sigma_star_11_k * sigma_star_22_k - sigma[0, 0] * sigma_star_22_k - sigma[1, 1]
+                              * sigma_star_11_k + 1.0) / (sigma_star_11_k ** 2 + sigma_star_22_k ** 2)
                 D1_kplus1 = first_term * sigma_star_22_k
                 D2_kplus1 = first_term * sigma_star_11_k
                 sigma_star_11_k = D1_kplus1 + sigma[0, 0]
@@ -543,13 +562,13 @@ class PDSimulation:
             Sn_idx2 = vert_idx * self.dim + 1
             pos_i = self.ti_pos[vert_idx]
             vel_i = self.ti_vel[vert_idx]
-            self.ti_Sn[Sn_idx1] = pos_i[0] + self.dt * vel_i[0] + (self.dt ** 2) * self.ti_ex_force[0][0] / self.ti_mass[
+            self.ti_Sn[Sn_idx1] = pos_i[0] + self.dt * vel_i[0] + (self.dt ** 2) * self.ti_ex_force[vert_idx][0] / self.ti_mass[
                 vert_idx]  # x-direction;
-            self.ti_Sn[Sn_idx2] = pos_i[1] + self.dt * vel_i[1] + (self.dt ** 2) * self.ti_ex_force[0][1] / self.ti_mass[
+            self.ti_Sn[Sn_idx2] = pos_i[1] + self.dt * vel_i[1] + (self.dt ** 2) * self.ti_ex_force[vert_idx][1] / self.ti_mass[
                 vert_idx]  # y-direction;
             if ti.static(self.dim == 3):
                 Sn_idx3 = vert_idx * self.dim + 2
-                self.ti_Sn[Sn_idx3] = pos_i[2] + self.dt * vel_i[2] + (self.dt ** 2) * self.ti_ex_force[0][2] / self.ti_mass[vert_idx]
+                self.ti_Sn[Sn_idx3] = pos_i[2] + self.dt * vel_i[2] + (self.dt ** 2) * self.ti_ex_force[vert_idx][2] / self.ti_mass[vert_idx]
 
     @ti.kernel
     def compute_x_xtilde(self):
@@ -843,14 +862,15 @@ class PDSimulation:
         self.initial_com = calcCenterOfMass(np.arange(self.n_vertices), self.dim,
                                             self.ti_mass.to_numpy(), self.ti_pos.to_numpy())  # this is right
         self.initial_rel_pos = self.ti_pos_init.to_numpy() - self.initial_com
+        # self.set_dir_force_3D()
         while frame_counter < frame_count:
             print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
             t_0 = time.time()
+            self.set_ring_force_3D()
             self.build_sn()
             self.warm_up()  # Warm up
 
-            pn_start = time.time()
-            # get info from pn
+            pn_start = time.time()      # get info from pn
             self.copy(self.ti_pos, self.input_xn)
             self.copy(self.ti_vel, self.input_vn)
             pn_dis, _pn_pos, pn_v = pn.data_one_frame(self.input_xn, self.input_vn)

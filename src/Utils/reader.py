@@ -125,6 +125,9 @@ def read(testcase):
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
 
         print("mesh elements:", mesh.elements)
+        center = (mesh.bbox[0] + mesh.bbox[1]) / 2.0
+        tmp = mesh.bbox[1] - mesh.bbox[0]
+        min_sphere_radius = np.linalg.norm(np.array([tmp[0], tmp[1], tmp[2]])) / 2.0
 
         case_info['case_name'] = "Bunny1"
         case_info['mesh'] = mesh
@@ -138,6 +141,9 @@ def read(testcase):
         case_info['init_scale'] = 1.0
         case_info['transformation_mat'] = translate([-0.3, -0.5, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
         case_info['light_dir'] = [-0.8, -0.6, -1.0]
+        case_info['center'] = center
+        case_info['min_sphere_radius'] = min_sphere_radius
+
         return case_info
     elif testcase == 1004:
         from tina import translate, scale
@@ -149,6 +155,9 @@ def read(testcase):
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
 
         print("mesh elements:", mesh.elements)
+        center = (mesh.bbox[0] + mesh.bbox[1]) / 2.0
+        tmp = mesh.bbox[1] - mesh.bbox[0]
+        min_sphere_radius = np.linalg.norm(np.array([tmp[0], tmp[1], tmp[2]])) / 2.0
 
         case_info['case_name'] = "Bunny2"
         case_info['mesh'] = mesh
@@ -160,6 +169,9 @@ def read(testcase):
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
         case_info['transformation_mat'] = translate([-0.3, -0.5, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
         case_info['light_dir'] = [-0.8, -0.6, -1.0]
+        case_info['center'] = center
+        case_info['min_sphere_radius'] = min_sphere_radius
+
         return case_info
     elif testcase == 1005:
         from tina import translate, scale
@@ -175,6 +187,9 @@ def read(testcase):
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
 
         print("mesh elements:", mesh.elements)
+        center = (mesh.bbox[0] + mesh.bbox[1]) / 2.0
+        tmp = mesh.bbox[1] - mesh.bbox[0]
+        min_sphere_radius = np.linalg.norm(np.array([tmp[0], tmp[1], tmp[2]])) / 2.0
 
         case_info['case_name'] = "Dragon"
         case_info['mesh'] = mesh
@@ -186,6 +201,9 @@ def read(testcase):
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
         case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(6.0)
         case_info['light_dir'] = [-0.8, -0.6, -1.0]
+        case_info['center'] = center
+        case_info['min_sphere_radius'] = min_sphere_radius
+
         return case_info
     else:
         raise Exception("Invalid testcase selection.")
