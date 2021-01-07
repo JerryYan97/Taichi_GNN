@@ -91,14 +91,6 @@ class PNSimulation:
         self.init_pos = self.mesh.vertices.astype(np.float32)[:, :self.dim]
 
     def initial(self):
-        # if self.dim == 3:
-        #     self.camera = t3.Camera()
-        #     self.scene = t3.Scene()
-        #     self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
-        #     self.model = t3.Model(t3.DynamicMesh(n_faces=len(self.boundary_triangles) * 2,
-        #                                          n_pos=self.case_info['mesh'].num_vertices,
-        #                                          n_nrm=len(self.boundary_triangles) * 2))
-        #     set_3D_scene(self.scene, self.camera, self.model, self.case_info)
         self.x.from_numpy(self.mesh.vertices.astype(np.float64))
         if self.dim == 2:
             self.vertices.from_numpy(self.mesh.faces)
@@ -135,15 +127,17 @@ class PNSimulation:
         self.la = self.E * self.nu / ((1.0 + self.nu) * (1.0 - 2.0 * self.nu))
         print("mu: ", self.mu, "la: ", self.la)
 
-    def set_force(self, ang1, ang2, mag):
-        if self.dim == 2:
-            exf_angle = -45.0
-            exf_mag = 6
+    def set_force(self, force_info):
+        if force_info['dim'] != self.case_info['dim']:
+            raise AttributeError("Input force dim is not equal to the simulator's dim!")
+        if force_info['dim'] == 2:
+            exf_angle = force_info['exf_angle']
+            exf_mag = force_info['exf_mag']
             self.ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle))
         else:
-            exf_angle1 = ang1
-            exf_angle2 = ang2
-            exf_mag = mag
+            exf_angle1 = force_info['exf_angle1']
+            exf_angle2 = force_info['exf_angle2']
+            exf_mag = force_info['exf_mag']
             self.ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
 
     @ti.func

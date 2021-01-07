@@ -137,10 +137,12 @@ class PDSimulation:
         self.ti_phi = ti.field(real, self.n_elements)
         self.ti_weight_strain = ti.field(real, self.n_elements)   # self.mu * 2 * self.volume
         self.ti_weight_volume = ti.field(real, self.n_elements)   # self.lam * self.dim * self.volume
-        self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
+        if self.dim == 3:
+            self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
         self.mesh.enable_connectivity()
 
         self.pos_init_out = []
+
 
     def initial(self):
         if self.dim == 2:
@@ -194,20 +196,18 @@ class PDSimulation:
         self.mu = self.E / (2 * (1 + self.nu))
         self.lam = self.E * self.nu / ((1 + self.nu) * (1 - 2 * self.nu))
 
-    def set_force(self, ang1, ang2, mag):
-        if self.dim == 2:
-            exf_angle = -45.0
-            exf_mag = 6
+    def set_force(self, force_info):
+        if force_info['dim'] != self.case_info['dim']:
+            raise AttributeError("Input force dim is not equal to the simulator's dim!")
+        if force_info['dim'] == 2:
+            exf_angle = force_info['exf_angle']
+            exf_mag = force_info['exf_mag']
             self.ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle))
         else:
-            # exf_angle1 = 45.0
-            # exf_angle2 = 45.0
-            # exf_mag = 6
-            self.exf_angle1 = ang1
-            self.exf_angle2 = ang2
-            self.exf_mag = mag
+            self.exf_angle1 = force_info['exf_angle1']
+            self.exf_angle2 = force_info['exf_angle2']
+            self.exf_mag = force_info['exf_mag']
             self.ti_ex_force[0] = ti.Vector(get_force_field(self.exf_mag, self.exf_angle1, self.exf_angle2, 3))
-            print("force: ", self.ti_ex_force[0][0], " ", self.ti_ex_force[0][1], " ", self.ti_ex_force[0][2])
 
     @ti.func
     def set_ti_A_i(self, ele_idx, row, col, val):
@@ -780,11 +780,10 @@ class PDSimulation:
         s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
         pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
-        video_manager = ti.VideoManager(output_dir='results/', framerate=24, automatic_build=False)
-
         if self.dim == 2:
+            # video_manager = ti.VideoManager(output_dir='SimData/TmpRenderedImgs', framerate=24, automatic_build=False)
             gui = ti.GUI('2D Simulation Data Generator -- PD -> PN', background_color=0xf7f7f7)
-            filename = f'./results/frame_rest.png'
+            filename = f'./SimData/TmpRenderedImgs/frame_rest.png'
             draw_image(gui, filename, self.ti_pos.to_numpy(), self.mesh_offset, self.mesh_scale, self.ti_elements.to_numpy(), self.n_elements)
         else:
             gui = ti.GUI('3D Simulation Data Generator -- PD -> PN')

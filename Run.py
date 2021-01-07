@@ -18,7 +18,7 @@ dt = 0.01
 running_times = 1
 frame_count = 80
 
-test_case = 1001
+test_case = 1
 cluster_num = 10
 
 # NOTE: Please remember to save your data. It will delete all files in Outputs/ or Outputs_T/ when you exe Run.py.
@@ -124,8 +124,7 @@ if __name__ == '__main__':
     #             pd.set_force(ang_idx1*(180.0 / sampled_angle1_num), ang_idx2 * (360.0 / sampled_angle2_num), (mag_idx + 5))
     #             pd.Run(pn, is_test, frame_count)
 
-
-    # Separately generate
+    # Separately generate 2D and 3D
     pd = PDSimulation(case_info, dt)
     pn = PNSimulation(case_info, dt)
     pd.set_material(rho, E, nu, dt)
@@ -133,6 +132,16 @@ if __name__ == '__main__':
     pd.initial()
     pn.initial()
     pn.compute_restT_and_m()
-    pn.set_force(45, 45, 6)
-    pd.set_force(45, 45, 6)
+
+    force_info = {'dim': case_info['dim']}
+    if case_info['dim'] == 2:
+        force_info['exf_angle'] = -45.0
+        force_info['exf_mag'] = 6
+    else:
+        force_info['exf_angle1'] = 45.0
+        force_info['exf_angle2'] = 45.0
+        force_info['exf_mag'] = 6.0
+
+    pn.set_force(force_info)
+    pd.set_force(force_info)
     pd.Run(pn, is_test, frame_count, scene_info)
