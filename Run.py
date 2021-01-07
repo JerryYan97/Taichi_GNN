@@ -16,7 +16,7 @@ nu = 0.4
 dt = 0.01
 
 running_times = 1
-frame_count = 50
+frame_count = 60
 
 test_case = 1001
 

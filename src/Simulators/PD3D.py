@@ -12,7 +12,6 @@ import multiprocessing as mp
 
 real = ti.f64
 
-
 def calcCenterOfMass(vind, dim, mass, pos):
     sum = np.zeros(dim)
     summ = 0.0
