@@ -285,18 +285,6 @@ def spt_parallel_func(shared_adj_mat, src_list, vertices_num, idx):
                 dist[v] = dist[u] + shared_adj_mat[u, v]
     return dist
 
-# Old one
-# def childlist_helper_parallel_func(childlist_item, parent_list, src_list, spt_list):
-#     min_dis = 100000.0
-#     parent_id = -1
-#     for p in parent_list:
-#         list_idx = src_list.index(p)
-#         dis = spt_list[list_idx][childlist_item]
-#         if dis < min_dis:
-#             parent_id = p
-#             min_dis = dis
-#     return parent_id
-
 
 def childlist_helper_parallel_func(workload_list, proc_idx, childlist, parent_list, src_list, spt_list):
     parent_id_list = []
@@ -359,16 +347,6 @@ class MeshKmeansHelper():
         # Get results
         for t in range(cpu_cnt):
             belonging.extend(proc_list[t].get())
-        # Old
-        # # Parallel call
-        # for t in range(len(child_list)):
-        #     res_list.append(pool.apply_async(func=childlist_helper_parallel_func,
-        #                                      args=(child_list[t], parent_list, self._src_list, self._spt_list,)))
-        # # Get results
-        # for t in range(len(child_list)):
-        #     belonging[t] = res_list[t].get()
-        #     if t % 10 == 0:
-        #         print("section 1 progress:", (float(t) / len(child_list)) * 100.0, "%")
         return belonging
 
     def get_dist(self, src_idx, dst_idx):

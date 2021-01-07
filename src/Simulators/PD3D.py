@@ -732,10 +732,10 @@ class PDSimulation:
         exf = np.array([self.ti_ex_force[0][0], self.ti_ex_force[0][1], self.ti_ex_force[0][2]])
         frame = str(frame).zfill(5)
         if T == 0:
-            out_name = "SimData/TrainingData/_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + "_" + \
+            out_name = "SimData/TrainingData/Train_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + "_" + \
                        str(self.exf_angle2) + "_" + str(self.exf_mag) + "_" + frame + ".csv"
         else:
-            out_name = "SimData/TestingData/_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + "_" + \
+            out_name = "SimData/TestingData/Test_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + "_" + \
                        str(self.exf_angle2) + "_" + str(self.exf_mag) + "_" + frame + ".csv"
 
         ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim

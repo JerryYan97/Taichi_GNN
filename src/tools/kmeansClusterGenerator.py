@@ -12,7 +12,7 @@ from Utils.reader import read
 # Owing to the fixed color panel, it now just has only tests clusters num that is 10 and under 10.
 cluster_num = 10
 # Case 1002 doesn't work because it's particles' num is less than the clusters' num.
-test_case = 1004
+test_case = 1005
 
 
 # Optimization record:
@@ -44,7 +44,7 @@ test_case = 1004
 # case 2: 6.196524143218994 s
 # case 1001: 3.125687599182129 s
 # case 1004: 384.59628558158875 s
-# case 1005: 
+# case 1005:
 
 def rgb_range01(rgb_np):
     return rgb_np / 255.0

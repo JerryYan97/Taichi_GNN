@@ -105,9 +105,25 @@ def update_boundary_pos(pos: ti.template(),
                 boundary_pos[tri_idx, tri_vert_idx, dim_idx] = pos[boundary_tris[tri_idx, tri_vert_idx]][dim_idx]
 
 
+@ti.kernel
+def update_boundary_pos_np(pos: ti.ext_arr(),
+                        boundary_pos: ti.ext_arr(),
+                        boundary_tris: ti.ext_arr(),
+                        boundary_tri_num: ti.int32):
+    for tri_idx in range(boundary_tri_num):
+        for tri_vert_idx in ti.static(range(3)):
+            for dim_idx in ti.static(range(3)):
+                boundary_pos[tri_idx, tri_vert_idx, dim_idx] = pos[boundary_tris[tri_idx, tri_vert_idx], dim_idx]
+
+
 def update_boundary_mesh(mesh_pos, boundary_pos, case_info):
     boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
     update_boundary_pos(mesh_pos, boundary_pos, boundary_triangles, case_info['boundary_tri_num'])
+
+
+def update_boundary_mesh_np(mesh_pos, boundary_pos, case_info):
+    boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
+    update_boundary_pos_np(mesh_pos, boundary_pos, boundary_triangles, case_info['boundary_tri_num'])
 
 
 def output_3d_seq(pos, boundary_tri, file_path):

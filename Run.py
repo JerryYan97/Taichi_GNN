@@ -18,7 +18,7 @@ dt = 0.01
 running_times = 1
 frame_count = 80
 
-test_case = 1004
+test_case = 1001
 cluster_num = 10
 
 # NOTE: Please remember to save your data. It will delete all files in Outputs/ or Outputs_T/ when you exe Run.py.
@@ -26,7 +26,7 @@ cluster_num = 10
 # pd->pn
 if __name__ == '__main__':
     # Create relevant folders and clean data in the folders:
-    is_test = 1  # 0: training data; 1: testing data.
+    is_test = int(input("Data generation mode [0 -- training data /1 -- test data]:"))
     os.makedirs('SimData/PDAnimSeq/', exist_ok=True)
     os.makedirs('SimData/PNAnimSeq/', exist_ok=True)
     os.makedirs('SimData/TmpRenderedImgs/', exist_ok=True)
@@ -133,6 +133,6 @@ if __name__ == '__main__':
     pd.initial()
     pn.initial()
     pn.compute_restT_and_m()
-    pn.set_force(45, 45, 0.06)
-    pd.set_force(45, 45, 0.06)
+    pn.set_force(45, 45, 6)
+    pd.set_force(45, 45, 6)
     pd.Run(pn, is_test, frame_count, scene_info)
