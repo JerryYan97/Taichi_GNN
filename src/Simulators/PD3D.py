@@ -2,7 +2,7 @@ import sys, os, time
 import taichi as ti
 import numpy as np
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
-from Utils.utils_visualization import draw_image, update_boundary_mesh, get_force_field, get_ring_force_field, output_3d_seq
+from Utils.utils_visualization import draw_image, update_boundary_mesh, get_force_field, get_ring_force_field, output_3d_seq, get_ring_circle_force_field
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
 from scipy import sparse
@@ -104,7 +104,6 @@ class PDSimulation:
             self.n_elements = self.mesh.num_faces
         else:
             self.n_elements = self.mesh.num_elements
-            self.min_sphere_radius = self.case_info['min_sphere_radius']
 
         ################################ material and parms ######################################
         self.rho = 100
@@ -115,21 +114,20 @@ class PDSimulation:
         self.m_weight_positional = 1e20
         self.solver_max_iteration = 50
         self.solver_stop_residual = 0.0001
+
         ################################ field ######################################
         self.ti_pos_del = ti.Vector.field(self.dim, real, self.n_vertices)
         self.gradE = ti.field(real, shape=2000)
         self.x_xtilde = ti.Vector.field(self.dim, real, self.n_vertices)
+        self.input_xn = ti.Vector.field(self.dim, real, self.n_vertices)
+        self.input_vn = ti.Vector.field(self.dim, real, self.n_vertices)
+
         ################################ shape matching ######################################
         self.initial_rel_pos = np.array([self.n_vertices, self.dim])
         self.pi = ti.Vector.field(self.dim, real, self.n_vertices)
         self.qi = ti.Vector.field(self.dim, real, self.n_vertices)
         self.init_pos = self.mesh.vertices.astype(np.float32)
         self.init_pos = self.init_pos[:, :self.dim]
-        ################################ force field ################################
-        self.ti_ex_force = ti.Vector.field(self.dim, real, self.n_vertices)
-
-        self.input_xn = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.input_vn = ti.Vector.field(self.dim, real, self.n_vertices)
 
         # Taichi variables' initialization:
         self.ti_mass = ti.field(real, self.n_vertices)
@@ -137,6 +135,7 @@ class PDSimulation:
         self.ti_pos = ti.Vector.field(self.dim, real, self.n_vertices)
         self.ti_pos_new = ti.Vector.field(self.dim, real, self.n_vertices)
         self.ti_pos_init = ti.Vector.field(self.dim, real, self.n_vertices)
+        self.pos_init_out = np.zeros(shape=(self.n_vertices, self.dim), dtype=np.float64)
         self.ti_last_pos_new = ti.Vector.field(self.dim, real, self.n_vertices)
         self.ti_boundary_labels = ti.field(int, self.n_vertices)
         self.ti_vel = ti.Vector.field(self.dim, real, self.n_vertices)
@@ -145,45 +144,45 @@ class PDSimulation:
         self.ti_elements = ti.Vector.field(self.dim + 1, int, self.n_elements)  # ids of three vertices of each face
         self.ti_Dm_inv = ti.Matrix.field(self.dim, self.dim, real, self.n_elements)  # The inverse of the init elements -- Dm
         self.ti_F = ti.Matrix.field(self.dim, self.dim, real, self.n_elements)
-        # ti_A = ti.Matrix.field(dim * dim, dim * (dim + 1), real, n_elements * 2)
         self.ti_A = ti.field(real, (self.n_elements * 2, self.dim * self.dim, self.dim * (self.dim + 1)))
         self.ti_A_i = ti.field(real, shape=(self.dim * self.dim, self.dim * (self.dim + 1)))
-        # A_i = ti.field(real, shape=(dim * dim, dim * (dim + 1)))
         self.ti_q_idx_vec = ti.field(ti.int32, (self.n_elements, self.dim * (self.dim + 1)))
         self.ti_Bp = ti.Matrix.field(self.dim, self.dim, real, self.n_elements * 2)
-        # ti_rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
         self.ti_Sn = ti.field(real, self.n_vertices * self.dim)
-        # self.ti_lhs_matrix = ti.field(real, shape=(self.n_vertices * self.dim, self.n_vertices * self.dim))
         # potential energy of each element(face) for linear coratated elasticity material.
         self.ti_phi = ti.field(real, self.n_elements)
         self.ti_weight_strain = ti.field(real, self.n_elements)   # self.mu * 2 * self.volume
         self.ti_weight_volume = ti.field(real, self.n_elements)   # self.lam * self.dim * self.volume
-        if self.dim == 3:
-            self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
-            self.center = self.case_info['center']
-        self.mesh.enable_connectivity()
-
-        self.pos_init_out = []
-        self.ti_center = []
-        self.exf_name = ""
-        self.ring_mag = 1.0
-        self.ring_angle = 0.0
-        self.ring_width = 0.2
-        self.ring_circle_radius = 0.2
-        self.dir_mag = 1.0
-        self.dir_ang1 = 45.0
-        self.dir_ang2 = 45.0
-
-
-    def initial(self):
         if self.dim == 2:
             self.initial_com = ti.Vector([0.0, 0.0])
         else:
             self.initial_com = ti.Vector([0.0, 0.0, 0.0])
+            self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
+        self.mesh.enable_connectivity()
 
+        ################################ force field ################################
+        self.ti_ex_force = ti.Vector.field(self.dim, real, self.n_vertices)
+        self.exf_mag = 0.0
+        self.force_type = 'None'
         if self.dim == 2:
+            self.exf_angle = 0.0
+        else:
+            self.center = self.case_info['center']
+            self.ring_mag = 1.0
+            self.ring_angle = 0.0
+            self.ring_width = 0.2
+            self.ring_circle_radius = 0.2
+            self.ti_center = ti.Vector([self.center[0], self.center[1], self.center[2]])
+            self.exf_angle1 = 0.0
+            self.exf_angle2 = 0.0
+            self.min_sphere_radius = self.case_info['min_sphere_radius']
+
+    def initial(self):
+        if self.dim == 2:
+            self.initial_com = ti.Vector([0.0, 0.0])
             self.ti_elements.from_numpy(self.mesh.faces)
         else:
+            self.initial_com = ti.Vector([0.0, 0.0, 0.0])
             self.ti_elements.from_numpy(self.mesh.elements)
             self.ti_center = ti.Vector([self.center[0], self.center[1], self.center[2]])
 
@@ -206,7 +205,6 @@ class PDSimulation:
         self.ti_q_idx_vec.fill(0)
         self.ti_Bp.fill(0)
         self.ti_Sn.fill(0)
-        # self.ti_lhs_matrix.fill(0)
         self.ti_phi.fill(0)
         self.ti_weight_strain.fill(0)
         self.ti_weight_volume.fill(0)
@@ -235,16 +233,35 @@ class PDSimulation:
     def set_force(self, force_info):
         if force_info['dim'] != self.case_info['dim']:
             raise AttributeError("Input force dim is not equal to the simulator's dim!")
-        if force_info['dim'] == 2:
-            self.exf_angle = force_info['exf_angle']
-            self.exf_mag = force_info['exf_mag']
-            dir_force = ti.Vector(get_force_field(self.exf_mag, self.exf_angle))
+        self.force_type = force_info['force_type']
+        if force_info['force_type'] == 'dir':
+            if force_info['dim'] == 2:
+                self.exf_angle = force_info['exf_angle']
+                self.exf_mag = force_info['exf_mag']
+                dir_force = ti.Vector(get_force_field(self.exf_mag, self.exf_angle))
+            else:
+                self.exf_angle1 = force_info['exf_angle1']
+                self.exf_angle2 = force_info['exf_angle2']
+                self.exf_mag = force_info['exf_mag']
+                dir_force = ti.Vector(get_force_field(self.exf_mag, self.exf_angle1, self.exf_angle2, 3))
+            self.set_dir_force(dir_force)
+        elif force_info['force_type'] == 'ring':
+            if force_info['dim'] == 2:
+                raise TypeError("Dim 2 doesn't have ring force field.")
+            else:
+                self.ring_mag = force_info['ring_mag']
+                self.ring_width = force_info['ring_width']
+                self.ring_angle = force_info['ring_angle']
+        elif force_info['force_type'] == 'ring_circle':
+            if force_info['dim'] == 2:
+                raise TypeError("Dim 2 doesn't have ring force field.")
+            else:
+                self.ring_mag = force_info['ring_mag']
+                self.ring_width = force_info['ring_width']
+                self.ring_angle = force_info['ring_angle']
+                self.ring_circle_radius = force_info['ring_circle_radius']
         else:
-            self.exf_angle1 = force_info['exf_angle1']
-            self.exf_angle2 = force_info['exf_angle2']
-            self.exf_mag = force_info['exf_mag']
-            dir_force = ti.Vector(get_force_field(self.exf_mag, self.exf_angle1, self.exf_angle2, 3))
-        self.set_dir_force(dir_force)
+            raise TypeError("The input force type is invalid")
 
     @ti.kernel
     def set_ring_force_3D(self):
@@ -252,13 +269,20 @@ class PDSimulation:
             self.ti_ex_force[i] = get_ring_force_field(self.ring_mag, self.ring_width,
                                                        self.ti_center, self.ti_pos[i],
                                                        self.ring_angle, 3)
+
     @ti.kernel
     def set_ring_circle_force_3D(self):
         for i in range(self.n_vertices):
-            self.ex_force[i] = get_ring_force_field(self.ring_mag, self.ring_width,
-                                                    self.ti_center, self.x[i], self.ring_angle,
+            self.ti_ex_force[i] = get_ring_circle_force_field(self.ring_mag, self.ring_width,
+                                                    self.ti_center, self.ti_pos[i], self.ring_angle,
                                                     self.ring_circle_radius * self.min_sphere_radius, 3)
 
+    def update_force_field(self):
+        if self.dim == 3:
+            if self.force_type == 'ring':
+                self.set_ring_force_3D()
+            elif self.force_type == 'ring_circle':
+                self.set_ring_circle_force_3D()
 
     @ti.func
     def set_ti_A_i(self, ele_idx, row, col, val):
@@ -832,10 +856,23 @@ class PDSimulation:
 
     def output_aux_data(self, f, pn_pos):
         if self.dim == 3:
-            name_pd = "SimData/PDAnimSeq/PD_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + "_" +\
-                      str(self.exf_angle2) + "_"+str(self.exf_mag)+"_"+str(f).zfill(6)+".obj"
-            name_pn = "SimData/PNAnimSeq/PN_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + "_" +\
-                      str(self.exf_angle2) + "_"+str(self.exf_mag)+"_"+str(f).zfill(6)+".obj"
+            if self.force_type == 'dir':
+                name_pd = "SimData/PDAnimSeq/PD_dir_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + "_" + \
+                          str(self.exf_angle2) + "_"+str(self.exf_mag)+"_"+str(f).zfill(6)+".obj"
+                name_pn = "SimData/PNAnimSeq/PN_dir" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + "_" + \
+                          str(self.exf_angle2) + "_"+str(self.exf_mag)+"_"+str(f).zfill(6)+".obj"
+            elif self.force_type == 'ring':
+                name_pd = "SimData/PDAnimSeq/PD_ring_" + self.case_info['case_name'] + "_" + str(self.ring_mag) + "_" + \
+                          str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
+                name_pn = "SimData/PNAnimSeq/PN_ring_" + self.case_info['case_name'] + "_" + str(self.ring_mag) + "_" + \
+                          str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
+            elif self.force_type == 'ring_circle':
+                name_pd = "SimData/PDAnimSeq/PD_ringC_" + self.case_info['case_name'] + "_" + str(self.ring_mag) + "_" + \
+                          str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
+                name_pn = "SimData/PNAnimSeq/PN_ringC_" + self.case_info['case_name'] + "_" + str(self.ring_mag) + "_" + \
+                          str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
+
+
             output_3d_seq(self.ti_pos.to_numpy(), self.boundary_triangles, name_pd)
             output_3d_seq(pn_pos.to_numpy(), self.boundary_triangles, name_pn)
 
@@ -874,6 +911,7 @@ class PDSimulation:
             print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
             t_0 = time.time()
             # self.set_ring_force_3D()
+            self.update_force_field()
             self.build_sn()
             self.warm_up()  # Warm up
 
