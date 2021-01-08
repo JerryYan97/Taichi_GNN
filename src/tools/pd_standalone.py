@@ -18,7 +18,7 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1001
+test_case = 1007
 case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -114,6 +114,7 @@ def init():
 # Backup Settings:
 # Bunny: ti.Vector([0.0, 0.0, 0.1])
 # Dragon:
+# Dinosaur:
 @ti.kernel
 def set_exforce():
     if ti.static(dim == 2):
@@ -121,7 +122,7 @@ def set_exforce():
             ti_ex_force[i] = ti.Vector(get_force_field(6, -45.0))
     else:
         for i in range(n_vertices):
-            ti_ex_force[i] = ti.Vector(get_force_field(6.0, 45.0, 45.0, 3))
+            ti_ex_force[i] = ti.Vector(get_force_field(0.1, 45.0, 45.0, 3))
 
 
 @ti.kernel
@@ -236,8 +237,9 @@ def fill_idx_vec(ele_idx):
 
 
 @ti.kernel
-def precomputation(lhs_matrix_np: ti.ext_arr()):
+def precomputation(lhs_mat_row: ti.ext_arr(), lhs_mat_col: ti.ext_arr(), lhs_mat_val: ti.ext_arr()):
     dimp = dim+1
+    sparse_used_idx_cnt = 0
     for e_it in range(n_elements):
         if ti.static(dim == 2):
             ia, ib, ic = ti_elements[e_it]
@@ -322,27 +324,11 @@ def precomputation(lhs_matrix_np: ti.ext_arr()):
                 set_ti_A_i(t * n_elements + i, 8, 8, e23)
                 set_ti_A_i(t * n_elements + i, 8, 11, e33)
 
-    # Add strain and area/volume constraints to the lhs matrix
-    # for ele_idx in range(n_elements):
-    #     for t in range(2):
-    #         fill_idx_vec(ele_idx)
-    #
-    #         # May need more considerations:
-    #         for A_row_idx in range(dim * (dim + 1)):
-    #             for A_col_idx in range(dim * (dim + 1)):
-    #                 lhs_row_idx = ti_q_idx_vec[ele_idx, A_row_idx]
-    #                 lhs_col_idx = ti_q_idx_vec[ele_idx, A_col_idx]
-    #                 for idx in range(dim * dim):
-    #                     weight = 0.0
-    #                     if t == 0:
-    #                         weight = ti_weight_strain[ele_idx]
-    #                     else:
-    #                         weight = ti_weight_volume[ele_idx]
-    #                     lhs_matrix_np[lhs_row_idx, lhs_col_idx] += (ti_A[ele_idx, idx, A_row_idx] * ti_A[ele_idx, idx, A_col_idx] * weight)
-
     # Sparse modification Changed:
     for ele_idx in range(n_elements):
         fill_idx_vec(ele_idx)
+        ele_global_start_idx = ele_idx * dim * (dim + 1) * dim * (dim + 1)
+        ele_offset_idx = 0
         for A_row_idx in range(dim * (dim + 1)):
             for A_col_idx in range(dim * (dim + 1)):
                 lhs_row_idx = ti_q_idx_vec[ele_idx, A_row_idx]
@@ -384,23 +370,46 @@ def precomputation(lhs_matrix_np: ti.ext_arr()):
                     cur_sparse_val += (ti_A[ele_idx, 9, A_row_idx] * ti_A[ele_idx, 9, A_col_idx] * weight_volume)
                     cur_sparse_val += (ti_A[ele_idx, 10, A_row_idx] * ti_A[ele_idx, 10, A_col_idx] * weight_volume)
                     cur_sparse_val += (ti_A[ele_idx, 11, A_row_idx] * ti_A[ele_idx, 11, A_col_idx] * weight_volume)
-                lhs_matrix_np[lhs_row_idx, lhs_col_idx] += cur_sparse_val
+                # lhs_matrix_np[lhs_row_idx, lhs_col_idx] += cur_sparse_val
+                cur_idx = ele_global_start_idx + ele_offset_idx
+                lhs_mat_row[cur_idx] = lhs_row_idx
+                lhs_mat_col[cur_idx] = lhs_col_idx
+                lhs_mat_val[cur_idx] = cur_sparse_val
+                ele_offset_idx += 1
+    sparse_used_idx_cnt += n_elements * dim * (dim + 1) * dim * (dim + 1)
 
-    # Add positional constraints to the lhs matrix
-    for i in range(n_vertices):
-        if ti_boundary_labels[i] == 1:
-            q_i_x_idx = i * dim
-            q_i_y_idx = i * dim + 1
-            lhs_matrix_np[q_i_x_idx, q_i_x_idx] += m_weight_positional  # This is the weight of positional constraints
-            lhs_matrix_np[q_i_y_idx, q_i_y_idx] += m_weight_positional
-            if ti.static(dim == 3):
-                q_i_z_idx = i * dim + 2
-                lhs_matrix_np[q_i_z_idx, q_i_z_idx] += m_weight_positional
+    # # Add positional constraints to the lhs matrix
+    # for i in range(n_vertices):
+    #     if ti_boundary_labels[i] == 1:
+    #         q_i_x_idx = i * dim
+    #         q_i_y_idx = i * dim + 1
+    #         lhs_matrix_np[q_i_x_idx, q_i_x_idx] += m_weight_positional  # This is the weight of positional constraints
+    #         lhs_matrix_np[q_i_y_idx, q_i_y_idx] += m_weight_positional
+    #         if ti.static(dim == 3):
+    #             q_i_z_idx = i * dim + 2
+    #             lhs_matrix_np[q_i_z_idx, q_i_z_idx] += m_weight_positional
+    #
+    # # Construct lhs matrix without constraints
+    # for i in range(n_vertices):
+    #     for d in ti.static(range(dim)):
+    #         lhs_matrix_np[i * dim + d, i * dim + d] += (ti_mass[i] / (dt * dt))
 
-    # Construct lhs matrix without constraints
+    # Add positional constraints and mass terms to the lhs matrix
     for i in range(n_vertices):
-        for d in ti.static(range(dim)):
-            lhs_matrix_np[i * dim + d, i * dim + d] += (ti_mass[i] / (dt * dt))
+        global_start_idx = sparse_used_idx_cnt + i * dim
+        local_offset_idx = 0
+        for d in range(dim):
+            cur_sparse_val = 0.0
+            cur_sparse_val += (ti_mass[i] / (dt * dt))
+            if ti_boundary_labels[i] == 1:
+                cur_sparse_val += m_weight_positional
+            lhs_row_idx, lhs_col_idx = i * dim + d, i * dim + d
+            cur_idx = global_start_idx + local_offset_idx
+            lhs_mat_row[cur_idx] = lhs_row_idx
+            lhs_mat_col[cur_idx] = lhs_col_idx
+            lhs_mat_val[cur_idx] = cur_sparse_val
+            local_offset_idx += 1
+
 
 
 @ti.func
@@ -707,15 +716,22 @@ if __name__ == "__main__":
     # video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
     frame_counter = 0
     rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
-    lhs_matrix_np = np.zeros(shape=(n_vertices * dim, n_vertices * dim), dtype=np.float64)
+    # lhs_matrix_np = np.zeros(shape=(n_vertices * dim, n_vertices * dim), dtype=np.float64)
+    lhs_mat_val = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
+    lhs_mat_row = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
+    lhs_mat_col = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
 
     init()
 
     # One direction force field
     set_exforce()
     init_mesh_DmInv(dirichlet, len(dirichlet))
-    precomputation(lhs_matrix_np)
-    s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
+    # precomputation(lhs_matrix_np)
+    precomputation(lhs_mat_row, lhs_mat_col, lhs_mat_val)
+    # s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
+    s_lhs_matrix_np = sparse.csr_matrix((lhs_mat_val, (lhs_mat_row, lhs_mat_col)),
+                                        shape=(n_vertices * dim, n_vertices * dim),
+                                        dtype=np.float64)
     pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
     wait = input("PRESS ENTER TO CONTINUE.")
