@@ -18,7 +18,7 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1003
+test_case = 1001
 case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -322,34 +322,80 @@ def precomputation(lhs_matrix_np: ti.ext_arr()):
                 set_ti_A_i(t * n_elements + i, 8, 8, e23)
                 set_ti_A_i(t * n_elements + i, 8, 11, e33)
 
-    # # Add strain and area/volume constraints to the lhs matrix
-    for ele_idx in range(n_elements):
-        for t in range(2):
-            fill_idx_vec(ele_idx)
+    # Add strain and area/volume constraints to the lhs matrix
+    # for ele_idx in range(n_elements):
+    #     for t in range(2):
+    #         fill_idx_vec(ele_idx)
+    #
+    #         # May need more considerations:
+    #         for A_row_idx in range(dim * (dim + 1)):
+    #             for A_col_idx in range(dim * (dim + 1)):
+    #                 lhs_row_idx = ti_q_idx_vec[ele_idx, A_row_idx]
+    #                 lhs_col_idx = ti_q_idx_vec[ele_idx, A_col_idx]
+    #                 for idx in range(dim * dim):
+    #                     weight = 0.0
+    #                     if t == 0:
+    #                         weight = ti_weight_strain[ele_idx]
+    #                     else:
+    #                         weight = ti_weight_volume[ele_idx]
+    #                     lhs_matrix_np[lhs_row_idx, lhs_col_idx] += (ti_A[ele_idx, idx, A_row_idx] * ti_A[ele_idx, idx, A_col_idx] * weight)
 
-            # May need more considerations:
-            for A_row_idx in range(dim * (dim + 1)):
-                for A_col_idx in range(dim * (dim + 1)):
-                    lhs_row_idx = ti_q_idx_vec[ele_idx, A_row_idx]
-                    lhs_col_idx = ti_q_idx_vec[ele_idx, A_col_idx]
-                    for idx in range(dim * dim):
-                        weight = 0.0
-                        if t == 0:
-                            weight = ti_weight_strain[ele_idx]
-                        else:
-                            weight = ti_weight_volume[ele_idx]
-                        lhs_matrix_np[lhs_row_idx, lhs_col_idx] += (ti_A[ele_idx, idx, A_row_idx] * ti_A[ele_idx, idx, A_col_idx] * weight)
+    # Sparse modification Changed:
+    for ele_idx in range(n_elements):
+        fill_idx_vec(ele_idx)
+        for A_row_idx in range(dim * (dim + 1)):
+            for A_col_idx in range(dim * (dim + 1)):
+                lhs_row_idx = ti_q_idx_vec[ele_idx, A_row_idx]
+                lhs_col_idx = ti_q_idx_vec[ele_idx, A_col_idx]
+                weight_strain = ti_weight_strain[ele_idx]
+                weight_volume = ti_weight_volume[ele_idx]
+                cur_sparse_val = 0.0
+                if ti.static(dim) == 2:
+                    cur_sparse_val += (ti_A[ele_idx, 0, A_row_idx] * ti_A[ele_idx, 0, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 1, A_row_idx] * ti_A[ele_idx, 1, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 2, A_row_idx] * ti_A[ele_idx, 2, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 3, A_row_idx] * ti_A[ele_idx, 3, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 0, A_row_idx] * ti_A[ele_idx, 0, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 1, A_row_idx] * ti_A[ele_idx, 1, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 2, A_row_idx] * ti_A[ele_idx, 2, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 3, A_row_idx] * ti_A[ele_idx, 3, A_col_idx] * weight_volume)
+                else:
+                    cur_sparse_val += (ti_A[ele_idx, 0, A_row_idx] * ti_A[ele_idx, 0, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 1, A_row_idx] * ti_A[ele_idx, 1, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 2, A_row_idx] * ti_A[ele_idx, 2, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 3, A_row_idx] * ti_A[ele_idx, 3, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 4, A_row_idx] * ti_A[ele_idx, 4, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 5, A_row_idx] * ti_A[ele_idx, 5, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 6, A_row_idx] * ti_A[ele_idx, 6, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 7, A_row_idx] * ti_A[ele_idx, 7, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 8, A_row_idx] * ti_A[ele_idx, 8, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 9, A_row_idx] * ti_A[ele_idx, 9, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 10, A_row_idx] * ti_A[ele_idx, 10, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 11, A_row_idx] * ti_A[ele_idx, 11, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 0, A_row_idx] * ti_A[ele_idx, 0, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 1, A_row_idx] * ti_A[ele_idx, 1, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 2, A_row_idx] * ti_A[ele_idx, 2, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 3, A_row_idx] * ti_A[ele_idx, 3, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 4, A_row_idx] * ti_A[ele_idx, 4, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 5, A_row_idx] * ti_A[ele_idx, 5, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 6, A_row_idx] * ti_A[ele_idx, 6, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 7, A_row_idx] * ti_A[ele_idx, 7, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 8, A_row_idx] * ti_A[ele_idx, 8, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 9, A_row_idx] * ti_A[ele_idx, 9, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 10, A_row_idx] * ti_A[ele_idx, 10, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 11, A_row_idx] * ti_A[ele_idx, 11, A_col_idx] * weight_volume)
+                lhs_matrix_np[lhs_row_idx, lhs_col_idx] += cur_sparse_val
 
     # Add positional constraints to the lhs matrix
     for i in range(n_vertices):
         if ti_boundary_labels[i] == 1:
             q_i_x_idx = i * dim
             q_i_y_idx = i * dim + 1
-            lhs_matrix_np[q_i_x_idx, q_i_x_idx] += (m_weight_positional)  # This is the weight of positional constraints
-            lhs_matrix_np[q_i_y_idx, q_i_y_idx] += (m_weight_positional)
+            lhs_matrix_np[q_i_x_idx, q_i_x_idx] += m_weight_positional  # This is the weight of positional constraints
+            lhs_matrix_np[q_i_y_idx, q_i_y_idx] += m_weight_positional
             if ti.static(dim == 3):
                 q_i_z_idx = i * dim + 2
-                lhs_matrix_np[q_i_z_idx, q_i_z_idx] += (m_weight_positional)
+                lhs_matrix_np[q_i_z_idx, q_i_z_idx] += m_weight_positional
 
     # Construct lhs matrix without constraints
     for i in range(n_vertices):
@@ -665,7 +711,8 @@ if __name__ == "__main__":
 
     init()
 
-    # set_exforce()
+    # One direction force field
+    set_exforce()
     init_mesh_DmInv(dirichlet, len(dirichlet))
     precomputation(lhs_matrix_np)
     s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
@@ -692,7 +739,7 @@ if __name__ == "__main__":
     plot_array = []
 
     while frame_counter < 1000:
-        set_ring_force_3D()
+        # set_ring_force_3D()
         build_sn()
         # Warm up:
         warm_up()
