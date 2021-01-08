@@ -18,15 +18,16 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1007
+test_case = 1
 case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
 mesh_offset = case_info['mesh_offset']
 dim = case_info['dim']
-center = case_info['center']
-min_sphere_radius = case_info['min_sphere_radius']
+if dim == 3:
+    center = case_info['center']
+    min_sphere_radius = case_info['min_sphere_radius']
 # cpu 1.27 -- 1003,
 ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
 n_vertices = mesh.num_vertices
@@ -80,8 +81,8 @@ ti_Sn = ti.field(real, n_vertices * dim)
 ti_phi = ti.field(real, n_elements)
 ti_weight_strain = ti.field(real, n_elements)
 ti_weight_volume = ti.field(real, n_elements)
-
-ti_center = ti.Vector([center[0], center[1], center[2]])
+if dim == 3:
+    ti_center = ti.Vector([center[0], center[1], center[2]])
 
 
 def init():
@@ -377,22 +378,6 @@ def precomputation(lhs_mat_row: ti.ext_arr(), lhs_mat_col: ti.ext_arr(), lhs_mat
                 lhs_mat_val[cur_idx] = cur_sparse_val
                 ele_offset_idx += 1
     sparse_used_idx_cnt += n_elements * dim * (dim + 1) * dim * (dim + 1)
-
-    # # Add positional constraints to the lhs matrix
-    # for i in range(n_vertices):
-    #     if ti_boundary_labels[i] == 1:
-    #         q_i_x_idx = i * dim
-    #         q_i_y_idx = i * dim + 1
-    #         lhs_matrix_np[q_i_x_idx, q_i_x_idx] += m_weight_positional  # This is the weight of positional constraints
-    #         lhs_matrix_np[q_i_y_idx, q_i_y_idx] += m_weight_positional
-    #         if ti.static(dim == 3):
-    #             q_i_z_idx = i * dim + 2
-    #             lhs_matrix_np[q_i_z_idx, q_i_z_idx] += m_weight_positional
-    #
-    # # Construct lhs matrix without constraints
-    # for i in range(n_vertices):
-    #     for d in ti.static(range(dim)):
-    #         lhs_matrix_np[i * dim + d, i * dim + d] += (ti_mass[i] / (dt * dt))
 
     # Add positional constraints and mass terms to the lhs matrix
     for i in range(n_vertices):
@@ -716,7 +701,6 @@ if __name__ == "__main__":
     # video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
     frame_counter = 0
     rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
-    # lhs_matrix_np = np.zeros(shape=(n_vertices * dim, n_vertices * dim), dtype=np.float64)
     lhs_mat_val = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
     lhs_mat_row = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
     lhs_mat_col = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
@@ -726,9 +710,7 @@ if __name__ == "__main__":
     # One direction force field
     set_exforce()
     init_mesh_DmInv(dirichlet, len(dirichlet))
-    # precomputation(lhs_matrix_np)
     precomputation(lhs_mat_row, lhs_mat_col, lhs_mat_val)
-    # s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
     s_lhs_matrix_np = sparse.csr_matrix((lhs_mat_val, (lhs_mat_row, lhs_mat_col)),
                                         shape=(n_vertices * dim, n_vertices * dim),
                                         dtype=np.float64)
