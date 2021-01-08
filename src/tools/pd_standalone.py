@@ -18,7 +18,7 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1
+test_case = 1001
 case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -29,7 +29,7 @@ if dim == 3:
     center = case_info['center']
     min_sphere_radius = case_info['min_sphere_radius']
 # cpu 1.27 -- 1003,
-ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
+ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
 n_vertices = mesh.num_vertices
 
 # 2D and 3D scene settings:
@@ -356,9 +356,6 @@ def precomputation(lhs_mat_row: ti.ext_arr(), lhs_mat_col: ti.ext_arr(), lhs_mat
                     cur_sparse_val += (ti_A[ele_idx, 6, A_row_idx] * ti_A[ele_idx, 6, A_col_idx] * weight_strain)
                     cur_sparse_val += (ti_A[ele_idx, 7, A_row_idx] * ti_A[ele_idx, 7, A_col_idx] * weight_strain)
                     cur_sparse_val += (ti_A[ele_idx, 8, A_row_idx] * ti_A[ele_idx, 8, A_col_idx] * weight_strain)
-                    cur_sparse_val += (ti_A[ele_idx, 9, A_row_idx] * ti_A[ele_idx, 9, A_col_idx] * weight_strain)
-                    cur_sparse_val += (ti_A[ele_idx, 10, A_row_idx] * ti_A[ele_idx, 10, A_col_idx] * weight_strain)
-                    cur_sparse_val += (ti_A[ele_idx, 11, A_row_idx] * ti_A[ele_idx, 11, A_col_idx] * weight_strain)
                     cur_sparse_val += (ti_A[ele_idx, 0, A_row_idx] * ti_A[ele_idx, 0, A_col_idx] * weight_volume)
                     cur_sparse_val += (ti_A[ele_idx, 1, A_row_idx] * ti_A[ele_idx, 1, A_col_idx] * weight_volume)
                     cur_sparse_val += (ti_A[ele_idx, 2, A_row_idx] * ti_A[ele_idx, 2, A_col_idx] * weight_volume)
@@ -368,9 +365,6 @@ def precomputation(lhs_mat_row: ti.ext_arr(), lhs_mat_col: ti.ext_arr(), lhs_mat
                     cur_sparse_val += (ti_A[ele_idx, 6, A_row_idx] * ti_A[ele_idx, 6, A_col_idx] * weight_volume)
                     cur_sparse_val += (ti_A[ele_idx, 7, A_row_idx] * ti_A[ele_idx, 7, A_col_idx] * weight_volume)
                     cur_sparse_val += (ti_A[ele_idx, 8, A_row_idx] * ti_A[ele_idx, 8, A_col_idx] * weight_volume)
-                    cur_sparse_val += (ti_A[ele_idx, 9, A_row_idx] * ti_A[ele_idx, 9, A_col_idx] * weight_volume)
-                    cur_sparse_val += (ti_A[ele_idx, 10, A_row_idx] * ti_A[ele_idx, 10, A_col_idx] * weight_volume)
-                    cur_sparse_val += (ti_A[ele_idx, 11, A_row_idx] * ti_A[ele_idx, 11, A_col_idx] * weight_volume)
                 # lhs_matrix_np[lhs_row_idx, lhs_col_idx] += cur_sparse_val
                 cur_idx = ele_global_start_idx + ele_offset_idx
                 lhs_mat_row[cur_idx] = lhs_row_idx

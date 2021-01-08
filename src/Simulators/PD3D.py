@@ -390,9 +390,9 @@ class PDSimulation:
                 ele_idx, 11] = idx_d_x_idx, idx_d_y_idx, idx_d_z_idx
 
     @ti.kernel
-    def precomputation(self, lhs_matrix_np: ti.ext_arr()):
+    def precomputation(self, lhs_mat_row: ti.ext_arr(), lhs_mat_col: ti.ext_arr(), lhs_mat_val: ti.ext_arr()):
         dimp = self.dim + 1
-        # print("Precomputation starts")
+        sparse_used_idx_cnt = 0
         for e_it in range(self.n_elements):
             if ti.static(self.dim == 2):
                 ia, ib, ic = self.ti_elements[e_it]
@@ -405,11 +405,9 @@ class PDSimulation:
                 self.ti_mass[idx_b] += self.ti_volume[e_it] / dimp * self.rho
                 self.ti_mass[idx_c] += self.ti_volume[e_it] / dimp * self.rho
                 self.ti_mass[idx_d] += self.ti_volume[e_it] / dimp * self.rho
-                # print("ti_elements[e_it]:\n", ti_elements[e_it])
 
         # Construct A_i matrix for every element / Build A for all the constraints:
         # Strain constraints and area constraints
-        # print("A init starts")
         for i in range(self.n_elements):
             for t in ti.static(range(2)):
                 if ti.static(self.dim == 2):
@@ -432,6 +430,7 @@ class PDSimulation:
                     self.set_ti_A_i(t * self.n_elements + i, 3, 1, -b - d)
                     self.set_ti_A_i(t * self.n_elements + i, 3, 3, b)
                     self.set_ti_A_i(t * self.n_elements + i, 3, 5, d)
+
                 else:
                     # Get (Dm)^-1 for this element:
                     Dm_inv_i = self.ti_Dm_inv[i]
@@ -478,43 +477,69 @@ class PDSimulation:
                     self.set_ti_A_i(t * self.n_elements + i, 8, 8, e23)
                     self.set_ti_A_i(t * self.n_elements + i, 8, 11, e33)
 
-        # print("Constraints init starts")
-        # # Add strain and area/volume constraints to the lhs matrix
+        # Sparse modification Changed:
         for ele_idx in range(self.n_elements):
-            for t in range(2):
-                self.fill_idx_vec(ele_idx)
-                # May need more considerations:
-                for A_row_idx in range(self.dim * (self.dim + 1)):
-                    for A_col_idx in range(self.dim * (self.dim + 1)):
-                        lhs_row_idx = self.ti_q_idx_vec[ele_idx, A_row_idx]
-                        lhs_col_idx = self.ti_q_idx_vec[ele_idx, A_col_idx]
-                        for idx in range(self.dim * self.dim):
-                            weight = 0.0
-                            if t == 0:
-                                weight = self.ti_weight_strain[ele_idx]
-                            else:
-                                weight = self.ti_weight_volume[ele_idx]
-                            lhs_matrix_np[lhs_row_idx, lhs_col_idx] += (self.ti_A[ele_idx, idx, A_row_idx] *
-                                                                        self.ti_A[ele_idx, idx, A_col_idx] * weight)
-        # print("Position constraints starts")
-        # Add positional constraints to the lhs matrix
-        for i in range(self.n_vertices):
-            if self.ti_boundary_labels[i] == 1:
-                q_i_x_idx = i * self.dim
-                q_i_y_idx = i * self.dim + 1
-                lhs_matrix_np[q_i_x_idx, q_i_x_idx] += self.m_weight_positional  # This is the weight of positional constraints
-                lhs_matrix_np[q_i_y_idx, q_i_y_idx] += self.m_weight_positional
-                if ti.static(self.dim == 3):
-                    q_i_z_idx = i * self.dim + 2
-                    lhs_matrix_np[q_i_z_idx, q_i_z_idx] += self.m_weight_positional
+            self.fill_idx_vec(ele_idx)
+            ele_global_start_idx = ele_idx * self.dim * (self.dim + 1) * self.dim * (self.dim + 1)
+            ele_offset_idx = 0
+            for A_row_idx in range(self.dim * (self.dim + 1)):
+                for A_col_idx in range(self.dim * (self.dim + 1)):
+                    lhs_row_idx = self.ti_q_idx_vec[ele_idx, A_row_idx]
+                    lhs_col_idx = self.ti_q_idx_vec[ele_idx, A_col_idx]
+                    weight_strain = self.ti_weight_strain[ele_idx]
+                    weight_volume = self.ti_weight_volume[ele_idx]
+                    cur_sparse_val = 0.0
+                    if ti.static(self.dim) == 2:
+                        cur_sparse_val += (self.ti_A[ele_idx, 0, A_row_idx] * self.ti_A[ele_idx, 0, A_col_idx] * weight_strain)
+                        cur_sparse_val += (self.ti_A[ele_idx, 1, A_row_idx] * self.ti_A[ele_idx, 1, A_col_idx] * weight_strain)
+                        cur_sparse_val += (self.ti_A[ele_idx, 2, A_row_idx] * self.ti_A[ele_idx, 2, A_col_idx] * weight_strain)
+                        cur_sparse_val += (self.ti_A[ele_idx, 3, A_row_idx] * self.ti_A[ele_idx, 3, A_col_idx] * weight_strain)
+                        cur_sparse_val += (self.ti_A[ele_idx, 0, A_row_idx] * self.ti_A[ele_idx, 0, A_col_idx] * weight_volume)
+                        cur_sparse_val += (self.ti_A[ele_idx, 1, A_row_idx] * self.ti_A[ele_idx, 1, A_col_idx] * weight_volume)
+                        cur_sparse_val += (self.ti_A[ele_idx, 2, A_row_idx] * self.ti_A[ele_idx, 2, A_col_idx] * weight_volume)
+                        cur_sparse_val += (self.ti_A[ele_idx, 3, A_row_idx] * self.ti_A[ele_idx, 3, A_col_idx] * weight_volume)
+                    else:
+                        cur_sparse_val += (self.ti_A[ele_idx, 0, A_row_idx] * self.ti_A[ele_idx, 0, A_col_idx] * weight_strain)
+                        cur_sparse_val += (self.ti_A[ele_idx, 1, A_row_idx] * self.ti_A[ele_idx, 1, A_col_idx] * weight_strain)
+                        cur_sparse_val += (self.ti_A[ele_idx, 2, A_row_idx] * self.ti_A[ele_idx, 2, A_col_idx] * weight_strain)
+                        cur_sparse_val += (self.ti_A[ele_idx, 3, A_row_idx] * self.ti_A[ele_idx, 3, A_col_idx] * weight_strain)
+                        cur_sparse_val += (self.ti_A[ele_idx, 4, A_row_idx] * self.ti_A[ele_idx, 4, A_col_idx] * weight_strain)
+                        cur_sparse_val += (self.ti_A[ele_idx, 5, A_row_idx] * self.ti_A[ele_idx, 5, A_col_idx] * weight_strain)
+                        cur_sparse_val += (self.ti_A[ele_idx, 6, A_row_idx] * self.ti_A[ele_idx, 6, A_col_idx] * weight_strain)
+                        cur_sparse_val += (self.ti_A[ele_idx, 7, A_row_idx] * self.ti_A[ele_idx, 7, A_col_idx] * weight_strain)
+                        cur_sparse_val += (self.ti_A[ele_idx, 8, A_row_idx] * self.ti_A[ele_idx, 8, A_col_idx] * weight_strain)
+                        cur_sparse_val += (self.ti_A[ele_idx, 0, A_row_idx] * self.ti_A[ele_idx, 0, A_col_idx] * weight_volume)
+                        cur_sparse_val += (self.ti_A[ele_idx, 1, A_row_idx] * self.ti_A[ele_idx, 1, A_col_idx] * weight_volume)
+                        cur_sparse_val += (self.ti_A[ele_idx, 2, A_row_idx] * self.ti_A[ele_idx, 2, A_col_idx] * weight_volume)
+                        cur_sparse_val += (self.ti_A[ele_idx, 3, A_row_idx] * self.ti_A[ele_idx, 3, A_col_idx] * weight_volume)
+                        cur_sparse_val += (self.ti_A[ele_idx, 4, A_row_idx] * self.ti_A[ele_idx, 4, A_col_idx] * weight_volume)
+                        cur_sparse_val += (self.ti_A[ele_idx, 5, A_row_idx] * self.ti_A[ele_idx, 5, A_col_idx] * weight_volume)
+                        cur_sparse_val += (self.ti_A[ele_idx, 6, A_row_idx] * self.ti_A[ele_idx, 6, A_col_idx] * weight_volume)
+                        cur_sparse_val += (self.ti_A[ele_idx, 7, A_row_idx] * self.ti_A[ele_idx, 7, A_col_idx] * weight_volume)
+                        cur_sparse_val += (self.ti_A[ele_idx, 8, A_row_idx] * self.ti_A[ele_idx, 8, A_col_idx] * weight_volume)
+                    # lhs_matrix_np[lhs_row_idx, lhs_col_idx] += cur_sparse_val
+                    cur_idx = ele_global_start_idx + ele_offset_idx
+                    lhs_mat_row[cur_idx] = lhs_row_idx
+                    lhs_mat_col[cur_idx] = lhs_col_idx
+                    lhs_mat_val[cur_idx] = cur_sparse_val
+                    ele_offset_idx += 1
+        sparse_used_idx_cnt += self.n_elements * self.dim * (self.dim + 1) * self.dim * (self.dim + 1)
 
-        # print("lhs matrix starts")
-        # Construct lhs matrix without constraints
+        # Add positional constraints and mass terms to the lhs matrix
         for i in range(self.n_vertices):
-            for d in ti.static(range(self.dim)):
-                lhs_matrix_np[i * self.dim + d, i * self.dim + d] += self.ti_mass[i] / (self.dt * self.dt)
-        # print("ti_lhs_mat: after add mass:")
-        # print(ti_lhs_matrix[None])
+            global_start_idx = sparse_used_idx_cnt + i * self.dim
+            local_offset_idx = 0
+            for d in range(self.dim):
+                cur_sparse_val = 0.0
+                cur_sparse_val += (self.ti_mass[i] / (self.dt * self.dt))
+                if self.ti_boundary_labels[i] == 1:
+                    cur_sparse_val += self.m_weight_positional
+                lhs_row_idx, lhs_col_idx = i * self.dim + d, i * self.dim + d
+                cur_idx = global_start_idx + local_offset_idx
+                lhs_mat_row[cur_idx] = lhs_row_idx
+                lhs_mat_col[cur_idx] = lhs_col_idx
+                lhs_mat_val[cur_idx] = cur_sparse_val
+                local_offset_idx += 1
 
     @ti.func
     def compute_Fi(self, i):
@@ -878,13 +903,18 @@ class PDSimulation:
 
     def Run(self, pn, is_test, frame_count, scene_info):
         rhs_np = np.zeros(self.n_vertices * self.dim, dtype=np.float64)
-        lhs_matrix_np = np.zeros(shape=(self.n_vertices * self.dim, self.n_vertices * self.dim), dtype=np.float64)
+        # lhs_matrix_np = np.zeros(shape=(self.n_vertices * self.dim, self.n_vertices * self.dim), dtype=np.float64)
+        lhs_mat_val = np.zeros(shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,), dtype=np.float64)
+        lhs_mat_row = np.zeros(shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,), dtype=np.float64)
+        lhs_mat_col = np.zeros(shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,), dtype=np.float64)
 
         # Init Taichi global variables
         self.init_mesh_DmInv(self.dirichlet, len(self.dirichlet))
-        self.precomputation(lhs_matrix_np)
+        self.precomputation(lhs_mat_row, lhs_mat_col, lhs_mat_val)
         # lhs_matrix_np = self.ti_lhs_matrix.to_numpy()
-        s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
+        s_lhs_matrix_np = sparse.csr_matrix((lhs_mat_val, (lhs_mat_row, lhs_mat_col)),
+                                            shape=(self.n_vertices * self.dim, self.n_vertices * self.dim),
+                                            dtype=np.float64)
         pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
         if self.dim == 2:

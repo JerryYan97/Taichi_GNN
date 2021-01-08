@@ -18,7 +18,7 @@ dt = 0.01
 running_times = 1
 frame_count = 60
 
-test_case = 2
+test_case = 1006
 
 # NOTE: Please remember to save your data. It will delete all files in xxAnimSeq/ or xxData/ when you exe Run.py.
 
@@ -121,7 +121,7 @@ if __name__ == '__main__':
         force_info['force_type'] = 'dir'
         force_info['exf_angle1'] = 45.0
         force_info['exf_angle2'] = 45.0
-        force_info['exf_mag'] = 6
+        force_info['exf_mag'] = 0.001
 
         # 3D ring force field setting
         # force_info['force_type'] = 'ring'
