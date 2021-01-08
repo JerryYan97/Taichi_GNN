@@ -1,7 +1,8 @@
 # from src.Simulators.PN import *
 # from src.Simulators.PD import *
-from src.Simulators.PN3D import *
-from src.Simulators.PD3D import *
+# from src.Simulators.PN3D import *
+# from src.Simulators.PD3D import *
+from src.Simulators.PDSimulator import *
 from src.Utils.reader import read
 import torch
 import os
@@ -16,9 +17,9 @@ nu = 0.4
 dt = 0.01
 
 running_times = 1
-frame_count = 60
+frame_count = 1000
 
-test_case = 1006
+test_case = 1001
 
 # NOTE: Please remember to save your data. It will delete all files in xxAnimSeq/ or xxData/ when you exe Run.py.
 
@@ -103,14 +104,48 @@ if __name__ == '__main__':
     #         pd.Run(pn, is_test, frame_count, scene_info)
 
     # Separately generate 2D and 3D
-    pd = PDSimulation(case_info, dt)
-    pn = PNSimulation(case_info, dt)
-    pd.set_material(rho, E, nu, dt)
-    pn.set_material(rho, E, nu, dt)
-    pd.initial()
-    pn.initial()
-    pn.compute_restT_and_m()
+    # pd = PDSimulation(case_info, dt)
+    # pn = PNSimulation(case_info, dt)
+    # pd.set_material(rho, E, nu, dt)
+    # pn.set_material(rho, E, nu, dt)
+    # pd.initial()
+    # pn.initial()
+    # pn.compute_restT_and_m()
+    #
+    # force_info = {'dim': case_info['dim']}
+    # if case_info['dim'] == 2:
+    #     force_info['force_type'] = 'dir'
+    #     force_info['exf_angle'] = -45.0
+    #     force_info['exf_mag'] = 6
+    # else:
+    #     # 3D direct force field setting
+    #     force_info['force_type'] = 'dir'
+    #     force_info['exf_angle1'] = 45.0
+    #     force_info['exf_angle2'] = 45.0
+    #     force_info['exf_mag'] = 0.001
+    #
+    #     # 3D ring force field setting
+    #     # force_info['force_type'] = 'ring'
+    #     # force_info['ring_mag'] = 1.0
+    #     # force_info['ring_angle'] = 0.0
+    #     # force_info['ring_width'] = 0.2
+    #
+    #     # 3D ring circle force field setting
+    #     # force_info['force_type'] = 'ring_circle'
+    #     # force_info['ring_mag'] = 1.0
+    #     # force_info['ring_angle'] = 0.0
+    #     # force_info['ring_width'] = 0.2
+    #     # force_info['ring_circle_radius'] = 0.2
+    #
+    # pn.set_force(force_info)
+    # pd.set_force(force_info)
+    # pd.Run(pn, is_test, frame_count, scene_info)
 
+    # Test new structure
+    sim_info = {'case_info': case_info, 'dt': dt, 'real': ti.f64}
+    pd = PDSimulation(sim_info)
+    pd.set_material(rho, E, nu)
+    pd.initial()
     force_info = {'dim': case_info['dim']}
     if case_info['dim'] == 2:
         force_info['force_type'] = 'dir'
@@ -121,7 +156,7 @@ if __name__ == '__main__':
         force_info['force_type'] = 'dir'
         force_info['exf_angle1'] = 45.0
         force_info['exf_angle2'] = 45.0
-        force_info['exf_mag'] = 0.001
+        force_info['exf_mag'] = 10.0
 
         # 3D ring force field setting
         # force_info['force_type'] = 'ring'
@@ -135,7 +170,6 @@ if __name__ == '__main__':
         # force_info['ring_angle'] = 0.0
         # force_info['ring_width'] = 0.2
         # force_info['ring_circle_radius'] = 0.2
-
-    pn.set_force(force_info)
     pd.set_force(force_info)
-    pd.Run(pn, is_test, frame_count, scene_info)
+    pd.run(None, is_test, frame_count, scene_info)
+

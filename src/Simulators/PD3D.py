@@ -126,8 +126,6 @@ class PDSimulation:
         self.initial_rel_pos = np.array([self.n_vertices, self.dim])
         self.pi = ti.Vector.field(self.dim, real, self.n_vertices)
         self.qi = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.init_pos = self.mesh.vertices.astype(np.float32)
-        self.init_pos = self.init_pos[:, :self.dim]
 
         # Taichi variables' initialization:
         self.ti_mass = ti.field(real, self.n_vertices)
