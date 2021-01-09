@@ -3,7 +3,10 @@ import taichi as ti
 import sys, os, time
 from scipy import sparse
 from scipy.sparse.linalg import factorized
+from numpy.linalg import inv
+from scipy.linalg import sqrtm
 from .SimulatorBase import SimulatorBase
+import multiprocessing as mp
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.math_tools import svd
 from Utils.utils_visualization import draw_image, update_boundary_mesh
@@ -18,10 +21,78 @@ def calcCenterOfMass(vind, dim, mass, pos):
     sum /= summ
     return sum
 
+def calcA_qq(q_i, dim):
+    sum = np.zeros((dim, dim))
+    for i in range(q_i.shape[0]):
+        sum += np.outer(q_i[i], np.transpose(q_i[i]))
+    return np.linalg.inv(sum)
+
+
+def calcA_pq(p_i, q_i, dim):
+    sum = np.zeros((dim, dim))
+    for i in range(p_i.shape[0]):
+        sum += np.outer(p_i[i], np.transpose(q_i[i]))
+    return sum
+
+
+def calcR(A_pq):
+    S = sqrtm(np.dot(np.transpose(A_pq), A_pq))
+    R = np.dot(A_pq, inv(S))
+    return R
+
+
+def get_local_trans_parallel_call(workloads_list, proc_idx, adj_list, pos, initial_rel_pos, mass, dim):
+    a_final_list = []
+    for vert_idx in range(workloads_list[proc_idx][0], workloads_list[proc_idx][1] + 1):
+        adj_v = adj_list[vert_idx]
+        init_rel_adj_pos = initial_rel_pos[adj_v, :]
+        cur_adj_pos = pos[adj_v, :]
+        com = calcCenterOfMass(adj_v, dim, mass, pos)
+        cur_rel_pos = cur_adj_pos - com[None, :]
+        A_pq = calcA_pq(cur_rel_pos, init_rel_adj_pos, dim)
+        A_qq = calcA_qq(init_rel_adj_pos, dim)
+        A_final = np.matmul(A_pq, A_qq).reshape((1, -1))
+        a_final_list.append(A_final)
+    return a_final_list
+
+
+def get_local_transformation(n_vertices, mesh, pos, init_pos, mass, dim):
+    pool = mp.Pool()
+    # Divide workloads
+    cpu_cnt = mp.cpu_count()
+    works_per_proc_cnt = n_vertices // cpu_cnt
+    workloads_list = []
+    proc_list = []
+    for i in range(cpu_cnt):
+        cur_proc_workload = [i * works_per_proc_cnt, (i + 1) * works_per_proc_cnt - 1]
+        if i == cpu_cnt - 1:
+            cur_proc_workload[1] = n_vertices - 1
+        workloads_list.append(cur_proc_workload)
+
+    adj_list = []
+    for i in range(n_vertices):
+        adj_list.append(np.append(mesh.get_vertex_adjacent_vertices(i), i))
+
+    # Parallel call
+    for t in range(cpu_cnt):
+        proc_list.append(pool.apply_async(func=get_local_trans_parallel_call,
+                                          args=(workloads_list, t, adj_list, pos, init_pos, mass, dim,)))
+
+    # Get results
+    a_finals_list = []
+    for t in range(cpu_cnt):
+        a_finals_list.extend(proc_list[t].get())
+    pool.close()
+    pool.join()
+    return a_finals_list
+
 
 class PDSimulation(SimulatorBase):
     def __init__(self, sim_info):
         super().__init__(sim_info)
+
+        # Mesh
+        self.mesh.enable_connectivity()
 
         # Material and Parameters
         self.m_weight_positional = 1e20
@@ -32,7 +103,7 @@ class PDSimulation(SimulatorBase):
         self.ti_volume = ti.field(self.real, self.n_elements)
         self.ti_x_new = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.ti_x_del = ti.Vector.field(self.dim, self.real, self.n_vertices)
-        self.gradE = ti.field(self.real, shape=200000)  # Keep the shape same as the rhs shape of PN
+        # self.gradE = ti.field(self.real, shape=200000)  # Keep the shape same as the rhs shape of PN
         self.ti_last_pos_new = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.ti_boundary_labels = ti.field(int, self.n_vertices)
         self.ti_Dm_inv = ti.Matrix.field(self.dim, self.dim, self.real,
@@ -57,7 +128,7 @@ class PDSimulation(SimulatorBase):
         self.ti_volume.fill(0)
         self.ti_x_new.fill(0)
         self.ti_x_del.fill(0)
-        self.gradE.fill(0)
+        # self.gradE.fill(0)
         self.ti_last_pos_new.fill(0)
         self.ti_boundary_labels.fill(0)
         self.ti_Dm_inv.fill(0)
@@ -590,6 +661,64 @@ class PDSimulation(SimulatorBase):
         # print("residual:", residual)
         return residual
 
+    def output_network_data(self, pd_dis, pn_dis, gradE, init_rel_pos, frame, T):
+        vel = self.ti_vel.to_numpy()
+        # gradE = grad_E.to_numpy()
+        if self.dim == 2:
+            exf = np.array([self.ti_ex_force[0][0], self.ti_ex_force[0][1]])
+        else:
+            exf = np.array([self.ti_ex_force[0][0], self.ti_ex_force[0][1], self.ti_ex_force[0][2]])
+
+        frame = str(frame).zfill(5)
+        if T == 0:
+            if self.dim == 2:
+                out_name = "SimData/TrainingData/Train_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
+                           "_" + str(self.exf_mag) + "_" + frame + ".csv"
+            else:
+                out_name = "SimData/TrainingData/Train_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + \
+                           "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + "_" + frame + ".csv"
+        else:
+            if self.dim == 2:
+                out_name = "SimData/TestingData/Test_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
+                            "_" + str(self.exf_mag) + "_" + frame + ".csv"
+            else:
+                out_name = "SimData/TestingData/Test_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + \
+                           "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + "_" + frame + ".csv"
+
+        ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim
+        out = np.ones([self.n_vertices, ele_count], dtype=float)
+        ltrans_start_t = time.time()
+        A_finals = get_local_transformation(self.n_vertices, self.mesh, self.ti_x.to_numpy(), init_rel_pos,
+                                            self.ti_mass.to_numpy(), self.dim)
+        ltrans_end_t = time.time()
+        print("get local transformation:", ltrans_end_t - ltrans_start_t)
+        i = 0
+        pos_init_out = self.ti_x_init.to_numpy()
+        if self.dim == 2:
+            for res in A_finals:
+                out[i, 0:2] = pd_dis[i, :]  # pd pos
+                out[i, 2:4] = pn_dis[i, :]  # pn pos
+                out[i, 4:8] = res
+                out[i, 8:10] = gradE[i * 2: i * 2 + 2]
+                out[i, 10:12] = exf
+                out[i, 12:14] = vel[i, :]
+                out[i, 14:16] = pos_init_out[i, :]
+                i = i + 1
+        else:
+            for res in A_finals:
+                out[i, 0:3] = pd_dis[i, :]  # pd pos
+                out[i, 3:6] = pn_dis[i, :]  # pn pos
+                out[i, 6:15] = res
+                out[i, 15:18] = gradE[i * 3: i * 3 + 3]
+                out[i, 18:21] = exf
+                out[i, 21:24] = vel[i, :]
+                out[i, 24:27] = pos_init_out[i, :]
+                i = i + 1
+
+        fill_data_end = time.time()
+        print("fill data: ", fill_data_end - ltrans_end_t)
+        np.savetxt(out_name, out, delimiter=',')
+
     def run(self, pn, is_test, frame_count, scene_info):
         rhs_np = np.zeros(self.n_vertices * self.dim, dtype=np.float64)
         lhs_mat_val = np.zeros(
@@ -655,11 +784,15 @@ class PDSimulation(SimulatorBase):
             print("pd solve time: ", pd_end_t - pd_start_t)
 
             self.update_velocity_pos()
-            self.gradE.from_numpy(pn.get_gradE_from_pd(self.ti_x))
-            # t_out_start = time.time()
-            # self.output_network_data(self.ti_x_del.to_numpy(), pn_dis.to_numpy(), self.gradE, frame_counter, is_test)
-            # t_out_end = time.time()
-            # print("output time: ", t_out_end - t_out_start)
+            # self.gradE.from_numpy(pn.get_gradE_from_pd(self.ti_x))
+            gradE = pn.get_gradE_from_pd(self.ti_x)
+            t_out_start = time.time()
+            self.output_network_data(self.ti_x_del.to_numpy(),
+                                     pn_dis.to_numpy(),
+                                     gradE, init_rel_pos,
+                                     frame_counter, is_test)
+            t_out_end = time.time()
+            print("output network data time: ", t_out_end - t_out_start)
 
             frame_counter += 1
             frame_end_t = time.time()

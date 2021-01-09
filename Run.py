@@ -18,11 +18,13 @@ nu = 0.4
 dt = 0.01
 
 running_times = 1
-frame_count = 1000
+frame_count = 10
 
-test_case = 1001
+test_case = 1006
 
-# NOTE: Please remember to save your data. It will delete all files in xxAnimSeq/ or xxData/ when you exe Run.py.
+# NOTE:
+# Please remember to save your data. It will delete all files in xxAnimSeq/ or xxData/ when you exe Run.py.
+# New structure will replace the old one after 2-3 versions.
 
 # pd->pn
 if __name__ == '__main__':
@@ -78,12 +80,37 @@ if __name__ == '__main__':
     #             pn.initial()
     #             pn.compute_restT_and_m()
     #             force_info = {'dim': case_info['dim'],
+    #                           'force_type': 'dir',
     #                           'exf_angle1': ang_idx1*(180.0 / sampled_angle1_num),
     #                           'exf_angle2': ang_idx2 * (360.0 / sampled_angle2_num),
     #                           'exf_mag': (mag_idx + 5)}
     #             pn.set_force(force_info)
     #             pd.set_force(force_info)
     #             pd.Run(pn, is_test, frame_count, scene_info)
+
+    # Large scale data generation -- 3D -- New structure
+    # sampled_angle1_num = 8
+    # sampled_angle2_num = 8
+    # sampled_mag_num = 5
+    # sim_info = {'case_info': case_info, 'dt': dt, 'real': ti.f64}
+    # pd = PDSimulation(sim_info)
+    # pn = PNSimulation(sim_info)
+    # pd.set_material(rho, E, nu)
+    # pn.set_material(rho, E, nu)
+    # for ang_idx1 in range(sampled_angle1_num):
+    #     for ang_idx2 in range(sampled_angle2_num):
+    #         for mag_idx in range(sampled_mag_num):
+    #             pd.initial()
+    #             pn.initial()
+    #             pn.compute_restT_and_m()
+    #             force_info = {'dim': case_info['dim'],
+    #                           'force_type': 'dir',
+    #                           'exf_angle1': ang_idx1*(180.0 / sampled_angle1_num),
+    #                           'exf_angle2': ang_idx2 * (360.0 / sampled_angle2_num),
+    #                           'exf_mag': (mag_idx + 5)}
+    #             pn.set_force(force_info)
+    #             pd.set_force(force_info)
+    #             pd.run(pn, is_test, frame_count, scene_info)
 
     # Large scale data generation -- 2D
     # sampled_angle_num = 16
@@ -123,7 +150,7 @@ if __name__ == '__main__':
     #     force_info['force_type'] = 'dir'
     #     force_info['exf_angle1'] = 45.0
     #     force_info['exf_angle2'] = 45.0
-    #     force_info['exf_mag'] = 0.001
+    #     force_info['exf_mag'] = 10.0
     #
     #     # 3D ring force field setting
     #     # force_info['force_type'] = 'ring'
@@ -142,7 +169,7 @@ if __name__ == '__main__':
     # pd.set_force(force_info)
     # pd.Run(pn, is_test, frame_count, scene_info)
 
-    # Test new structure
+    # Test new structure -- Separately generate 2D and 3D
     sim_info = {'case_info': case_info, 'dt': dt, 'real': ti.f64}
     pd = PDSimulation(sim_info)
     pn = PNSimulation(sim_info)
@@ -162,7 +189,7 @@ if __name__ == '__main__':
         force_info['force_type'] = 'dir'
         force_info['exf_angle1'] = 45.0
         force_info['exf_angle2'] = 45.0
-        force_info['exf_mag'] = 10.0
+        force_info['exf_mag'] = 0.01
 
         # 3D ring force field setting
         # force_info['force_type'] = 'ring'
