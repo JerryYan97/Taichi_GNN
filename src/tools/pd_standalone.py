@@ -18,7 +18,7 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1001
+test_case = 1007
 case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -126,10 +126,15 @@ def set_exforce():
             ti_ex_force[i] = ti.Vector(get_force_field(0.1, 45.0, 45.0, 3))
 
 
+# @ti.kernel
+# def set_ring_force_3D():
+#     for i in range(n_vertices):
+#         ti_ex_force[i] = get_ring_circle_force_field(0.4, 0.3, ti_center, ti_pos[i], 0.0, 0.2*min_sphere_radius, 3)
+
 @ti.kernel
 def set_ring_force_3D():
     for i in range(n_vertices):
-        ti_ex_force[i] = get_ring_circle_force_field(0.4, 0.3, ti_center, ti_pos[i], 0.0, 0.2*min_sphere_radius, 3)
+        ti_ex_force[i] = get_ring_force_field(0.02, 10.0, ti_center, ti_pos[i], 0.0, 3)
 
 
 @ti.func
@@ -702,7 +707,7 @@ if __name__ == "__main__":
     init()
 
     # One direction force field
-    set_exforce()
+    # set_exforce()
     init_mesh_DmInv(dirichlet, len(dirichlet))
     precomputation(lhs_mat_row, lhs_mat_col, lhs_mat_val)
     s_lhs_matrix_np = sparse.csr_matrix((lhs_mat_val, (lhs_mat_row, lhs_mat_col)),
@@ -731,7 +736,7 @@ if __name__ == "__main__":
     plot_array = []
 
     while frame_counter < 1000:
-        # set_ring_force_3D()
+        set_ring_force_3D()
         build_sn()
         # Warm up:
         warm_up()

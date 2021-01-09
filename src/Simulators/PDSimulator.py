@@ -9,7 +9,7 @@ from .SimulatorBase import SimulatorBase
 import multiprocessing as mp
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.math_tools import svd
-from Utils.utils_visualization import draw_image, update_boundary_mesh
+from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3d_seq
 
 
 def calcCenterOfMass(vind, dim, mass, pos):
@@ -719,6 +719,27 @@ class PDSimulation(SimulatorBase):
         print("fill data: ", fill_data_end - ltrans_end_t)
         np.savetxt(out_name, out, delimiter=',')
 
+    def output_aux_data(self, f, pn_pos):
+        if self.dim == 3:
+            if self.force_type == 'dir':
+                name_pd = "SimData/PDAnimSeq/PD_dir_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + "_" + \
+                          str(self.exf_angle2) + "_"+str(self.exf_mag)+"_"+str(f).zfill(6)+".obj"
+                name_pn = "SimData/PNAnimSeq/PN_dir" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + "_" + \
+                          str(self.exf_angle2) + "_"+str(self.exf_mag)+"_"+str(f).zfill(6)+".obj"
+            elif self.force_type == 'ring':
+                name_pd = "SimData/PDAnimSeq/PD_ring_" + self.case_info['case_name'] + "_" + str(self.ring_mag) + "_" + \
+                          str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
+                name_pn = "SimData/PNAnimSeq/PN_ring_" + self.case_info['case_name'] + "_" + str(self.ring_mag) + "_" + \
+                          str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
+            elif self.force_type == 'ring_circle':
+                name_pd = "SimData/PDAnimSeq/PD_ringC_" + self.case_info['case_name'] + "_" + str(self.ring_mag) + "_" + \
+                          str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
+                name_pn = "SimData/PNAnimSeq/PN_ringC_" + self.case_info['case_name'] + "_" + str(self.ring_mag) + "_" + \
+                          str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
+
+            output_3d_seq(self.ti_x.to_numpy(), self.boundary_triangles, name_pd)
+            output_3d_seq(pn_pos.to_numpy(), self.boundary_triangles, name_pn)
+
     def run(self, pn, is_test, frame_count, scene_info):
         rhs_np = np.zeros(self.n_vertices * self.dim, dtype=np.float64)
         lhs_mat_val = np.zeros(
@@ -811,4 +832,4 @@ class PDSimulation(SimulatorBase):
                 gui.set_image(scene_info['scene'].img)
                 gui.show()
 
-            # self.output_aux_data(frame_counter, _pn_pos)
+            self.output_aux_data(frame_counter, _pn_pos)
