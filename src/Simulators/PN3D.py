@@ -51,7 +51,7 @@ class PNSimulation:
         self.m = ti.field(real, self.n_vertices)
 
         self.grad_x = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.x_xtilde = ti.Vector.field(self.dim, real, self.n_vertices)
+        self.x_xtilde = ti.Vector.field(self.dim, real, self.n_vertices)  # Not used.
 
         self.input_xn = ti.Vector.field(self.dim, real, self.n_vertices)
         self.input_vn = ti.Vector.field(self.dim, real, self.n_vertices)

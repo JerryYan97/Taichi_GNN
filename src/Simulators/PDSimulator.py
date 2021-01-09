@@ -20,8 +20,8 @@ class PDSimulation(SimulatorBase):
 
         # Simulator Fields
         self.ti_volume = ti.field(self.real, self.n_elements)
-        self.ti_pos_new = ti.Vector.field(self.dim, self.real, self.n_vertices)
-        self.ti_pos_del = ti.Vector.field(self.dim, self.real, self.n_vertices)
+        self.ti_x_new = ti.Vector.field(self.dim, self.real, self.n_vertices)
+        self.ti_x_del = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.gradE = ti.field(self.real, shape=2000)
         self.ti_last_pos_new = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.ti_boundary_labels = ti.field(int, self.n_vertices)
@@ -38,7 +38,7 @@ class PDSimulation(SimulatorBase):
         self.ti_weight_volume = ti.field(self.real, self.n_elements)  # self.lam * self.dim * self.volume
 
         # Shape Matching
-        self.ti_pos_init = ti.Vector.field(self.dim, self.real, self.n_vertices)
+        self.ti_x_init = ti.Vector.field(self.dim, self.real, self.n_vertices)
         if self.dim == 2:
             self.initial_com = ti.Vector([0.0, 0.0])
         else:
@@ -49,8 +49,8 @@ class PDSimulation(SimulatorBase):
 
         # Simulator Fields
         self.ti_volume.fill(0)
-        self.ti_pos_new.fill(0)
-        self.ti_pos_del.fill(0)
+        self.ti_x_new.fill(0)
+        self.ti_x_del.fill(0)
         self.gradE.fill(0)
         self.ti_last_pos_new.fill(0)
         self.ti_boundary_labels.fill(0)
@@ -66,7 +66,7 @@ class PDSimulation(SimulatorBase):
         self.ti_weight_volume.fill(0)
 
         # Shape Matching
-        self.ti_pos_init.from_numpy(self.mesh.vertices)
+        self.ti_x_init.from_numpy(self.mesh.vertices)
         if self.dim == 2:
             self.initial_com = ti.Vector([0.0, 0.0])
         else:
@@ -151,11 +151,11 @@ class PDSimulation(SimulatorBase):
     def compute_Dm(self, i):
         if ti.static(self.dim == 2):
             ia, ib, ic = self.ti_elements[i]
-            a, b, c = self.ti_pos_init[ia], self.ti_pos_init[ib], self.ti_pos_init[ic]
+            a, b, c = self.ti_x_init[ia], self.ti_x_init[ib], self.ti_x_init[ic]
             return ti.Matrix.cols([b - a, c - a])
         else:
             idx_a, idx_b, idx_c, idx_d = self.ti_elements[i]
-            a, b, c, d = self.ti_pos_init[idx_a], self.ti_pos_init[idx_b], self.ti_pos_init[idx_c], self.ti_pos_init[
+            a, b, c, d = self.ti_x_init[idx_a], self.ti_x_init[idx_b], self.ti_x_init[idx_c], self.ti_x_init[
                 idx_d]
             return ti.Matrix.cols([b - a, c - a, d - a])
 
@@ -378,12 +378,12 @@ class PDSimulation(SimulatorBase):
     def compute_Fi(self, i):
         if ti.static(self.dim == 2):
             ia, ib, ic = self.ti_elements[i]
-            a, b, c = self.ti_pos_new[ia], self.ti_pos_new[ib], self.ti_pos_new[ic]
+            a, b, c = self.ti_x_new[ia], self.ti_x_new[ib], self.ti_x_new[ic]
             D_i = ti.Matrix.cols([b - a, c - a])
             return ti.cast(D_i @ self.ti_Dm_inv[i], self.real)
         else:
             idx_a, idx_b, idx_c, idx_d = self.ti_elements[i]
-            a, b, c, d = self.ti_pos_new[idx_a], self.ti_pos_new[idx_b], self.ti_pos_new[idx_c], self.ti_pos_new[idx_d]
+            a, b, c, d = self.ti_x_new[idx_a], self.ti_x_new[idx_b], self.ti_x_new[idx_c], self.ti_x_new[idx_d]
             D_i = ti.Matrix.cols([b - a, c - a, d - a])
             return ti.cast(D_i @ self.ti_Dm_inv[i], self.real)
 
@@ -449,7 +449,7 @@ class PDSimulation(SimulatorBase):
         for vert_idx in range(self.n_vertices):  # number of vertices
             Sn_idx1 = vert_idx * self.dim
             Sn_idx2 = vert_idx * self.dim + 1
-            pos_i = self.ti_pos[vert_idx]
+            pos_i = self.ti_x[vert_idx]
             vel_i = self.ti_vel[vert_idx]
             self.ti_Sn[Sn_idx1] = pos_i[0] + self.dt * vel_i[0] + (self.dt ** 2) * self.ti_ex_force[vert_idx][0] / \
                                   self.ti_mass[vert_idx]  # x-direction;
@@ -543,7 +543,7 @@ class PDSimulation(SimulatorBase):
         # Add positional constraints Bp to the rhs
         for i in range(self.n_vertices):
             if self.ti_boundary_labels[i] == 1:
-                pos_init_i = self.ti_pos_init[i]
+                pos_init_i = self.ti_x_init[i]
                 q_i_x_idx = i * self.dim
                 q_i_y_idx = i * self.dim + 1
                 rhs[q_i_x_idx] += (pos_init_i[0] * self.m_weight_positional)
@@ -555,36 +555,36 @@ class PDSimulation(SimulatorBase):
     @ti.kernel
     def update_velocity_pos(self):
         for i in range(self.n_vertices):
-            self.ti_vel[i] = (self.ti_pos_new[i] - self.ti_pos[i]) / self.dt
-            self.ti_pos_del[i] = self.ti_pos_new[i] - self.ti_pos[i]
-            self.ti_pos[i] = self.ti_pos_new[i]
+            self.ti_vel[i] = (self.ti_x_new[i] - self.ti_x[i]) / self.dt
+            self.ti_x_del[i] = self.ti_x_new[i] - self.ti_x[i]
+            self.ti_x[i] = self.ti_x_new[i]
 
     @ti.kernel
     def warm_up(self):
         for pos_idx in range(self.n_vertices):
             sn_idx1, sn_idx2 = pos_idx * self.dim, pos_idx * self.dim + 1
-            self.ti_pos_new[pos_idx][0] = self.ti_Sn[sn_idx1]
-            self.ti_pos_new[pos_idx][1] = self.ti_Sn[sn_idx2]
+            self.ti_x_new[pos_idx][0] = self.ti_Sn[sn_idx1]
+            self.ti_x_new[pos_idx][1] = self.ti_Sn[sn_idx2]
             if ti.static(self.dim == 3):
                 sn_idx3 = pos_idx * self.dim + 2
-                self.ti_pos_new[pos_idx][2] = self.ti_Sn[sn_idx3]
+                self.ti_x_new[pos_idx][2] = self.ti_Sn[sn_idx3]
 
     @ti.kernel
     def update_pos_new_from_numpy(self, sol: ti.ext_arr()):
         for pos_idx in range(self.n_vertices):
             sol_idx1, sol_idx2 = pos_idx * self.dim, pos_idx * self.dim + 1
-            self.ti_pos_new[pos_idx][0] = sol[sol_idx1]
-            self.ti_pos_new[pos_idx][1] = sol[sol_idx2]
+            self.ti_x_new[pos_idx][0] = sol[sol_idx1]
+            self.ti_x_new[pos_idx][1] = sol[sol_idx2]
             if ti.static(self.dim == 3):
                 sol_idx3 = pos_idx * self.dim + 2
-                self.ti_pos_new[pos_idx][2] = sol[sol_idx3]
+                self.ti_x_new[pos_idx][2] = sol[sol_idx3]
 
     @ti.kernel
     def check_residual(self) -> ti.f64:
         residual = 0.0
         for i in range(self.n_vertices):
-            residual += (self.ti_last_pos_new[i] - self.ti_pos_new[i]).norm()
-            self.ti_last_pos_new[i] = self.ti_pos_new[i]
+            residual += (self.ti_last_pos_new[i] - self.ti_x_new[i]).norm()
+            self.ti_last_pos_new[i] = self.ti_x_new[i]
         # print("residual:", residual)
         return residual
 
@@ -609,12 +609,12 @@ class PDSimulation(SimulatorBase):
         if self.dim == 2:
             gui = scene_info['gui']
             filename = f'./SimData/TmpRenderedImgs/frame_rest.png'
-            draw_image(gui, filename, self.ti_pos.to_numpy(), self.mesh_offset, self.mesh_scale,
+            draw_image(gui, filename, self.ti_x.to_numpy(), self.mesh_offset, self.mesh_scale,
                        self.ti_elements.to_numpy(), self.n_elements)
         else:
             gui = scene_info['gui']
             scene_info['model'].set_transform(self.case_info['transformation_mat'])
-            update_boundary_mesh(self.ti_pos, scene_info['boundary_pos'], self.case_info)
+            update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
             scene_info['scene'].input(gui)
             scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
             scene_info['scene'].render()
@@ -649,10 +649,10 @@ class PDSimulation(SimulatorBase):
             print("pd solve time: ", pd_end_t - pd_start_t)
 
             self.update_velocity_pos()
-            # self.gradE = pn.get_gradE_from_pd(self.ti_pos)
+            # self.gradE = pn.get_gradE_from_pd(self.ti_x)
 
             # t_out_start = time.time()
-            # self.output_network_data(self.ti_pos_del.to_numpy(), pn_dis.to_numpy(), self.gradE, frame_counter, is_test)
+            # self.output_network_data(self.ti_x_del.to_numpy(), pn_dis.to_numpy(), self.gradE, frame_counter, is_test)
             # t_out_end = time.time()
             # print("output time: ", t_out_end - t_out_start)
 
@@ -663,10 +663,10 @@ class PDSimulation(SimulatorBase):
             # Show result
             if self.dim == 2:
                 filename = f'./SimData/TmpRenderedImgs/frame_{frame_counter:05d}.png'
-                draw_image(gui, filename, self.ti_pos.to_numpy(), self.mesh_offset, self.mesh_scale,
+                draw_image(gui, filename, self.ti_x.to_numpy(), self.mesh_offset, self.mesh_scale,
                            self.ti_elements.to_numpy(), self.n_elements)
             else:
-                update_boundary_mesh(self.ti_pos, scene_info['boundary_pos'], self.case_info)
+                update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
                 scene_info['scene'].input(gui)
                 scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
                 scene_info['scene'].render()

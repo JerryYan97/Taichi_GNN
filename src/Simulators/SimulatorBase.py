@@ -27,7 +27,7 @@ class SimulatorBase(ABC):
             self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
 
         # Simulator Field
-        self.ti_pos = ti.Vector.field(self.dim, self.real, self.n_vertices)
+        self.ti_x = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.ti_mass = ti.field(self.real, self.n_vertices)
         self.ti_vel = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.ti_elements = ti.Vector.field(self.dim + 1, int, self.n_elements)
@@ -65,14 +65,14 @@ class SimulatorBase(ABC):
     def set_ring_force_3D(self):
         for i in range(self.n_vertices):
             self.ti_ex_force[i] = get_ring_force_field(self.ring_mag, self.ring_width,
-                                                       self.ti_center, self.ti_pos[i],
+                                                       self.ti_center, self.ti_x[i],
                                                        self.ring_angle, 3)
 
     @ti.kernel
     def set_ring_circle_force_3D(self):
         for i in range(self.n_vertices):
             self.ti_ex_force[i] = get_ring_circle_force_field(self.ring_mag, self.ring_width,
-                                                              self.ti_center, self.ti_pos[i], self.ring_angle,
+                                                              self.ti_center, self.ti_x[i], self.ring_angle,
                                                               self.ring_circle_radius * self.min_sphere_radius, 3)
 
     @ti.kernel
@@ -125,7 +125,7 @@ class SimulatorBase(ABC):
             self.ti_elements.from_numpy(self.mesh.faces)
         else:
             self.ti_elements.from_numpy(self.mesh.elements)
-        self.ti_pos.from_numpy(self.mesh.vertices)
+        self.ti_x.from_numpy(self.mesh.vertices)
         self.ti_mass.fill(0)
         self.ti_vel.fill(0)
         self.ti_ex_force.fill(0)
