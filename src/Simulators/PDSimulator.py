@@ -9,6 +9,16 @@ from Utils.math_tools import svd
 from Utils.utils_visualization import draw_image, update_boundary_mesh
 
 
+def calcCenterOfMass(vind, dim, mass, pos):
+    sum = np.zeros(dim)
+    summ = 0.0
+    for i in vind:
+        sum += mass[i] * pos[i]
+        summ += mass[i]
+    sum /= summ
+    return sum
+
+
 class PDSimulation(SimulatorBase):
     def __init__(self, sim_info):
         super().__init__(sim_info)
@@ -39,10 +49,6 @@ class PDSimulation(SimulatorBase):
 
         # Shape Matching
         self.ti_x_init = ti.Vector.field(self.dim, self.real, self.n_vertices)
-        if self.dim == 2:
-            self.initial_com = ti.Vector([0.0, 0.0])
-        else:
-            self.initial_com = ti.Vector([0.0, 0.0, 0.0])
 
     def initial(self):
         self.base_initial()
@@ -67,10 +73,6 @@ class PDSimulation(SimulatorBase):
 
         # Shape Matching
         self.ti_x_init.from_numpy(self.mesh.vertices)
-        if self.dim == 2:
-            self.initial_com = ti.Vector([0.0, 0.0])
-        else:
-            self.initial_com = ti.Vector([0.0, 0.0, 0.0])
 
     @ti.func
     def set_ti_A_i(self, ele_idx, row, col, val):
@@ -622,6 +624,10 @@ class PDSimulation(SimulatorBase):
             gui.show()
 
         frame_counter = 0
+        init_com = calcCenterOfMass(np.arange(self.n_vertices),
+                                    self.dim, self.ti_mass.to_numpy(),
+                                    self.ti_x.to_numpy())  # this is right
+        init_rel_pos = self.ti_x_init.to_numpy() - init_com
         while frame_counter < frame_count:
             print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
             frame_start_t = time.time()

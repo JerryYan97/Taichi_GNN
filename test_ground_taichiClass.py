@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import taichi as ti
+import numpy as np
 
 
 @ti.data_oriented
@@ -56,12 +57,19 @@ class PDSimulation(SimulatorBase):
 
 
 if __name__ == "__main__":
-    case_info = {'dim': 3}
-    sim_info = {'n_vertices': 100, 'dt': 0.01, 'rho': 100}
-    pd_sim = PDSimulation(case_info, sim_info)
-    # pd_sim.initial()
-    pd_sim.set_dir_force()
-    pd_sim.show_force()
+    # case_info = {'dim': 3}
+    # sim_info = {'n_vertices': 100, 'dt': 0.01, 'rho': 100}
+    # pd_sim = PDSimulation(case_info, sim_info)
+    # # pd_sim.initial()
+    # pd_sim.set_dir_force()
+    # pd_sim.show_force()
+    a = np.array([[1.0, 1.0, 1.0],
+                  [2.0, 2.0, 2.0],
+                  [3.0, 3.0, 3.0]])
+    b = np.array([0.5, 0.5, 0.5])
+    c = a - b
+    print(c)
+
 
 # import tina
 #
