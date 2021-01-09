@@ -14,15 +14,18 @@ class PNSimulation(SimulatorBase):
         super().__init__(sim_info)
 
         # Simulator Fields
-        self.ti_pos_prev = ti.Vector.field(self.dim, self.real, self.n_vertices)
-        self.ti_pos_tilde = ti.Vector.field(self.dim, self.real, self.n_vertices)
-        self.ti_pos_n = ti.Vector.field(self.dim, self.real, self.n_vertices)
-        self.ti_grad_pos = ti.Vector.field(self.dim, self.real, self.n_vertices)
+        self.ti_x_prev = ti.Vector.field(self.dim, self.real, self.n_vertices)
+        self.ti_x_tilde = ti.Vector.field(self.dim, self.real, self.n_vertices)
+        self.ti_x_n = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.data_rhs = np.zeros(shape=(200000,), dtype=np.float64)
         self.data_mat = np.zeros(shape=(3, 20000000), dtype=np.float64)
         self.data_sol = np.zeros(shape=(200000,), dtype=np.float64)
         self.cnt = ti.field(ti.i32, shape=())
         self.ti_restT = ti.Matrix.field(self.dim, self.dim, self.real, self.n_elements)
+        self.zero = ti.Vector.field(self.dim, self.real, self.n_vertices)
+
+        # Output
+        self.del_p = ti.Vector.field(self.dim, self.real, self.n_vertices)
 
         # Compile time optimization data structure
         self.ti_dPdF_field = ti.field(self.real, (self.n_elements, self.dim * self.dim, self.dim * self.dim))
@@ -34,38 +37,120 @@ class PNSimulation(SimulatorBase):
 
     def initial(self):
         self.base_initial()
-        self.ti_pos_prev.fill(0)
-        self.ti_pos_tilde.fill(0)
-        self.ti_pos_n.fill(0)
-        self.ti_grad_pos.fill(0)
+
+        # Simulator Fields
+        self.ti_x_prev.fill(0)
+        self.ti_x_tilde.fill(0)
+        self.ti_x_n.fill(0)
+        self.zero.fill(0)
+        self.ti_restT.fill(0)
+
+        # Output
+        self.del_p.fill(0)
+
+    @ti.func
+    def compute_T_grad(self, i, grad_x):
+        if ti.static(self.dim == 2):
+            ab = grad_x[self.ti_elements[i][1]] - grad_x[self.ti_elements[i][0]]
+            ac = grad_x[self.ti_elements[i][2]] - grad_x[self.ti_elements[i][0]]
+            return ti.Matrix([[ab[0], ac[0]], [ab[1], ac[1]]])
+        else:
+            ab = grad_x[self.ti_elements[i][1]] - grad_x[self.ti_elements[i][0]]
+            ac = grad_x[self.ti_elements[i][2]] - grad_x[self.ti_elements[i][0]]
+            ad = grad_x[self.ti_elements[i][3]] - grad_x[self.ti_elements[i][0]]
+            return ti.Matrix([[ab[0], ac[0], ad[0]], [ab[1], ac[1], ad[1]], [ab[2], ac[2], ad[2]]])
+
+    @ti.kernel
+    def compute_pd_gradient(self, data_rhs_np: ti.ext_arr(), grad_x: ti.template()):
+        if ti.static(self.dim == 2):
+            for i in range(self.n_vertices):
+                for d in ti.static(range(self.dim)):
+                    data_rhs_np[i * self.dim + d] -= self.ti_mass[i] * (grad_x(d)[i] - self.ti_x_tilde(d)[i])
+            for e in range(self.n_elements):
+                F = self.compute_T_grad(e, grad_x) @ self.ti_restT[e].inverse()
+                IB = self.ti_restT[e].inverse()
+                vol0 = self.ti_restT[e].determinant() / 2
+                P = fixed_corotated_first_piola_kirchoff_stress(F, self.lam, self.mu) * self.dt * self.dt * vol0
+                data_rhs_np[self.ti_elements[e][1] * 2 + 0] -= P[0, 0] * IB[0, 0] + P[0, 1] * IB[0, 1]
+                data_rhs_np[self.ti_elements[e][1] * 2 + 1] -= P[1, 0] * IB[0, 0] + P[1, 1] * IB[0, 1]
+                data_rhs_np[self.ti_elements[e][2] * 2 + 0] -= P[0, 0] * IB[1, 0] + P[0, 1] * IB[1, 1]
+                data_rhs_np[self.ti_elements[e][2] * 2 + 1] -= P[1, 0] * IB[1, 0] + P[1, 1] * IB[1, 1]
+                data_rhs_np[self.ti_elements[e][0] * 2 + 0] -= -P[0, 0] * IB[0, 0] - P[0, 1] * IB[0, 1] - P[0, 0] * IB[
+                    1, 0] - P[0, 1] * IB[1, 1]
+                data_rhs_np[self.ti_elements[e][0] * 2 + 1] -= -P[1, 0] * IB[0, 0] - P[1, 1] * IB[0, 1] - P[1, 0] * IB[
+                    1, 0] - P[1, 1] * IB[1, 1]
+        else:
+            for i in range(self.n_vertices):
+                for d in ti.static(range(self.dim)):
+                    data_rhs_np[i * self.dim + d] -= self.ti_mass[i] * (grad_x(d)[i] - self.ti_x_tilde(d)[i])
+            for e in range(self.n_elements):
+                F = self.compute_T_grad(e, grad_x) @ self.ti_restT[e].inverse()
+                IB = self.ti_restT[e].inverse()
+                vol0 = self.ti_restT[e].determinant() / self.dim / (self.dim - 1)
+                P = fixed_corotated_first_piola_kirchoff_stress(F, self.lam, self.mu) * self.dt * self.dt * vol0
+                R10 = IB[0, 0] * P[0, 0] + IB[0, 1] * P[0, 1] + IB[0, 2] * P[0, 2]
+                R11 = IB[0, 0] * P[1, 0] + IB[0, 1] * P[1, 1] + IB[0, 2] * P[1, 2]
+                R12 = IB[0, 0] * P[2, 0] + IB[0, 1] * P[2, 1] + IB[0, 2] * P[2, 2]
+                R20 = IB[1, 0] * P[0, 0] + IB[1, 1] * P[0, 1] + IB[1, 2] * P[0, 2]
+                R21 = IB[1, 0] * P[1, 0] + IB[1, 1] * P[1, 1] + IB[1, 2] * P[1, 2]
+                R22 = IB[1, 0] * P[2, 0] + IB[1, 1] * P[2, 1] + IB[1, 2] * P[2, 2]
+                R30 = IB[2, 0] * P[0, 0] + IB[2, 1] * P[0, 1] + IB[2, 2] * P[0, 2]
+                R31 = IB[2, 0] * P[1, 0] + IB[2, 1] * P[1, 1] + IB[2, 2] * P[1, 2]
+                R32 = IB[2, 0] * P[2, 0] + IB[2, 1] * P[2, 1] + IB[2, 2] * P[2, 2]
+                data_rhs_np[self.ti_elements[e][1] * 3 + 0] -= R10
+                data_rhs_np[self.ti_elements[e][1] * 3 + 1] -= R11
+                data_rhs_np[self.ti_elements[e][1] * 3 + 2] -= R12
+                data_rhs_np[self.ti_elements[e][2] * 3 + 0] -= R20
+                data_rhs_np[self.ti_elements[e][2] * 3 + 1] -= R21
+                data_rhs_np[self.ti_elements[e][2] * 3 + 2] -= R22
+                data_rhs_np[self.ti_elements[e][3] * 3 + 0] -= R30
+                data_rhs_np[self.ti_elements[e][3] * 3 + 1] -= R31
+                data_rhs_np[self.ti_elements[e][3] * 3 + 2] -= R32
+                data_rhs_np[self.ti_elements[e][0] * 3 + 0] -= -R10 - R20 - R30
+                data_rhs_np[self.ti_elements[e][0] * 3 + 1] -= -R11 - R21 - R31
+                data_rhs_np[self.ti_elements[e][0] * 3 + 2] -= -R12 - R22 - R32
+
+    def get_gradE_from_pd(self, pd_pos):
+        self.compute_pd_gradient(self.data_rhs, pd_pos)
+        return self.data_rhs
 
     @ti.kernel
     def compute_xn_and_xTilde(self):
         if ti.static(self.dim == 2):
             for i in range(self.n_vertices):
-                self.ti_pos_n[i] = self.ti_pos[i]
-                self.ti_pos_tilde[i] = self.ti_pos[i] + self.dt * self.ti_vel[i]
-                self.ti_pos_tilde(0)[i] += self.dt * self.dt * (self.ti_ex_force[i][0] / self.ti_mass[i])
-                self.ti_pos_tilde(1)[i] += self.dt * self.dt * (self.ti_ex_force[i][1] / self.ti_mass[i])
+                self.ti_x_n[i] = self.ti_x[i]
+                self.ti_x_tilde[i] = self.ti_x[i] + self.dt * self.ti_vel[i]
+                self.ti_x_tilde(0)[i] += self.dt * self.dt * (self.ti_ex_force[i][0] / self.ti_mass[i])
+                self.ti_x_tilde(1)[i] += self.dt * self.dt * (self.ti_ex_force[i][1] / self.ti_mass[i])
         if ti.static(self.dim == 3):
             for i in range(self.n_vertices):
-                self.ti_pos_n[i] = self.ti_pos[i]
-                self.ti_pos_tilde[i] = self.ti_pos[i] + self.dt * self.ti_vel[i]
-                self.ti_pos_tilde(0)[i] += self.dt * self.dt * (self.ti_ex_force[i][0] / self.ti_mass[i])
-                self.ti_pos_tilde(1)[i] += self.dt * self.dt * (self.ti_ex_force[i][1] / self.ti_mass[i])
-                self.ti_pos_tilde(2)[i] += self.dt * self.dt * (self.ti_ex_force[i][2] / self.ti_mass[i])
+                self.ti_x_n[i] = self.ti_x[i]
+                self.ti_x_tilde[i] = self.ti_x[i] + self.dt * self.ti_vel[i]
+                self.ti_x_tilde(0)[i] += self.dt * self.dt * (self.ti_ex_force[i][0] / self.ti_mass[i])
+                self.ti_x_tilde(1)[i] += self.dt * self.dt * (self.ti_ex_force[i][1] / self.ti_mass[i])
+                self.ti_x_tilde(2)[i] += self.dt * self.dt * (self.ti_ex_force[i][2] / self.ti_mass[i])
 
     @ti.func
     def compute_T(self, i):
         if ti.static(self.dim == 2):
-            ab = self.ti_pos[self.ti_elements[i][1]] - self.ti_pos[self.ti_elements[i][0]]
-            ac = self.ti_pos[self.ti_elements[i][2]] - self.ti_pos[self.ti_elements[i][0]]
+            ab = self.ti_x[self.ti_elements[i][1]] - self.ti_x[self.ti_elements[i][0]]
+            ac = self.ti_x[self.ti_elements[i][2]] - self.ti_x[self.ti_elements[i][0]]
             return ti.Matrix([[ab[0], ac[0]], [ab[1], ac[1]]])
         else:
-            ab = self.ti_pos[self.ti_elements[i][1]] - self.ti_pos[self.ti_elements[i][0]]
-            ac = self.ti_pos[self.ti_elements[i][2]] - self.ti_pos[self.ti_elements[i][0]]
-            ad = self.ti_pos[self.ti_elements[i][3]] - self.ti_pos[self.ti_elements[i][0]]
+            ab = self.ti_x[self.ti_elements[i][1]] - self.ti_x[self.ti_elements[i][0]]
+            ac = self.ti_x[self.ti_elements[i][2]] - self.ti_x[self.ti_elements[i][0]]
+            ad = self.ti_x[self.ti_elements[i][3]] - self.ti_x[self.ti_elements[i][0]]
             return ti.Matrix([[ab[0], ac[0], ad[0]], [ab[1], ac[1], ad[1]], [ab[2], ac[2], ad[2]]])
+
+    @ti.kernel
+    def compute_restT_and_m(self):
+        for i in range(self.n_elements):
+            self.ti_restT[i] = self.compute_T(i)
+            mass = self.ti_restT[i].determinant() / self.dim / (self.dim - 1) * self.rho / (self.dim + 1)
+            if mass < 0.0:
+                print("FATAL ERROR : mesh inverted")
+            for d in ti.static(range(self.dim + 1)):
+                self.ti_mass[self.ti_elements[i][d]] += mass
 
     @ti.kernel
     def compute_hessian_and_gradient(self, data_mat_np: ti.ext_arr(), data_rhs_np: ti.ext_arr()):
@@ -78,17 +163,17 @@ class PNSimulation(SimulatorBase):
                 data_mat_np[0, c] = i * self.dim + d
                 data_mat_np[1, c] = i * self.dim + d
                 data_mat_np[2, c] = self.ti_mass[i]
-                data_rhs_np[i * self.dim + d] -= self.ti_mass[i] * (self.ti_pos(d)[i] - self.ti_pos_tilde(d)[i])
+                data_rhs_np[i * self.dim + d] -= self.ti_mass[i] * (self.ti_x(d)[i] - self.ti_x_tilde(d)[i])
         self.cnt[None] += self.n_vertices * self.dim
         # elasticity
         for e in range(self.n_elements):
             F = self.compute_T(e) @ self.ti_restT[e].inverse()  # 2 * 2
             IB = self.ti_restT[e].inverse()  # 2 * 2
             vol0 = self.ti_restT[e].determinant() / self.dim / (self.dim - 1)
-            fixed_corotated_first_piola_kirchoff_stress_derivative(F, self.la, self.mu,
+            fixed_corotated_first_piola_kirchoff_stress_derivative(F, self.lam, self.mu,
                                                                    self.ti_dPdF_field, self.ti_M_field, self.ti_U_field,
                                                                    self.ti_V_field, e, self.dt, vol0)
-            P = fixed_corotated_first_piola_kirchoff_stress(F, self.la, self.mu) * self.dt * self.dt * vol0
+            P = fixed_corotated_first_piola_kirchoff_stress(F, self.lam, self.mu) * self.dt * self.dt * vol0
             if ti.static(self.dim == 2):
                 for colI in range(4):
                     _000 = self.ti_dPdF_field[e, 0, colI] * IB[0, 0]
@@ -334,9 +419,49 @@ class PNSimulation(SimulatorBase):
                 data_rhs_np[self.ti_elements[e][0] * 3 + 2] -= -R12 - R22 - R32
         self.cnt[None] += self.n_elements * (self.dim + 1) * self.dim * (self.dim + 1) * self.dim
 
-    def data_one_frame(self, input_p, input_v):
+    @ti.kernel
+    def output_residual(self, data_sol: ti.ext_arr()) -> ti.f64:
+        residual = 0.0
+        for i in range(self.n_vertices):
+            for d in ti.static(range(self.dim)):
+                residual = ti.max(residual, ti.abs(data_sol[i * self.dim + d]))
+        # print("PN Search Direction Residual : ", residual / self.dt)
+        return residual
+
+    @ti.kernel
+    def compute_energy(self) -> ti.f64:
+        total_energy = 0.0
+        # inertia
+        for i in range(self.n_vertices):
+            total_energy += 0.5 * self.ti_mass[i] * (self.ti_x[i] - self.ti_x_tilde[i]).norm_sqr()
+        # elasticity
+        for e in range(self.n_elements):
+            F = self.compute_T(e) @ self.ti_restT[e].inverse()
+            vol0 = self.ti_restT[e].determinant() / self.dim / (self.dim - 1)
+            U, sig, V = svd(F)
+            total_energy += fixed_corotated_energy(sig, self.lam, self.mu) * self.dt * self.dt * vol0
+        return total_energy
+
+    @ti.kernel
+    def save_xPrev(self):
+        for i in range(self.n_vertices):
+            self.ti_x_prev[i] = self.ti_x[i]
+
+    @ti.kernel
+    def apply_sol(self, alpha: ti.f64, data_sol: ti.ext_arr()):
+        for i in range(self.n_vertices):
+            for d in ti.static(range(self.dim)):
+                self.ti_x(d)[i] = self.ti_x_prev(d)[i] + data_sol[i * self.dim + d] * alpha
+
+    @ti.kernel
+    def compute_v(self):
+        for i in range(self.n_vertices):
+            self.ti_vel[i] = (self.ti_x[i] - self.ti_x_n[i]) / self.dt
+            self.del_p[i] = self.ti_x[i] - self.ti_x_n[i]
+
+    def data_one_frame(self, input_x, input_v):
         self.update_force_field()
-        self.copy(input_p, self.ti_pos)
+        self.copy(input_x, self.ti_x)
         self.copy(input_v, self.ti_vel)
         self.compute_xn_and_xTilde()
         while True:
@@ -344,3 +469,24 @@ class PNSimulation(SimulatorBase):
             self.data_rhs.fill(0)
             self.data_sol.fill(0)
             self.compute_hessian_and_gradient(self.data_mat, self.data_rhs)
+            if self.dim == 2:
+                self.data_sol = solve_linear_system(self.data_mat, self.data_rhs, self.n_vertices * self.dim,
+                                                    self.dirichlet, self.zero.to_numpy(),
+                                                    False, 0, self.cnt[None])
+            else:
+                self.data_sol = solve_linear_system3(self.data_mat, self.data_rhs,
+                                                     self.n_vertices * self.dim, self.dirichlet,
+                                                     self.zero.to_numpy(), False, 0, self.cnt[None])
+            if self.output_residual(self.data_sol) < 1e-4 * self.dt:
+                break
+            E0 = self.compute_energy()
+            self.save_xPrev()
+            alpha = 1.0
+            self.apply_sol(alpha, self.data_sol)
+            E = self.compute_energy()
+            while E > E0:
+                alpha *= 0.5
+                self.apply_sol(alpha, self.data_sol)
+                E = self.compute_energy()
+        self.compute_v()
+        return self.del_p, self.ti_x, self.ti_vel

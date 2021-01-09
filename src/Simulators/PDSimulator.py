@@ -22,7 +22,7 @@ class PDSimulation(SimulatorBase):
         self.ti_volume = ti.field(self.real, self.n_elements)
         self.ti_x_new = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.ti_x_del = ti.Vector.field(self.dim, self.real, self.n_vertices)
-        self.gradE = ti.field(self.real, shape=2000)
+        self.gradE = ti.field(self.real, shape=200000)  # Keep the shape same as the rhs shape of PN
         self.ti_last_pos_new = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.ti_boundary_labels = ti.field(int, self.n_vertices)
         self.ti_Dm_inv = ti.Matrix.field(self.dim, self.dim, self.real,
@@ -630,7 +630,7 @@ class PDSimulation(SimulatorBase):
             self.warm_up()
 
             pn_start_t = time.time()
-            # TODO: PN data one frame.
+            pn_dis, _pn_pos, pn_v = pn.data_one_frame(self.ti_x, self.ti_vel)
             pn_end_t = time.time()
             print("pn solve time: ", pn_end_t - pn_start_t)
 
@@ -649,8 +649,7 @@ class PDSimulation(SimulatorBase):
             print("pd solve time: ", pd_end_t - pd_start_t)
 
             self.update_velocity_pos()
-            # self.gradE = pn.get_gradE_from_pd(self.ti_x)
-
+            self.gradE.from_numpy(pn.get_gradE_from_pd(self.ti_x))
             # t_out_start = time.time()
             # self.output_network_data(self.ti_x_del.to_numpy(), pn_dis.to_numpy(), self.gradE, frame_counter, is_test)
             # t_out_end = time.time()

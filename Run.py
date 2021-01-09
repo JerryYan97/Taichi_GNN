@@ -3,6 +3,7 @@
 # from src.Simulators.PN3D import *
 # from src.Simulators.PD3D import *
 from src.Simulators.PDSimulator import *
+from src.Simulators.PNSimulator import *
 from src.Utils.reader import read
 import torch
 import os
@@ -144,8 +145,13 @@ if __name__ == '__main__':
     # Test new structure
     sim_info = {'case_info': case_info, 'dt': dt, 'real': ti.f64}
     pd = PDSimulation(sim_info)
+    pn = PNSimulation(sim_info)
     pd.set_material(rho, E, nu)
+    pn.set_material(rho, E, nu)
     pd.initial()
+    pn.initial()
+    pn.compute_restT_and_m()
+
     force_info = {'dim': case_info['dim']}
     if case_info['dim'] == 2:
         force_info['force_type'] = 'dir'
@@ -171,5 +177,6 @@ if __name__ == '__main__':
         # force_info['ring_width'] = 0.2
         # force_info['ring_circle_radius'] = 0.2
     pd.set_force(force_info)
-    pd.run(None, is_test, frame_count, scene_info)
+    pn.set_force(force_info)
+    pd.run(pn, is_test, frame_count, scene_info)
 
