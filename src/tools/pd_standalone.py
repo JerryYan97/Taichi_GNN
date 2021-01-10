@@ -55,8 +55,8 @@ dt = 0.01
 # Backup settings:
 # Bar: 10
 # Bunny: 50
-solver_max_iteration = 50
-solver_stop_residual = 0.0001
+solver_max_iteration = 20
+solver_stop_residual = 0.0005
 # external force -- counter-clock wise
 ti_ex_force = ti.Vector.field(dim, real, n_vertices)
 
@@ -134,7 +134,7 @@ def set_exforce():
 @ti.kernel
 def set_ring_force_3D():
     for i in range(n_vertices):
-        ti_ex_force[i] = get_ring_force_field(0.02, 10.0, ti_center, ti_pos[i], 0.0, 3)
+        ti_ex_force[i] = get_ring_force_field(0.04, 10.0, ti_center, ti_pos[i], 0.0, 3)
 
 
 @ti.func

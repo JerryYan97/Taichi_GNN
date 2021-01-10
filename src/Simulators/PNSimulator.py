@@ -425,7 +425,7 @@ class PNSimulation(SimulatorBase):
         for i in range(self.n_vertices):
             for d in ti.static(range(self.dim)):
                 residual = ti.max(residual, ti.abs(data_sol[i * self.dim + d]))
-        # print("PN Search Direction Residual : ", residual / self.dt)
+        print("PN Search Direction Residual : ", residual / self.dt)
         return residual
 
     @ti.kernel
@@ -460,9 +460,9 @@ class PNSimulation(SimulatorBase):
             self.del_p[i] = self.ti_x[i] - self.ti_x_n[i]
 
     def data_one_frame(self, input_x, input_v):
-        self.update_force_field()
         self.copy(input_x, self.ti_x)
         self.copy(input_v, self.ti_vel)
+        self.update_force_field()
         self.compute_xn_and_xTilde()
         while True:
             self.data_mat.fill(0)
@@ -477,7 +477,7 @@ class PNSimulation(SimulatorBase):
                 self.data_sol = solve_linear_system3(self.data_mat, self.data_rhs,
                                                      self.n_vertices * self.dim, self.dirichlet,
                                                      self.zero.to_numpy(), False, 0, self.cnt[None])
-            if self.output_residual(self.data_sol) < 1e-4 * self.dt:
+            if self.output_residual(self.data_sol) < 5e-4 * self.dt:
                 break
             E0 = self.compute_energy()
             self.save_xPrev()

@@ -18,7 +18,7 @@ nu = 0.4
 dt = 0.01
 
 running_times = 1
-frame_count = 80
+frame_count = 60
 
 test_case = 1007
 
@@ -115,21 +115,24 @@ if __name__ == '__main__':
     # Large scale data generation -- 2D
     # sampled_angle_num = 16
     # sampled_mag_num = 9
-    # pd = PDSimulation(case_info, dt)
-    # pn = PNSimulation(case_info, dt)
-    # pd.set_material(rho, E, nu, dt)
-    # pn.set_material(rho, E, nu, dt)
+    # sim_info = {'case_info': case_info, 'dt': dt, 'real': ti.f64}
+    # pd = PDSimulation(sim_info)
+    # pn = PNSimulation(sim_info)
+    # pd.set_material(rho, E, nu)
+    # pn.set_material(rho, E, nu)
     # for angle_idx in range(sampled_angle_num):
     #     for mag_idx in range(sampled_mag_num):
     #         pd.initial()
     #         pn.initial()
     #         pn.compute_restT_and_m()
     #         force_info = {'dim': case_info['dim'],
+    #                       'force_type': 'dir',
     #                       'exf_angle': angle_idx * (360.0 / sampled_angle_num),
     #                       'exf_mag': (mag_idx + 1)}
     #         pn.set_force(force_info)
     #         pd.set_force(force_info)
-    #         pd.Run(pn, is_test, frame_count, scene_info)
+    #         pd.run(pn, is_test, frame_count, scene_info)
+
 
     # Separately generate 2D and 3D
     # pd = PDSimulation(case_info, dt)
@@ -175,6 +178,7 @@ if __name__ == '__main__':
     pn = PNSimulation(sim_info)
     pd.set_material(rho, E, nu)
     pn.set_material(rho, E, nu)
+
     pd.initial()
     pn.initial()
     pn.compute_restT_and_m()
@@ -193,7 +197,7 @@ if __name__ == '__main__':
 
         # 3D ring force field setting
         force_info['force_type'] = 'ring'
-        force_info['ring_mag'] = 0.04
+        force_info['ring_mag'] = 0.008
         force_info['ring_angle'] = 0.0
         force_info['ring_width'] = 100.0
 
@@ -206,4 +210,61 @@ if __name__ == '__main__':
     pd.set_force(force_info)
     pn.set_force(force_info)
     pd.run(pn, is_test, frame_count, scene_info)
+
+    # ti.reset()
+    #
+    # # Case settings:
+    # case_info = read(test_case)
+    # scene_info = {}
+    # # 3D visualization variables init:
+    # if case_info['dim'] == 2:
+    #     scene_info['gui'] = ti.GUI('2D Simulation Data Generator -- PD -> PN', background_color=0xf7f7f7)
+    # else:
+    #     import tina
+    #
+    #     scene_info['gui'] = ti.GUI('3D Simulation Data Generator -- PD -> PN')
+    #     scene_info['scene'] = tina.Scene(culling=False, clipping=True)
+    #     scene_info['tina_mesh'] = tina.SimpleMesh()
+    #     scene_info['model'] = tina.MeshTransform(scene_info['tina_mesh'])
+    #     scene_info['scene'].add_object(scene_info['model'])
+    #     scene_info['boundary_pos'] = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
+    #
+    # pd2 = PDSimulation(sim_info)
+    # pn2 = PNSimulation(sim_info)
+    # pd2.set_material(rho, E, nu)
+    # pn2.set_material(rho, E, nu)
+    # pd2.initial()
+    # pn2.initial()
+    # pn2.compute_restT_and_m()
+    # force_info = {'dim': case_info['dim'],
+    #               'force_type': 'ring',
+    #               'ring_mag': 0.04,
+    #               'ring_angle': 0.0,
+    #               'ring_width': 100.0}
+    # pd2.set_force(force_info)
+    # pn2.set_force(force_info)
+    # pd2.run(pn2, is_test, frame_count, scene_info)
+
+
+
+    # New structure ring force large scale
+    # sim_info = {'case_info': case_info, 'dt': dt, 'real': ti.f64}
+    # pd = PDSimulation(sim_info)
+    # pn = PNSimulation(sim_info)
+    # pd.set_material(rho, E, nu)
+    # pn.set_material(rho, E, nu)
+    # for angle_idx in range(8):
+    #     cur_angle = (angle_idx + 1) * 45.0
+    #     for mag_idx in range(5):
+    #         pd.initial()
+    #         pn.initial()
+    #         pn.compute_restT_and_m()
+    #         force_info = {'dim': case_info['dim'],
+    #                       'force_type': 'ring',
+    #                       'ring_mag': float(mag_idx + 1) * 0.008,
+    #                       'ring_angle': 0.0,
+    #                       'ring_width': 100.0}
+    #         pn.set_force(force_info)
+    #         pd.set_force(force_info)
+    #         pd.run(pn, is_test, frame_count, scene_info)
 

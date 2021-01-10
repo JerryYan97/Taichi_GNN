@@ -96,8 +96,8 @@ class PDSimulation(SimulatorBase):
 
         # Material and Parameters
         self.m_weight_positional = 1e20
-        self.solver_max_iteration = 50
-        self.solver_stop_residual = 0.0001
+        self.solver_max_iteration = 20
+        self.solver_stop_residual = 0.0005
 
         # Simulator Fields
         self.ti_volume = ti.field(self.real, self.n_elements)
@@ -672,18 +672,30 @@ class PDSimulation(SimulatorBase):
         frame = str(frame).zfill(5)
         if T == 0:
             if self.dim == 2:
-                out_name = "SimData/TrainingData/Train_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
+                out_name = "SimData/TrainingData/Train_2d_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
                            "_" + str(self.exf_mag) + "_" + frame + ".csv"
             else:
-                out_name = "SimData/TrainingData/Train_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + \
-                           "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + "_" + frame + ".csv"
+                if self.force_type == 'dir':
+                    out_name = "SimData/TrainingData/Train_dir_" + self.case_info['case_name'] + "_" + \
+                               str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + \
+                               "_" + frame + ".csv"
+                elif self.force_type == 'ring':
+                    out_name = "SimData/TrainingData/Train_ring_" + self.case_info['case_name'] + "_" +\
+                               str(self.ring_mag) + "_" + str(self.ring_width) + "_" + str(self.ring_angle) + \
+                               "_" + frame + ".csv"
         else:
             if self.dim == 2:
-                out_name = "SimData/TestingData/Test_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
+                out_name = "SimData/TestingData/Test_2d_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
                             "_" + str(self.exf_mag) + "_" + frame + ".csv"
             else:
-                out_name = "SimData/TestingData/Test_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + \
-                           "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + "_" + frame + ".csv"
+                if self.force_type == 'dir':
+                    out_name = "SimData/TrainingData/Test_dir_" + self.case_info['case_name'] + "_" + \
+                               str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + \
+                               "_" + frame + ".csv"
+                elif self.force_type == 'ring':
+                    out_name = "SimData/TrainingData/Test_ring_" + self.case_info['case_name'] + "_" + \
+                               str(self.ring_mag) + "_" + str(self.ring_width) + "_" + str(self.ring_angle) + \
+                               "_" + frame + ".csv"
 
         ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim
         out = np.ones([self.n_vertices, ele_count], dtype=float)
@@ -693,7 +705,7 @@ class PDSimulation(SimulatorBase):
         ltrans_end_t = time.time()
         print("get local transformation:", ltrans_end_t - ltrans_start_t)
         i = 0
-        pos_init_out = self.ti_x_init.to_numpy()
+        pos_init_out = self.mesh.vertices
         if self.dim == 2:
             for res in A_finals:
                 out[i, 0:2] = pd_dis[i, :]  # pd pos
@@ -777,7 +789,7 @@ class PDSimulation(SimulatorBase):
         init_com = calcCenterOfMass(np.arange(self.n_vertices),
                                     self.dim, self.ti_mass.to_numpy(),
                                     self.ti_x.to_numpy())  # this is right
-        init_rel_pos = self.ti_x_init.to_numpy() - init_com
+        init_rel_pos = self.mesh.vertices - init_com
         while frame_counter < frame_count:
             print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
             frame_start_t = time.time()
