@@ -19,6 +19,13 @@ src/tools/backup
 src/tools/modelVisualization
 src/tools/PD_PN_Compare
 src/tools/results
+SimData/PDAnimSeq/
+SimData/PNAnimSeq/
+SimData/TestingData/
+SimData/TrainingData/
+SimData/TmpRenderedImgs/
+SimData/RunNNRes/
+SimData/FinalRes/
 Saved_Cluster
 
 # Created by https://www.gitignore.io/api/linux,osx,sublimetext,windows,jetbrains,vim,emacs,cmake,c++,cuda,visualstudio,webstorm,eclipse,xcode

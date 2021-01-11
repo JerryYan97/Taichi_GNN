@@ -48,10 +48,21 @@ torch.manual_seed(args.seed)
 if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
-dim = 2
-
 # Load whole dataset with DataLoader
-simDataset = load_txt_data(4, "/Outputs")
+# Optimization record:
+# case 1001 -- 9.8G:
+# t1: 0.0037581920623779297  t2: 0.03488945960998535  t3: 0.000118255615234375  t4: 0.0011484622955322266
+# t5-1: 0.016495704650878906  t5-2: 0.004931211471557617  t5-3: 184.7452096939087
+# t5: 186.16088032722473
+# After opt:
+# ~50s in total
+load_data_t_start = time.time()
+simDataset, case_info = load_data(1001, "/SimData/TrainingData")
+load_data_t_end = time.time()
+print("data load time:", load_data_t_end - load_data_t_start)
+
+dim = case_info['dim']
+
 train_loader = DataLoader(dataset=simDataset, batch_size=64, shuffle=True, num_workers=8, pin_memory=False)
 # train_loader = DataLoader(dataset=simDataset, batch_size=64, shuffle=True, num_workers=1)
 
@@ -79,7 +90,7 @@ model = GCN_net_Dec9(
                 gcn_hid2=98,
                 gcn_out2=128,
                 fc_hid=60,
-                fc_out=2,
+                fc_out=dim,
                 dropout=args.dropout).to(device)
 mse = nn.MSELoss(reduction='sum').to(device)
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)

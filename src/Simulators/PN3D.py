@@ -11,7 +11,7 @@ from Utils.math_tools import svd
 from Utils.Dijkstra import *
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
-from Utils.utils_visualization import draw_image, set_3D_scene, update_mesh, get_force_field
+from Utils.utils_visualization import draw_image, update_mesh, get_force_field, get_ring_force_field, get_ring_circle_force_field
 ##############################################################################
 real = ti.f64
 
@@ -37,8 +37,10 @@ class PNSimulation:
         self.n_vertices = self.mesh.num_vertices
         if self.dim == 2:
             self.n_elements = self.mesh.num_faces
+            self.vertices_ = self.mesh.faces
         if self.dim == 3:
             self.n_elements = self.mesh.num_elements
+            self.vertices_ = self.mesh.elements
         # print("element count: ", self.n_elements)
 
         self.x = ti.Vector.field(self.dim, real, self.n_vertices)
@@ -49,7 +51,7 @@ class PNSimulation:
         self.m = ti.field(real, self.n_vertices)
 
         self.grad_x = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.x_xtilde = ti.Vector.field(self.dim, real, self.n_vertices)
+        self.x_xtilde = ti.Vector.field(self.dim, real, self.n_vertices)  # Not used.
 
         self.input_xn = ti.Vector.field(self.dim, real, self.n_vertices)
         self.input_vn = ti.Vector.field(self.dim, real, self.n_vertices)
@@ -60,9 +62,6 @@ class PNSimulation:
         self.restT = ti.Matrix.field(self.dim, self.dim, real, self.n_elements)
         self.vertices = ti.field(ti.i32, (self.n_elements, self.dim + 1))
 
-        # self.data_rhs = ti.field(real, shape=200000)
-        # self.data_mat = ti.field(real, shape=(3, 20000000))
-        # self.data_sol = ti.field(real, shape=200000)
         self.data_rhs = np.zeros(shape=(200000,), dtype=np.float64)
         self.data_mat = np.zeros(shape=(3, 20000000), dtype=np.float64)
         self.data_sol = np.zeros(shape=(200000,), dtype=np.float64)
@@ -77,9 +76,7 @@ class PNSimulation:
         self.ti_U_field = ti.field(real, (self.n_elements, self.dim * self.dim, self.dim * self.dim))
         self.ti_V_field = ti.field(real, (self.n_elements, self.dim * self.dim, self.dim * self.dim))
         self.ti_indMap_field = ti.field(real, (self.n_elements, self.dim * (self.dim + 1)))
-        ################################ external force ######################################
-        self.exf_ind = self.mag_ind = 0  # Used to label output .csv files.
-        self.ex_force = ti.Vector.field(self.dim, real, 1)
+
         ################################ shape matching ######################################
         if self.dim == 2:
             self.initial_com = ti.Vector([0.0, 0.0])
@@ -90,15 +87,24 @@ class PNSimulation:
         self.qi = ti.Vector.field(self.dim, real, self.n_vertices)
         self.init_pos = self.mesh.vertices.astype(np.float32)[:, :self.dim]
 
+        ################################ force field ################################
+        self.ex_force = ti.Vector.field(self.dim, real, self.n_vertices)
+        self.exf_mag = 0.0
+        self.force_type = 'None'
+        if self.dim == 2:
+            self.exf_angle = 0.0
+        else:
+            self.center = self.case_info['center']
+            self.ring_mag = 1.0
+            self.ring_angle = 0.0
+            self.ring_width = 0.2
+            self.ring_circle_radius = 0.2
+            self.ti_center = ti.Vector([self.center[0], self.center[1], self.center[2]])
+            self.exf_angle1 = 0.0
+            self.exf_angle2 = 0.0
+            self.min_sphere_radius = self.case_info['min_sphere_radius']
+
     def initial(self):
-        # if self.dim == 3:
-        #     self.camera = t3.Camera()
-        #     self.scene = t3.Scene()
-        #     self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
-        #     self.model = t3.Model(t3.DynamicMesh(n_faces=len(self.boundary_triangles) * 2,
-        #                                          n_pos=self.case_info['mesh'].num_vertices,
-        #                                          n_nrm=len(self.boundary_triangles) * 2))
-        #     set_3D_scene(self.scene, self.camera, self.model, self.case_info)
         self.x.from_numpy(self.mesh.vertices.astype(np.float64))
         if self.dim == 2:
             self.vertices.from_numpy(self.mesh.faces)
@@ -133,18 +139,66 @@ class PNSimulation:
         self.nu = _nu
         self.mu = self.E / (2.0 * (1.0 + self.nu))
         self.la = self.E * self.nu / ((1.0 + self.nu) * (1.0 - 2.0 * self.nu))
-        print("mu: ", self.mu, "la: ", self.la)
+        # print("mu: ", self.mu, "la: ", self.la)
 
-    def set_force(self, ang1, ang2, mag):
-        if self.dim == 2:
-            exf_angle = -45.0
-            exf_mag = 6
-            self.ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle))
+    def set_force(self, force_info):
+        if force_info['dim'] != self.case_info['dim']:
+            raise AttributeError("Input force dim is not equal to the simulator's dim!")
+        self.force_type = force_info['force_type']
+        if force_info['force_type'] == 'dir':
+            if force_info['dim'] == 2:
+                self.exf_angle = force_info['exf_angle']
+                self.exf_mag = force_info['exf_mag']
+                dir_force = ti.Vector(get_force_field(self.exf_mag, self.exf_angle))
+            else:
+                self.exf_angle1 = force_info['exf_angle1']
+                self.exf_angle2 = force_info['exf_angle2']
+                self.exf_mag = force_info['exf_mag']
+                dir_force = ti.Vector(get_force_field(self.exf_mag, self.exf_angle1, self.exf_angle2, 3))
+            self.set_dir_force(dir_force)
+        elif force_info['force_type'] == 'ring':
+            if force_info['dim'] == 2:
+                raise TypeError("Dim 2 doesn't have ring force field.")
+            else:
+                self.ring_mag = force_info['ring_mag']
+                self.ring_width = force_info['ring_width']
+                self.ring_angle = force_info['ring_angle']
+        elif force_info['force_type'] == 'ring_circle':
+            if force_info['dim'] == 2:
+                raise TypeError("Dim 2 doesn't have ring force field.")
+            else:
+                self.ring_mag = force_info['ring_mag']
+                self.ring_width = force_info['ring_width']
+                self.ring_angle = force_info['ring_angle']
+                self.ring_circle_radius = force_info['ring_circle_radius']
         else:
-            exf_angle1 = ang1
-            exf_angle2 = ang2
-            exf_mag = mag
-            self.ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
+            raise TypeError("The input force type is invalid")
+
+    def update_force_field(self):
+        if self.dim == 3:
+            if self.force_type == 'ring':
+                self.set_ring_force_3D()
+            elif self.force_type == 'ring_circle':
+                self.set_ring_circle_force_3D()
+
+    @ti.kernel
+    def set_dir_force(self, dir_force: ti.template()):
+        for i in range(self.n_vertices):
+            self.ex_force[i] = dir_force
+
+    @ti.kernel
+    def set_ring_force_3D(self):
+        for i in range(self.n_vertices):
+            self.ex_force[i] = get_ring_force_field(self.ring_mag, self.ring_width,
+                                                    self.ti_center, self.x[i],
+                                                    self.ring_angle, 3)
+
+    @ti.kernel
+    def set_ring_circle_force_3D(self):
+        for i in range(self.n_vertices):
+            self.ex_force[i] = get_ring_circle_force_field(self.ring_mag, self.ring_width,
+                                                    self.ti_center, self.x[i], self.ring_angle,
+                                                    self.ring_circle_radius * self.min_sphere_radius, 3)
 
     @ti.func
     def compute_T(self, i):
@@ -186,15 +240,15 @@ class PNSimulation:
             for i in range(self.n_vertices):
                 self.xn[i] = self.x[i]
                 self.xTilde[i] = self.x[i] + self.dt * self.v[i]
-                self.xTilde(0)[i] += self.dt * self.dt * (self.ex_force[0][0]/self.m[i])
-                self.xTilde(1)[i] += self.dt * self.dt * (self.ex_force[0][1]/self.m[i])
+                self.xTilde(0)[i] += self.dt * self.dt * (self.ex_force[i][0]/self.m[i])
+                self.xTilde(1)[i] += self.dt * self.dt * (self.ex_force[i][1]/self.m[i])
         if ti.static(self.dim == 3):
             for i in range(self.n_vertices):
                 self.xn[i] = self.x[i]
                 self.xTilde[i] = self.x[i] + self.dt * self.v[i]
-                self.xTilde(0)[i] += self.dt * self.dt * (self.ex_force[0][0] / self.m[i])
-                self.xTilde(1)[i] += self.dt * self.dt * (self.ex_force[0][1] / self.m[i])
-                self.xTilde(2)[i] += self.dt * self.dt * (self.ex_force[0][2] / self.m[i])
+                self.xTilde(0)[i] += self.dt * self.dt * (self.ex_force[i][0] / self.m[i])
+                self.xTilde(1)[i] += self.dt * self.dt * (self.ex_force[i][1] / self.m[i])
+                self.xTilde(2)[i] += self.dt * self.dt * (self.ex_force[i][2] / self.m[i])
 
     @ti.kernel
     def compute_energy(self) -> real:
@@ -584,80 +638,25 @@ class PNSimulation:
             y[i] = x[i]
 
 
-    # TODO: this one do not need to work, since we use pd->pn
-    def output_all(self, pd_dis, pn_dis, grad_E, frame, T):
-        frame = str(frame).zfill(5)
-        if T == 0:
-            out_name = "Outputs/3Doutput"+str(self.exf_ind)+"_"+str(self.mag_ind)+"_"+frame+".txt"
-        else:
-            out_name = "Outputs_T/3Doutput" + str(self.exf_ind) + "_" + str(self.mag_ind) + "_" + frame + ".txt"
-        if not os.path.exists(out_name):
-            file = open(out_name, 'w+')
-            file.close()
-        ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim  # pd pos + pn pos + local transform + residual + force
-        out = np.ones([self.n_vertices, ele_count], dtype=float)
-        self.mesh.enable_connectivity()
-        for i in range(self.n_vertices):
-            out[i, 0] = pd_dis[i, 0]  # pd pos
-            out[i, 1] = pd_dis[i, 1]
-            out[i, 2] = pd_dis[i, 2]
-
-            out[i, 3] = pn_dis[i, 0]  # pn pos
-            out[i, 4] = pn_dis[i, 1]
-            out[i, 5] = pn_dis[i, 2]
-
-            adj_v = self.mesh.get_vertex_adjacent_vertices(i)
-            adj_v = np.append(adj_v, i)
-            adj_v = np.sort(adj_v)
-            new_pos, init_rel_pos = self.build_pos_arr(adj_v, self.x, self.initial_rel_pos)
-            com = self.calcCenterOfMass(adj_v).to_numpy()
-            curr_rel_pos = np.zeros((adj_v.shape[0], self.dim))
-            for j in range(new_pos.shape[0]):
-                curr_rel_pos[j, :] = new_pos[j, :] - com
-            A_pq = self.calcA_pq(curr_rel_pos, init_rel_pos)
-            R = self.calcR(A_pq)
-            out[i, 4] = R[0, 0]
-            out[i, 5] = R[0, 1]
-            out[i, 6] = R[1, 0]
-            out[i, 7] = R[1, 1]
-            out[i, 4] = R[0, 0]
-            out[i, 5] = R[0, 1]
-            out[i, 6] = R[1, 0]
-            out[i, 7] = R[1, 1]
-
-            out[i, 8] = grad_E[i * 3]
-            out[i, 9] = grad_E[i * 3 + 1]
-            out[i, 9] = grad_E[i * 3 + 2]
-
-            out[i, 10] = self.ex_force[0][0]
-            out[i, 11] = self.ex_force[0][1]
-            out[i, 10] = self.ex_force[0][2]
-        np.savetxt(out_name, out)
-
-    # def set_res(self, r):
-    #     self.res = r
-
     def data_one_frame(self, input_p, input_v):
+        self.update_force_field()
+
         self.copy(input_p, self.x)
         self.copy(input_v, self.v)
         self.compute_xn_and_xTilde()
-        # print("m: \n", self.m.to_numpy())
-        # print("1 x: \n", self.x.to_numpy())
-        # print("1 v: \n", self.v.to_numpy())
-        # print("1 rest T: \n", self.restT.to_numpy())
-        # print("xTilde: \n", self.xTilde.to_numpy())
         while True:
             self.data_mat.fill(0)
             self.data_rhs.fill(0)
             self.data_sol.fill(0)
-            # print(self.data_mat)
             self.compute_hessian_and_gradient(self.data_mat, self.data_rhs)
-            # print("cnt: ", self.cnt[None])
-            # print("dara mat: \n", self.data_mat.to_numpy())
-            # print("dara rhs: \n", self.data_rhs.to_numpy())
-            self.data_sol = solve_linear_system3(self.data_mat, self.data_rhs,
-                                                          self.n_vertices * self.dim, self.dirichlet,
-                                                          self.zero.to_numpy(), False, 0, self.cnt[None])
+            if self.dim == 2:
+                self.data_sol = solve_linear_system(self.data_mat, self.data_rhs, self.n_vertices * self.dim,
+                                                    self.dirichlet, self.zero.to_numpy(),
+                                                    False, 0, self.cnt[None])
+            else:
+                self.data_sol = solve_linear_system3(self.data_mat, self.data_rhs,
+                                                     self.n_vertices * self.dim, self.dirichlet,
+                                                     self.zero.to_numpy(), False, 0, self.cnt[None])
             if self.output_residual(self.data_sol) < 1e-4 * self.dt:
                 break
             E0 = self.compute_energy()
@@ -670,9 +669,6 @@ class PNSimulation:
                 self.apply_sol(alpha, self.data_sol)
                 E = self.compute_energy()
         self.compute_v()
-        # print("del_p: \n", self.del_p.to_numpy())
-        # print("v: \n", self.v.to_numpy())
-        # print("x: \n", self.x.to_numpy())
         return self.del_p, self.x, self.v
 
     # TODO: Not always use, could be wrong

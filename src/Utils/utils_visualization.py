@@ -2,7 +2,7 @@ import taichi as ti
 # import taichi_three as t3
 import taichi_glsl as ts
 import numpy as np
-
+import math
 
 # PN result: Red (Top Layer)
 # PD result: Blue (Bottom Layer)
@@ -57,22 +57,6 @@ def draw_image(gui, file_name_path,
         gui.show()
 
 
-def set_3D_scene(scene, camera, model, case_info):
-    raise NotImplementedError("set_3D_scene() is Not Implemented")
-    # amb_light = t3.AmbientLight(0.5)
-    # dir_light = t3.Light(dir=case_info['light_dir'])
-    # # pt_light = t3.PointLight(pos=[0, 0, 10])
-    # scene.add_camera(camera)
-    # scene.add_light(amb_light)
-    # scene.add_light(dir_light)
-    # # scene.add_light(pt_light)
-    # boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
-    # model.mesh.n_faces[None] = len(boundary_triangles) * 2
-    # init_mesh(model.mesh, boundary_triangles)
-    # model.L2W[None] = case_info['init_transformation']
-    # scene.add_model(model)
-
-
 @ti.kernel
 def init_mesh(mesh: ti.template(), triangles: ti.ext_arr()):
     for i in range(mesh.n_faces[None] / 2):
@@ -105,16 +89,41 @@ def update_boundary_pos(pos: ti.template(),
                 boundary_pos[tri_idx, tri_vert_idx, dim_idx] = pos[boundary_tris[tri_idx, tri_vert_idx]][dim_idx]
 
 
+@ti.kernel
+def update_boundary_pos_np(pos: ti.ext_arr(),
+                        boundary_pos: ti.ext_arr(),
+                        boundary_tris: ti.ext_arr(),
+                        boundary_tri_num: ti.int32):
+    for tri_idx in range(boundary_tri_num):
+        for tri_vert_idx in ti.static(range(3)):
+            for dim_idx in ti.static(range(3)):
+                boundary_pos[tri_idx, tri_vert_idx, dim_idx] = pos[boundary_tris[tri_idx, tri_vert_idx], dim_idx]
+
+
 def update_boundary_mesh(mesh_pos, boundary_pos, case_info):
     boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
     update_boundary_pos(mesh_pos, boundary_pos, boundary_triangles, case_info['boundary_tri_num'])
+
+
+def update_boundary_mesh_np(mesh_pos, boundary_pos, case_info):
+    boundary_points, boundary_edges, boundary_triangles = case_info['boundary']
+    update_boundary_pos_np(mesh_pos, boundary_pos, boundary_triangles, case_info['boundary_tri_num'])
+
+
+def output_3d_seq(pos, boundary_tri, file_path):
+    f = open(file_path, 'w')
+    for [x, y, z] in pos:
+        f.write('v %.6f %.6f %.6f\n' % (x, y, z))
+    for [p0, p1, p2] in boundary_tri:
+        f.write('f %d %d %d\n' % (p0 + 1, p1 + 1, p2 + 1))
+    f.close()
 
 
 # For 2D: Angle is counter-clock wise and it uses [1, 0] direction as its start direction.
 # For 3D: It uses Spherical coordinate system with its origin at the [0, 0, 0].
 #         Angle1 will be used to determine the angle between y axis and the final direction.
 #         Angle2 will be used to determine the direction along the x-z plane with a start direction at [1, 0, 0].
-#         Angle1(Theta) should be a scalar in [0, 2 * pi). Angle2(Phi) should be a scalar in the range of [0, pi].
+#         Angle1(Theta) should be a scalar in [0, pi). Angle2(Phi) should be a scalar in the range of [0, 2 * pi].
 def get_force_field(mag, angle1, angle2=0.0, dim=2):
     if dim == 2:
         x = mag * ti.cos(ts.pi / 180.0 * angle1)
@@ -141,3 +150,65 @@ def rotate_matrix_y_axis(beta_degree):
                      [0.0, 1.0, 0.0, 0.0],
                      [np.sin(beta_radian), 0.0, np.cos(beta_radian), 0.0],
                      [0.0, 0.0, 0.0, 1.0]])
+
+
+# mag: magnitude of the Force
+# center: bbox center of the mesh
+# pos: the mesh point position that want to get the force
+# angle: default: along x axis, used to change the force field
+# width: larger than this value, zero force
+@ti.func
+def get_ring_force_field(mag, width, center, pos, angle, dim) -> ti.Vector:
+    radian = math.pi / 180.0 * angle
+    p1 = center
+    p2 = center + ti.Vector([0.0, 1.0*width, 0.0])
+    p3 = center + ti.Vector([ti.cos(radian)*width, 0.0, ti.sin(radian)*width])
+    a = (p2[1]-p1[1])*(p3[2]-p1[2])-(p3[1]-p1[1])*(p2[2]-p1[2])
+    b = (p2[2]-p1[2])*(p3[0]-p1[0])-(p3[2]-p1[2])*(p2[0]-p1[0])
+    c = (p2[0]-p1[0])*(p3[1]-p1[1])-(p3[0]-p1[0])*(p2[1]-p1[1])
+    d = -a*p1[0]-b*p1[1]-c*p1[2]
+    t = (a*pos[0]+b*pos[1]+c*pos[2]+d)/(a*a+b*b+c*c)
+    p = ti.Vector([pos[0]-a*t, pos[1]-b*t, pos[2]-c*t])
+    T = ti.Vector([0.0, 0.0, 0.0])
+    if (p-pos).norm() <= width:
+        l = (p-center).norm()
+        L = l * l / ti.sqrt((p[0]-center[0])*(p[0]-center[0])+(p[2]-center[2])*(p[2]-center[2]))
+        ss = (p3-center).dot((p-center))                        # print("l: ", l, "L: ", L)
+        p4 = center + (ss * (p3 - center)).normalized() * L     # print("p4: ", p4)
+        s = (p4-p).dot(p3-center) * p[1]
+        if ti.abs(p[1]) < 0.000000001:
+            T = (ss * ti.Vector([0.0, -1.0, 0.0])).normalized()
+            T = mag * T
+        else:
+            T = (s*(p4-p)).normalized()                         # print("p4-p3: ", p4-p3)
+            T = mag * T
+    return T
+
+
+@ti.func
+def get_ring_circle_force_field(mag, width, center, pos, angle, min_radius, dim) -> ti.Vector:
+    radian = math.pi / 180.0 * angle
+    p1 = center
+    p2 = center + ti.Vector([0.0, 1.0*width, 0.0])
+    p3 = center + ti.Vector([ti.cos(radian)*width, 0.0, ti.sin(radian)*width])
+    a = (p2[1]-p1[1])*(p3[2]-p1[2])-(p3[1]-p1[1])*(p2[2]-p1[2])
+    b = (p2[2]-p1[2])*(p3[0]-p1[0])-(p3[2]-p1[2])*(p2[0]-p1[0])
+    c = (p2[0]-p1[0])*(p3[1]-p1[1])-(p3[0]-p1[0])*(p2[1]-p1[1])
+    d = -a*p1[0]-b*p1[1]-c*p1[2]
+    t = (a*pos[0]+b*pos[1]+c*pos[2]+d)/(a*a+b*b+c*c)
+    p = ti.Vector([pos[0]-a*t, pos[1]-b*t, pos[2]-c*t])
+    T = ti.Vector([0.0, 0.0, 0.0])
+    # if (p-center).norm() > min_radius:
+    if (p-pos).norm() <= width and (p-center).norm() > min_radius:
+        l = (p-center).norm()
+        L = l * l / ti.sqrt((p[0]-center[0])*(p[0]-center[0])+(p[2]-center[2])*(p[2]-center[2]))
+        ss = (p3-center).dot((p-center))                        # print("l: ", l, "L: ", L)
+        p4 = center + (ss * (p3 - center)).normalized() * L     # print("p4: ", p4)
+        s = (p4-p).dot(p3-center) * p[1]
+        if ti.abs(p[1]) < 0.000000001:
+            T = (ss * ti.Vector([0.0, -1.0, 0.0])).normalized()
+            T = mag * T
+        else:
+            T = (s*(p4-p)).normalized()                          # print("p4-p3: ", p4-p3)
+            T = mag * T
+    return T

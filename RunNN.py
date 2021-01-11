@@ -34,10 +34,10 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # Specify a path
 PATH = "TrainedNN/state_dict_model_zero_loss_1k.pt"
 # PATH = "TrainedNN/state_dict_model_zero_loss_1k_prune.pt"
-dim = 2
 
 # Model and optimizer
-simDataset = load_txt_data(4, "/Outputs_T")  # load test data
+simDataset, case_info = load_data(1001, "/SimData/TestingData")  # load test data
+dim = case_info['dim']
 test_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=False)
 # model = GCN_CNN(nfeat=simDataset.input_features_num,
 #                 nhid=args.hidden,
@@ -54,7 +54,7 @@ model = GCN_net_Dec9(
                 gcn_hid2=98,
                 gcn_out2=128,
                 fc_hid=60,
-                fc_out=2,
+                fc_out=dim,
                 dropout=args.dropout).to(device)
 model.load_state_dict(torch.load(PATH))
 mse = nn.MSELoss(reduction='sum').to(device)
@@ -67,7 +67,7 @@ def RunNN():
         i = 0
         for data in test_loader:
             ii = str(i).zfill(5)
-            outname = "TestResult/frame" + ii + ".csv"
+            outname = "SimData/RunNNRes/frame" + ii + ".csv"
             output = model(data.x.float().to(device),
                            data.edge_index.to(device),
                            data.num_graphs,
@@ -87,7 +87,7 @@ def RunNN():
             print("Frame:", i,
                   "loss: ", loss.cpu().detach().numpy())
             # PD displacement, PD-GNN, ???, PN displacement
-            dis = npinputs[:, 0:2]
+            dis = npinputs[:, 0:dim]
             after_add = np.add(dis, npouts)
             outfinal = np.hstack((dis, npouts))
             outfinal = np.hstack((outfinal, after_add))
@@ -97,9 +97,8 @@ def RunNN():
 
 
 if __name__ == '__main__':
-    if not os.path.exists("TestResult"):
-        os.makedirs("TestResult")
-    for root, dirs, files in os.walk("TestResult/"):
+    os.makedirs('SimData/RunNNRes/', exist_ok=True)
+    for root, dirs, files in os.walk("SimData/RunNNRes/"):
         for name in files:
             os.remove(os.path.join(root, name))
     RunNN()

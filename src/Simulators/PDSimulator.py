@@ -1,16 +1,16 @@
-import sys, os, time
-import taichi as ti
 import numpy as np
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
-from Utils.utils_visualization import draw_image, update_boundary_mesh, get_force_field, get_ring_force_field, output_3d_seq, get_ring_circle_force_field
-from numpy.linalg import inv
-from scipy.linalg import sqrtm
+import taichi as ti
+import sys, os, time
 from scipy import sparse
 from scipy.sparse.linalg import factorized
-from Utils.math_tools import svd
+from numpy.linalg import inv
+from scipy.linalg import sqrtm
+from .SimulatorBase import SimulatorBase
 import multiprocessing as mp
-from enum import Enum
-real = ti.f64
+sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
+from Utils.math_tools import svd
+from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3d_seq
+
 
 def calcCenterOfMass(vind, dim, mass, pos):
     sum = np.zeros(dim)
@@ -20,7 +20,6 @@ def calcCenterOfMass(vind, dim, mass, pos):
         summ += mass[i]
     sum /= summ
     return sum
-
 
 def calcA_qq(q_i, dim):
     sum = np.zeros((dim, dim))
@@ -88,114 +87,50 @@ def get_local_transformation(n_vertices, mesh, pos, init_pos, mass, dim):
     return a_finals_list
 
 
-@ti.data_oriented
-class PDSimulation:
-    def __init__(self, case_info, _dt):
-        self.dt = _dt
-        ################################ mesh ######################################
-        self.case_info = case_info
-        self.mesh = self.case_info['mesh']
-        self.dirichlet = self.case_info['dirichlet']
-        self.mesh_scale = self.case_info['mesh_scale']
-        self.mesh_offset = self.case_info['mesh_offset']
-        self.dim = self.case_info['dim']
-        self.n_vertices = self.mesh.num_vertices
-        if self.dim == 2:
-            self.n_elements = self.mesh.num_faces
-        else:
-            self.n_elements = self.mesh.num_elements
+class PDSimulation(SimulatorBase):
+    def __init__(self, sim_info):
+        super().__init__(sim_info)
 
-        ################################ material and parms ######################################
-        self.rho = 100
-        self.E = 1e4
-        self.nu = 0.4
-        self.mu = self.E / (2 * (1 + self.nu))
-        self.lam = self.E * self.nu / ((1 + self.nu) * (1 - 2 * self.nu))
-        self.m_weight_positional = 1e20
-        self.solver_max_iteration = 50
-        self.solver_stop_residual = 0.0001
-
-        ################################ field ######################################
-        self.ti_pos_del = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.gradE = ti.field(real, shape=2000)
-        self.x_xtilde = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.input_xn = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.input_vn = ti.Vector.field(self.dim, real, self.n_vertices)
-
-        ################################ shape matching ######################################
-        self.initial_rel_pos = np.array([self.n_vertices, self.dim])
-        self.pi = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.qi = ti.Vector.field(self.dim, real, self.n_vertices)
-
-        # Taichi variables' initialization:
-        self.ti_mass = ti.field(real, self.n_vertices)
-        self.ti_volume = ti.field(real, self.n_elements)
-        self.ti_pos = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.ti_pos_new = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.ti_pos_init = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.pos_init_out = np.zeros(shape=(self.n_vertices, self.dim), dtype=np.float64)
-        self.ti_last_pos_new = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.ti_boundary_labels = ti.field(int, self.n_vertices)
-        self.ti_vel = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.ti_vel_last = ti.Vector.field(self.dim, real, self.n_vertices)
-
-        self.ti_elements = ti.Vector.field(self.dim + 1, int, self.n_elements)  # ids of three vertices of each face
-        self.ti_Dm_inv = ti.Matrix.field(self.dim, self.dim, real, self.n_elements)  # The inverse of the init elements -- Dm
-        self.ti_F = ti.Matrix.field(self.dim, self.dim, real, self.n_elements)
-        self.ti_A = ti.field(real, (self.n_elements * 2, self.dim * self.dim, self.dim * (self.dim + 1)))
-        self.ti_A_i = ti.field(real, shape=(self.dim * self.dim, self.dim * (self.dim + 1)))
-        self.ti_q_idx_vec = ti.field(ti.int32, (self.n_elements, self.dim * (self.dim + 1)))
-        self.ti_Bp = ti.Matrix.field(self.dim, self.dim, real, self.n_elements * 2)
-        self.ti_Sn = ti.field(real, self.n_vertices * self.dim)
-        # potential energy of each element(face) for linear coratated elasticity material.
-        self.ti_phi = ti.field(real, self.n_elements)
-        self.ti_weight_strain = ti.field(real, self.n_elements)   # self.mu * 2 * self.volume
-        self.ti_weight_volume = ti.field(real, self.n_elements)   # self.lam * self.dim * self.volume
-        if self.dim == 2:
-            self.initial_com = ti.Vector([0.0, 0.0])
-        else:
-            self.initial_com = ti.Vector([0.0, 0.0, 0.0])
-            self.boundary_points, self.boundary_edges, self.boundary_triangles = self.case_info['boundary']
+        # Mesh
         self.mesh.enable_connectivity()
 
-        ################################ force field ################################
-        self.ti_ex_force = ti.Vector.field(self.dim, real, self.n_vertices)
-        self.exf_mag = 0.0
-        self.force_type = 'None'
-        if self.dim == 2:
-            self.exf_angle = 0.0
-        else:
-            self.center = self.case_info['center']
-            self.ring_mag = 1.0
-            self.ring_angle = 0.0
-            self.ring_width = 0.2
-            self.ring_circle_radius = 0.2
-            self.ti_center = ti.Vector([self.center[0], self.center[1], self.center[2]])
-            self.exf_angle1 = 0.0
-            self.exf_angle2 = 0.0
-            self.min_sphere_radius = self.case_info['min_sphere_radius']
+        # Material and Parameters
+        self.m_weight_positional = 1e20
+        self.solver_max_iteration = 20
+        self.solver_stop_residual = 0.0005
+
+        # Simulator Fields
+        self.ti_volume = ti.field(self.real, self.n_elements)
+        self.ti_x_new = ti.Vector.field(self.dim, self.real, self.n_vertices)
+        self.ti_x_del = ti.Vector.field(self.dim, self.real, self.n_vertices)
+        # self.gradE = ti.field(self.real, shape=200000)  # Keep the shape same as the rhs shape of PN
+        self.ti_last_pos_new = ti.Vector.field(self.dim, self.real, self.n_vertices)
+        self.ti_boundary_labels = ti.field(int, self.n_vertices)
+        self.ti_Dm_inv = ti.Matrix.field(self.dim, self.dim, self.real,
+                                         self.n_elements)  # The inverse of the init elements -- Dm
+        self.ti_F = ti.Matrix.field(self.dim, self.dim, self.real, self.n_elements)
+        self.ti_A = ti.field(self.real, (self.n_elements * 2, self.dim * self.dim, self.dim * (self.dim + 1)))
+        self.ti_A_i = ti.field(self.real, shape=(self.dim * self.dim, self.dim * (self.dim + 1)))
+        self.ti_q_idx_vec = ti.field(ti.int32, (self.n_elements, self.dim * (self.dim + 1)))
+        self.ti_Bp = ti.Matrix.field(self.dim, self.dim, self.real, self.n_elements * 2)
+        self.ti_Sn = ti.field(self.real, self.n_vertices * self.dim)
+        self.ti_phi = ti.field(self.real, self.n_elements)
+        self.ti_weight_strain = ti.field(self.real, self.n_elements)  # self.mu * 2 * self.volume
+        self.ti_weight_volume = ti.field(self.real, self.n_elements)  # self.lam * self.dim * self.volume
+
+        # Shape Matching
+        self.ti_x_init = ti.Vector.field(self.dim, self.real, self.n_vertices)
 
     def initial(self):
-        if self.dim == 2:
-            self.initial_com = ti.Vector([0.0, 0.0])
-            self.ti_elements.from_numpy(self.mesh.faces)
-        else:
-            self.initial_com = ti.Vector([0.0, 0.0, 0.0])
-            self.ti_elements.from_numpy(self.mesh.elements)
-            self.ti_center = ti.Vector([self.center[0], self.center[1], self.center[2]])
+        self.base_initial()
 
-        self.ti_pos.from_numpy(self.mesh.vertices)
-        self.ti_pos_init.from_numpy(self.mesh.vertices)
-        self.pos_init_out = self.ti_pos_init.to_numpy()
-        self.input_xn.fill(0)
-        self.input_vn.fill(0)
-        self.ti_mass.fill(0)
+        # Simulator Fields
         self.ti_volume.fill(0)
-        self.ti_pos_new.fill(0)
+        self.ti_x_new.fill(0)
+        self.ti_x_del.fill(0)
+        # self.gradE.fill(0)
         self.ti_last_pos_new.fill(0)
         self.ti_boundary_labels.fill(0)
-        self.ti_vel.fill(0)
-        self.ti_vel_last.fill(0)
         self.ti_Dm_inv.fill(0)
         self.ti_F.fill(0)
         self.ti_A.fill(0)
@@ -206,81 +141,9 @@ class PDSimulation:
         self.ti_phi.fill(0)
         self.ti_weight_strain.fill(0)
         self.ti_weight_volume.fill(0)
-        self.ti_pos_del.fill(0)
-        self.gradE.fill(0)
-        self.x_xtilde.fill(0)
-        ################################ shape matching ######################################
-        self.pi.fill(0)
-        self.qi.fill(0)
-        ################################ force field ################################
-        self.ti_ex_force.fill(0)
 
-    def set_material(self, _rho, _ym, _nu, _dt):
-        self.dt = _dt
-        self.rho = _rho
-        self.E = _ym
-        self.nu = _nu
-        self.mu = self.E / (2 * (1 + self.nu))
-        self.lam = self.E * self.nu / ((1 + self.nu) * (1 - 2 * self.nu))
-
-    @ti.kernel
-    def set_dir_force(self, dir_force: ti.template()):
-            for i in range(self.n_vertices):
-                self.ti_ex_force[i] = dir_force
-
-    def set_force(self, force_info):
-        if force_info['dim'] != self.case_info['dim']:
-            raise AttributeError("Input force dim is not equal to the simulator's dim!")
-        self.force_type = force_info['force_type']
-        if force_info['force_type'] == 'dir':
-            if force_info['dim'] == 2:
-                self.exf_angle = force_info['exf_angle']
-                self.exf_mag = force_info['exf_mag']
-                dir_force = ti.Vector(get_force_field(self.exf_mag, self.exf_angle))
-            else:
-                self.exf_angle1 = force_info['exf_angle1']
-                self.exf_angle2 = force_info['exf_angle2']
-                self.exf_mag = force_info['exf_mag']
-                dir_force = ti.Vector(get_force_field(self.exf_mag, self.exf_angle1, self.exf_angle2, 3))
-            self.set_dir_force(dir_force)
-        elif force_info['force_type'] == 'ring':
-            if force_info['dim'] == 2:
-                raise TypeError("Dim 2 doesn't have ring force field.")
-            else:
-                self.ring_mag = force_info['ring_mag']
-                self.ring_width = force_info['ring_width']
-                self.ring_angle = force_info['ring_angle']
-        elif force_info['force_type'] == 'ring_circle':
-            if force_info['dim'] == 2:
-                raise TypeError("Dim 2 doesn't have ring force field.")
-            else:
-                self.ring_mag = force_info['ring_mag']
-                self.ring_width = force_info['ring_width']
-                self.ring_angle = force_info['ring_angle']
-                self.ring_circle_radius = force_info['ring_circle_radius']
-        else:
-            raise TypeError("The input force type is invalid")
-
-    @ti.kernel
-    def set_ring_force_3D(self):
-        for i in range(self.n_vertices):
-            self.ti_ex_force[i] = get_ring_force_field(self.ring_mag, self.ring_width,
-                                                       self.ti_center, self.ti_pos[i],
-                                                       self.ring_angle, 3)
-
-    @ti.kernel
-    def set_ring_circle_force_3D(self):
-        for i in range(self.n_vertices):
-            self.ti_ex_force[i] = get_ring_circle_force_field(self.ring_mag, self.ring_width,
-                                                    self.ti_center, self.ti_pos[i], self.ring_angle,
-                                                    self.ring_circle_radius * self.min_sphere_radius, 3)
-
-    def update_force_field(self):
-        if self.dim == 3:
-            if self.force_type == 'ring':
-                self.set_ring_force_3D()
-            elif self.force_type == 'ring_circle':
-                self.set_ring_circle_force_3D()
+        # Shape Matching
+        self.ti_x_init.from_numpy(self.mesh.vertices)
 
     @ti.func
     def set_ti_A_i(self, ele_idx, row, col, val):
@@ -300,40 +163,58 @@ class PDSimulation:
             return tmp_mat
         else:
             tmp_mat = ti.Matrix.rows(
-                [[self.ti_A[ele_idx, 0, 0], self.ti_A[ele_idx, 0, 1], self.ti_A[ele_idx, 0, 2], self.ti_A[ele_idx, 0, 3],
-                  self.ti_A[ele_idx, 0, 4], self.ti_A[ele_idx, 0, 5], self.ti_A[ele_idx, 0, 6], self.ti_A[ele_idx, 0, 7],
+                [[self.ti_A[ele_idx, 0, 0], self.ti_A[ele_idx, 0, 1], self.ti_A[ele_idx, 0, 2],
+                  self.ti_A[ele_idx, 0, 3],
+                  self.ti_A[ele_idx, 0, 4], self.ti_A[ele_idx, 0, 5], self.ti_A[ele_idx, 0, 6],
+                  self.ti_A[ele_idx, 0, 7],
                   self.ti_A[ele_idx, 0, 8], self.ti_A[ele_idx, 0, 9], self.ti_A[ele_idx, 0, 10],
                   self.ti_A[ele_idx, 0, 11]],
-                 [self.ti_A[ele_idx, 1, 0], self.ti_A[ele_idx, 1, 1], self.ti_A[ele_idx, 1, 2], self.ti_A[ele_idx, 1, 3],
-                  self.ti_A[ele_idx, 1, 4], self.ti_A[ele_idx, 1, 5], self.ti_A[ele_idx, 1, 6], self.ti_A[ele_idx, 1, 7],
+                 [self.ti_A[ele_idx, 1, 0], self.ti_A[ele_idx, 1, 1], self.ti_A[ele_idx, 1, 2],
+                  self.ti_A[ele_idx, 1, 3],
+                  self.ti_A[ele_idx, 1, 4], self.ti_A[ele_idx, 1, 5], self.ti_A[ele_idx, 1, 6],
+                  self.ti_A[ele_idx, 1, 7],
                   self.ti_A[ele_idx, 1, 8], self.ti_A[ele_idx, 1, 9], self.ti_A[ele_idx, 1, 10],
                   self.ti_A[ele_idx, 1, 11]],
-                 [self.ti_A[ele_idx, 2, 0], self.ti_A[ele_idx, 2, 1], self.ti_A[ele_idx, 2, 2], self.ti_A[ele_idx, 2, 3],
-                  self.ti_A[ele_idx, 2, 4], self.ti_A[ele_idx, 2, 5], self.ti_A[ele_idx, 2, 6], self.ti_A[ele_idx, 2, 7],
+                 [self.ti_A[ele_idx, 2, 0], self.ti_A[ele_idx, 2, 1], self.ti_A[ele_idx, 2, 2],
+                  self.ti_A[ele_idx, 2, 3],
+                  self.ti_A[ele_idx, 2, 4], self.ti_A[ele_idx, 2, 5], self.ti_A[ele_idx, 2, 6],
+                  self.ti_A[ele_idx, 2, 7],
                   self.ti_A[ele_idx, 2, 8], self.ti_A[ele_idx, 2, 9], self.ti_A[ele_idx, 2, 10],
                   self.ti_A[ele_idx, 2, 11]],
-                 [self.ti_A[ele_idx, 3, 0], self.ti_A[ele_idx, 3, 1], self.ti_A[ele_idx, 3, 2], self.ti_A[ele_idx, 3, 3],
-                  self.ti_A[ele_idx, 3, 4], self.ti_A[ele_idx, 3, 5], self.ti_A[ele_idx, 3, 6], self.ti_A[ele_idx, 3, 7],
+                 [self.ti_A[ele_idx, 3, 0], self.ti_A[ele_idx, 3, 1], self.ti_A[ele_idx, 3, 2],
+                  self.ti_A[ele_idx, 3, 3],
+                  self.ti_A[ele_idx, 3, 4], self.ti_A[ele_idx, 3, 5], self.ti_A[ele_idx, 3, 6],
+                  self.ti_A[ele_idx, 3, 7],
                   self.ti_A[ele_idx, 3, 8], self.ti_A[ele_idx, 3, 9], self.ti_A[ele_idx, 3, 10],
                   self.ti_A[ele_idx, 3, 11]],
-                 [self.ti_A[ele_idx, 4, 0], self.ti_A[ele_idx, 4, 1], self.ti_A[ele_idx, 4, 2], self.ti_A[ele_idx, 4, 3],
-                  self.ti_A[ele_idx, 4, 4], self.ti_A[ele_idx, 4, 5], self.ti_A[ele_idx, 4, 6], self.ti_A[ele_idx, 4, 7],
+                 [self.ti_A[ele_idx, 4, 0], self.ti_A[ele_idx, 4, 1], self.ti_A[ele_idx, 4, 2],
+                  self.ti_A[ele_idx, 4, 3],
+                  self.ti_A[ele_idx, 4, 4], self.ti_A[ele_idx, 4, 5], self.ti_A[ele_idx, 4, 6],
+                  self.ti_A[ele_idx, 4, 7],
                   self.ti_A[ele_idx, 4, 8], self.ti_A[ele_idx, 4, 9], self.ti_A[ele_idx, 4, 10],
                   self.ti_A[ele_idx, 4, 11]],
-                 [self.ti_A[ele_idx, 5, 0], self.ti_A[ele_idx, 5, 1], self.ti_A[ele_idx, 5, 2], self.ti_A[ele_idx, 5, 3],
-                  self.ti_A[ele_idx, 5, 4], self.ti_A[ele_idx, 5, 5], self.ti_A[ele_idx, 5, 6], self.ti_A[ele_idx, 5, 7],
+                 [self.ti_A[ele_idx, 5, 0], self.ti_A[ele_idx, 5, 1], self.ti_A[ele_idx, 5, 2],
+                  self.ti_A[ele_idx, 5, 3],
+                  self.ti_A[ele_idx, 5, 4], self.ti_A[ele_idx, 5, 5], self.ti_A[ele_idx, 5, 6],
+                  self.ti_A[ele_idx, 5, 7],
                   self.ti_A[ele_idx, 5, 8], self.ti_A[ele_idx, 5, 9], self.ti_A[ele_idx, 5, 10],
                   self.ti_A[ele_idx, 5, 11]],
-                 [self.ti_A[ele_idx, 6, 0], self.ti_A[ele_idx, 6, 1], self.ti_A[ele_idx, 6, 2], self.ti_A[ele_idx, 6, 3],
-                  self.ti_A[ele_idx, 6, 4], self.ti_A[ele_idx, 6, 5], self.ti_A[ele_idx, 6, 6], self.ti_A[ele_idx, 6, 7],
+                 [self.ti_A[ele_idx, 6, 0], self.ti_A[ele_idx, 6, 1], self.ti_A[ele_idx, 6, 2],
+                  self.ti_A[ele_idx, 6, 3],
+                  self.ti_A[ele_idx, 6, 4], self.ti_A[ele_idx, 6, 5], self.ti_A[ele_idx, 6, 6],
+                  self.ti_A[ele_idx, 6, 7],
                   self.ti_A[ele_idx, 6, 8], self.ti_A[ele_idx, 6, 9], self.ti_A[ele_idx, 6, 10],
                   self.ti_A[ele_idx, 6, 11]],
-                 [self.ti_A[ele_idx, 7, 0], self.ti_A[ele_idx, 7, 1], self.ti_A[ele_idx, 7, 2], self.ti_A[ele_idx, 7, 3],
-                  self.ti_A[ele_idx, 7, 4], self.ti_A[ele_idx, 7, 5], self.ti_A[ele_idx, 7, 6], self.ti_A[ele_idx, 7, 7],
+                 [self.ti_A[ele_idx, 7, 0], self.ti_A[ele_idx, 7, 1], self.ti_A[ele_idx, 7, 2],
+                  self.ti_A[ele_idx, 7, 3],
+                  self.ti_A[ele_idx, 7, 4], self.ti_A[ele_idx, 7, 5], self.ti_A[ele_idx, 7, 6],
+                  self.ti_A[ele_idx, 7, 7],
                   self.ti_A[ele_idx, 7, 8], self.ti_A[ele_idx, 7, 9], self.ti_A[ele_idx, 7, 10],
                   self.ti_A[ele_idx, 7, 11]],
-                 [self.ti_A[ele_idx, 8, 0], self.ti_A[ele_idx, 8, 1], self.ti_A[ele_idx, 8, 2], self.ti_A[ele_idx, 8, 3],
-                  self.ti_A[ele_idx, 8, 4], self.ti_A[ele_idx, 8, 5], self.ti_A[ele_idx, 8, 6], self.ti_A[ele_idx, 8, 7],
+                 [self.ti_A[ele_idx, 8, 0], self.ti_A[ele_idx, 8, 1], self.ti_A[ele_idx, 8, 2],
+                  self.ti_A[ele_idx, 8, 3],
+                  self.ti_A[ele_idx, 8, 4], self.ti_A[ele_idx, 8, 5], self.ti_A[ele_idx, 8, 6],
+                  self.ti_A[ele_idx, 8, 7],
                   self.ti_A[ele_idx, 8, 8], self.ti_A[ele_idx, 8, 9], self.ti_A[ele_idx, 8, 10],
                   self.ti_A[ele_idx, 8, 11]]
                  ])
@@ -343,11 +224,12 @@ class PDSimulation:
     def compute_Dm(self, i):
         if ti.static(self.dim == 2):
             ia, ib, ic = self.ti_elements[i]
-            a, b, c = self.ti_pos_init[ia], self.ti_pos_init[ib], self.ti_pos_init[ic]
+            a, b, c = self.ti_x_init[ia], self.ti_x_init[ib], self.ti_x_init[ic]
             return ti.Matrix.cols([b - a, c - a])
         else:
             idx_a, idx_b, idx_c, idx_d = self.ti_elements[i]
-            a, b, c, d = self.ti_pos_init[idx_a], self.ti_pos_init[idx_b], self.ti_pos_init[idx_c], self.ti_pos_init[idx_d]
+            a, b, c, d = self.ti_x_init[idx_a], self.ti_x_init[idx_b], self.ti_x_init[idx_c], self.ti_x_init[
+                idx_d]
             return ti.Matrix.cols([b - a, c - a, d - a])
 
     @ti.kernel
@@ -488,33 +370,59 @@ class PDSimulation:
                     weight_volume = self.ti_weight_volume[ele_idx]
                     cur_sparse_val = 0.0
                     if ti.static(self.dim) == 2:
-                        cur_sparse_val += (self.ti_A[ele_idx, 0, A_row_idx] * self.ti_A[ele_idx, 0, A_col_idx] * weight_strain)
-                        cur_sparse_val += (self.ti_A[ele_idx, 1, A_row_idx] * self.ti_A[ele_idx, 1, A_col_idx] * weight_strain)
-                        cur_sparse_val += (self.ti_A[ele_idx, 2, A_row_idx] * self.ti_A[ele_idx, 2, A_col_idx] * weight_strain)
-                        cur_sparse_val += (self.ti_A[ele_idx, 3, A_row_idx] * self.ti_A[ele_idx, 3, A_col_idx] * weight_strain)
-                        cur_sparse_val += (self.ti_A[ele_idx, 0, A_row_idx] * self.ti_A[ele_idx, 0, A_col_idx] * weight_volume)
-                        cur_sparse_val += (self.ti_A[ele_idx, 1, A_row_idx] * self.ti_A[ele_idx, 1, A_col_idx] * weight_volume)
-                        cur_sparse_val += (self.ti_A[ele_idx, 2, A_row_idx] * self.ti_A[ele_idx, 2, A_col_idx] * weight_volume)
-                        cur_sparse_val += (self.ti_A[ele_idx, 3, A_row_idx] * self.ti_A[ele_idx, 3, A_col_idx] * weight_volume)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 0, A_row_idx] * self.ti_A[ele_idx, 0, A_col_idx] * weight_strain)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 1, A_row_idx] * self.ti_A[ele_idx, 1, A_col_idx] * weight_strain)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 2, A_row_idx] * self.ti_A[ele_idx, 2, A_col_idx] * weight_strain)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 3, A_row_idx] * self.ti_A[ele_idx, 3, A_col_idx] * weight_strain)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 0, A_row_idx] * self.ti_A[ele_idx, 0, A_col_idx] * weight_volume)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 1, A_row_idx] * self.ti_A[ele_idx, 1, A_col_idx] * weight_volume)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 2, A_row_idx] * self.ti_A[ele_idx, 2, A_col_idx] * weight_volume)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 3, A_row_idx] * self.ti_A[ele_idx, 3, A_col_idx] * weight_volume)
                     else:
-                        cur_sparse_val += (self.ti_A[ele_idx, 0, A_row_idx] * self.ti_A[ele_idx, 0, A_col_idx] * weight_strain)
-                        cur_sparse_val += (self.ti_A[ele_idx, 1, A_row_idx] * self.ti_A[ele_idx, 1, A_col_idx] * weight_strain)
-                        cur_sparse_val += (self.ti_A[ele_idx, 2, A_row_idx] * self.ti_A[ele_idx, 2, A_col_idx] * weight_strain)
-                        cur_sparse_val += (self.ti_A[ele_idx, 3, A_row_idx] * self.ti_A[ele_idx, 3, A_col_idx] * weight_strain)
-                        cur_sparse_val += (self.ti_A[ele_idx, 4, A_row_idx] * self.ti_A[ele_idx, 4, A_col_idx] * weight_strain)
-                        cur_sparse_val += (self.ti_A[ele_idx, 5, A_row_idx] * self.ti_A[ele_idx, 5, A_col_idx] * weight_strain)
-                        cur_sparse_val += (self.ti_A[ele_idx, 6, A_row_idx] * self.ti_A[ele_idx, 6, A_col_idx] * weight_strain)
-                        cur_sparse_val += (self.ti_A[ele_idx, 7, A_row_idx] * self.ti_A[ele_idx, 7, A_col_idx] * weight_strain)
-                        cur_sparse_val += (self.ti_A[ele_idx, 8, A_row_idx] * self.ti_A[ele_idx, 8, A_col_idx] * weight_strain)
-                        cur_sparse_val += (self.ti_A[ele_idx, 0, A_row_idx] * self.ti_A[ele_idx, 0, A_col_idx] * weight_volume)
-                        cur_sparse_val += (self.ti_A[ele_idx, 1, A_row_idx] * self.ti_A[ele_idx, 1, A_col_idx] * weight_volume)
-                        cur_sparse_val += (self.ti_A[ele_idx, 2, A_row_idx] * self.ti_A[ele_idx, 2, A_col_idx] * weight_volume)
-                        cur_sparse_val += (self.ti_A[ele_idx, 3, A_row_idx] * self.ti_A[ele_idx, 3, A_col_idx] * weight_volume)
-                        cur_sparse_val += (self.ti_A[ele_idx, 4, A_row_idx] * self.ti_A[ele_idx, 4, A_col_idx] * weight_volume)
-                        cur_sparse_val += (self.ti_A[ele_idx, 5, A_row_idx] * self.ti_A[ele_idx, 5, A_col_idx] * weight_volume)
-                        cur_sparse_val += (self.ti_A[ele_idx, 6, A_row_idx] * self.ti_A[ele_idx, 6, A_col_idx] * weight_volume)
-                        cur_sparse_val += (self.ti_A[ele_idx, 7, A_row_idx] * self.ti_A[ele_idx, 7, A_col_idx] * weight_volume)
-                        cur_sparse_val += (self.ti_A[ele_idx, 8, A_row_idx] * self.ti_A[ele_idx, 8, A_col_idx] * weight_volume)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 0, A_row_idx] * self.ti_A[ele_idx, 0, A_col_idx] * weight_strain)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 1, A_row_idx] * self.ti_A[ele_idx, 1, A_col_idx] * weight_strain)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 2, A_row_idx] * self.ti_A[ele_idx, 2, A_col_idx] * weight_strain)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 3, A_row_idx] * self.ti_A[ele_idx, 3, A_col_idx] * weight_strain)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 4, A_row_idx] * self.ti_A[ele_idx, 4, A_col_idx] * weight_strain)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 5, A_row_idx] * self.ti_A[ele_idx, 5, A_col_idx] * weight_strain)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 6, A_row_idx] * self.ti_A[ele_idx, 6, A_col_idx] * weight_strain)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 7, A_row_idx] * self.ti_A[ele_idx, 7, A_col_idx] * weight_strain)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 8, A_row_idx] * self.ti_A[ele_idx, 8, A_col_idx] * weight_strain)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 0, A_row_idx] * self.ti_A[ele_idx, 0, A_col_idx] * weight_volume)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 1, A_row_idx] * self.ti_A[ele_idx, 1, A_col_idx] * weight_volume)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 2, A_row_idx] * self.ti_A[ele_idx, 2, A_col_idx] * weight_volume)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 3, A_row_idx] * self.ti_A[ele_idx, 3, A_col_idx] * weight_volume)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 4, A_row_idx] * self.ti_A[ele_idx, 4, A_col_idx] * weight_volume)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 5, A_row_idx] * self.ti_A[ele_idx, 5, A_col_idx] * weight_volume)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 6, A_row_idx] * self.ti_A[ele_idx, 6, A_col_idx] * weight_volume)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 7, A_row_idx] * self.ti_A[ele_idx, 7, A_col_idx] * weight_volume)
+                        cur_sparse_val += (
+                                    self.ti_A[ele_idx, 8, A_row_idx] * self.ti_A[ele_idx, 8, A_col_idx] * weight_volume)
                     # lhs_matrix_np[lhs_row_idx, lhs_col_idx] += cur_sparse_val
                     cur_idx = ele_global_start_idx + ele_offset_idx
                     lhs_mat_row[cur_idx] = lhs_row_idx
@@ -543,14 +451,14 @@ class PDSimulation:
     def compute_Fi(self, i):
         if ti.static(self.dim == 2):
             ia, ib, ic = self.ti_elements[i]
-            a, b, c = self.ti_pos_new[ia], self.ti_pos_new[ib], self.ti_pos_new[ic]
+            a, b, c = self.ti_x_new[ia], self.ti_x_new[ib], self.ti_x_new[ic]
             D_i = ti.Matrix.cols([b - a, c - a])
-            return ti.cast(D_i @ self.ti_Dm_inv[i], real)
+            return ti.cast(D_i @ self.ti_Dm_inv[i], self.real)
         else:
             idx_a, idx_b, idx_c, idx_d = self.ti_elements[i]
-            a, b, c, d = self.ti_pos_new[idx_a], self.ti_pos_new[idx_b], self.ti_pos_new[idx_c], self.ti_pos_new[idx_d]
+            a, b, c, d = self.ti_x_new[idx_a], self.ti_x_new[idx_b], self.ti_x_new[idx_c], self.ti_x_new[idx_d]
             D_i = ti.Matrix.cols([b - a, c - a, d - a])
-            return ti.cast(D_i @ self.ti_Dm_inv[i], real)
+            return ti.cast(D_i @ self.ti_Dm_inv[i], self.real)
 
     @ti.func
     def compute_volume_constraint(self, sigma):
@@ -614,28 +522,16 @@ class PDSimulation:
         for vert_idx in range(self.n_vertices):  # number of vertices
             Sn_idx1 = vert_idx * self.dim
             Sn_idx2 = vert_idx * self.dim + 1
-            pos_i = self.ti_pos[vert_idx]
+            pos_i = self.ti_x[vert_idx]
             vel_i = self.ti_vel[vert_idx]
-            self.ti_Sn[Sn_idx1] = pos_i[0] + self.dt * vel_i[0] + (self.dt ** 2) * self.ti_ex_force[vert_idx][0] / self.ti_mass[
-                vert_idx]  # x-direction;
-            self.ti_Sn[Sn_idx2] = pos_i[1] + self.dt * vel_i[1] + (self.dt ** 2) * self.ti_ex_force[vert_idx][1] / self.ti_mass[
-                vert_idx]  # y-direction;
+            self.ti_Sn[Sn_idx1] = pos_i[0] + self.dt * vel_i[0] + (self.dt ** 2) * self.ti_ex_force[vert_idx][0] / \
+                                  self.ti_mass[vert_idx]  # x-direction;
+            self.ti_Sn[Sn_idx2] = pos_i[1] + self.dt * vel_i[1] + (self.dt ** 2) * self.ti_ex_force[vert_idx][1] / \
+                                  self.ti_mass[vert_idx]  # y-direction;
             if ti.static(self.dim == 3):
                 Sn_idx3 = vert_idx * self.dim + 2
-                self.ti_Sn[Sn_idx3] = pos_i[2] + self.dt * vel_i[2] + (self.dt ** 2) * self.ti_ex_force[vert_idx][2] / self.ti_mass[vert_idx]
-
-    @ti.kernel
-    def compute_x_xtilde(self):
-        if ti.static(self.dim == 2):
-            for i in range(self.n_vertices):
-                self.x_xtilde[i][0] = self.ti_pos[i][0] - self.ti_Sn[i * self.dim]
-                self.x_xtilde[i][1] = self.ti_pos[i][1] - self.ti_Sn[i * self.dim + 1]
-        else:
-            for i in range(self.n_vertices):
-                self.x_xtilde[i][0] = self.ti_pos[i][0] - self.ti_Sn[i * self.dim]
-                self.x_xtilde[i][1] = self.ti_pos[i][1] - self.ti_Sn[i * self.dim + 1]
-                self.x_xtilde[i][1] = self.ti_pos[i][1] - self.ti_Sn[i * self.dim + 2]
-            # print("x-xtilde: ", self.x_xtilde[i], " x: ", self.pos[i], " sn: ", self.Sn[i*2], ", ", self.Sn[i*2+1])
+                self.ti_Sn[Sn_idx3] = pos_i[2] + self.dt * vel_i[2] + (self.dt ** 2) * self.ti_ex_force[vert_idx][2] / \
+                                      self.ti_mass[vert_idx]
 
     @ti.func
     def Build_Bp_i_vec(self, idx):
@@ -720,7 +616,7 @@ class PDSimulation:
         # Add positional constraints Bp to the rhs
         for i in range(self.n_vertices):
             if self.ti_boundary_labels[i] == 1:
-                pos_init_i = self.ti_pos_init[i]
+                pos_init_i = self.ti_x_init[i]
                 q_i_x_idx = i * self.dim
                 q_i_y_idx = i * self.dim + 1
                 rhs[q_i_x_idx] += (pos_init_i[0] * self.m_weight_positional)
@@ -732,97 +628,42 @@ class PDSimulation:
     @ti.kernel
     def update_velocity_pos(self):
         for i in range(self.n_vertices):
-            self.ti_vel_last[i] = self.ti_vel[i]
-            self.ti_vel[i] = (self.ti_pos_new[i] - self.ti_pos[i]) / self.dt
-            self.ti_pos_del[i] = self.ti_pos_new[i] - self.ti_pos[i]
-            self.ti_pos[i] = self.ti_pos_new[i]
+            self.ti_vel[i] = (self.ti_x_new[i] - self.ti_x[i]) / self.dt
+            self.ti_x_del[i] = self.ti_x_new[i] - self.ti_x[i]
+            self.ti_x[i] = self.ti_x_new[i]
 
     @ti.kernel
     def warm_up(self):
         for pos_idx in range(self.n_vertices):
             sn_idx1, sn_idx2 = pos_idx * self.dim, pos_idx * self.dim + 1
-            self.ti_pos_new[pos_idx][0] = self.ti_Sn[sn_idx1]
-            self.ti_pos_new[pos_idx][1] = self.ti_Sn[sn_idx2]
+            self.ti_x_new[pos_idx][0] = self.ti_Sn[sn_idx1]
+            self.ti_x_new[pos_idx][1] = self.ti_Sn[sn_idx2]
             if ti.static(self.dim == 3):
                 sn_idx3 = pos_idx * self.dim + 2
-                self.ti_pos_new[pos_idx][2] = self.ti_Sn[sn_idx3]
+                self.ti_x_new[pos_idx][2] = self.ti_Sn[sn_idx3]
 
     @ti.kernel
     def update_pos_new_from_numpy(self, sol: ti.ext_arr()):
         for pos_idx in range(self.n_vertices):
             sol_idx1, sol_idx2 = pos_idx * self.dim, pos_idx * self.dim + 1
-            self.ti_pos_new[pos_idx][0] = sol[sol_idx1]
-            self.ti_pos_new[pos_idx][1] = sol[sol_idx2]
+            self.ti_x_new[pos_idx][0] = sol[sol_idx1]
+            self.ti_x_new[pos_idx][1] = sol[sol_idx2]
             if ti.static(self.dim == 3):
                 sol_idx3 = pos_idx * self.dim + 2
-                self.ti_pos_new[pos_idx][2] = sol[sol_idx3]
+                self.ti_x_new[pos_idx][2] = sol[sol_idx3]
 
     @ti.kernel
-    def check_residual(self) -> real:
+    def check_residual(self) -> ti.f64:
         residual = 0.0
         for i in range(self.n_vertices):
-            residual += (self.ti_last_pos_new[i] - self.ti_pos_new[i]).norm()
-            self.ti_last_pos_new[i] = self.ti_pos_new[i]
+            residual += (self.ti_last_pos_new[i] - self.ti_x_new[i]).norm()
+            self.ti_last_pos_new[i] = self.ti_x_new[i]
         # print("residual:", residual)
         return residual
 
-    @ti.kernel
-    def copy(self, x: ti.template(), y: ti.template()):
-        for i in x:
-            y[i] = x[i]
-
-    def build_pos_arr(self, adj_v, arr, rel_pos):
-        result = np.zeros((adj_v.shape[0], self.dim))
-        result_pos = np.zeros((adj_v.shape[0], self.dim))
-        t = 0
-        nparr = arr.to_numpy()
-        for p in adj_v:  # print("print! ", nparr[p, 0])
-            result[t, :] = nparr[p, :]
-            result_pos[t, :] = rel_pos[p, :]
-            t = t + 1
-        return result, result_pos
-
-    def data_one_frame(self, input_p, input_v):
-        rhs_np = np.zeros(self.n_vertices * self.dim, np.float64)
-        lhs_matrix_np = self.lhs_matrix.to_numpy()
-        s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
-        pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
-        self.copy(input_p, self.ti_pos)
-        self.copy(input_v, self.ti_vel)
-        self.build_sn()
-        self.warm_up()
-        last_record_energy = 100000000000.0
-        for itr in range(self.solver_max_iteration):
-            self.local_solve_build_bp_for_all_constraints()
-            self.build_rhs(rhs_np)
-            local_step_energy = self.compute_local_step_energy()
-            if local_step_energy > last_record_energy:
-                print("Energy Error: LOCAL; Error Amount:",
-                      (local_step_energy - last_record_energy) / local_step_energy)
-                if (local_step_energy - last_record_energy) / local_step_energy > 0.01:
-                    print("Large Error: LOCAL")
-            last_record_energy = local_step_energy
-            pos_new_np = pre_fact_lhs_solve(rhs_np)
-            self.update_pos_new_from_numpy(pos_new_np)
-            global_step_energy = self.compute_global_step_energy()
-            if global_step_energy > last_record_energy:
-                print("Energy Error: GLOBAL; Error Amount:",
-                      (global_step_energy - last_record_energy) / global_step_energy)
-                if (global_step_energy - last_record_energy) / global_step_energy > 0.01:
-                    print("Large Error: GLOBAL")
-            last_record_energy = global_step_energy
-        # Update velocity and positions
-        self.update_velocity_pos()
-        return self.ti_pos_del, self.pos_new, self.vel
-
-    def compute_restT_and_m(self):
-        self.ti_mass.fill(0.0)
-        self.lhs_matrix.fill(0.0)
-        self.precomputation()
-
-    def output_network_data(self, pd_dis, pn_dis, grad_E, frame, T):
+    def output_network_data(self, pd_dis, pn_dis, gradE, init_rel_pos, frame, T):
         vel = self.ti_vel.to_numpy()
-        gradE = grad_E.to_numpy()
+        # gradE = grad_E.to_numpy()
         if self.dim == 2:
             exf = np.array([self.ti_ex_force[0][0], self.ti_ex_force[0][1]])
         else:
@@ -831,27 +672,40 @@ class PDSimulation:
         frame = str(frame).zfill(5)
         if T == 0:
             if self.dim == 2:
-                out_name = "SimData/TrainingData/Train_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
+                out_name = "SimData/TrainingData/Train_2d_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
                            "_" + str(self.exf_mag) + "_" + frame + ".csv"
             else:
-                out_name = "SimData/TrainingData/Train_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + \
-                           "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + "_" + frame + ".csv"
+                if self.force_type == 'dir':
+                    out_name = "SimData/TrainingData/Train_dir_" + self.case_info['case_name'] + "_" + \
+                               str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + \
+                               "_" + frame + ".csv"
+                elif self.force_type == 'ring':
+                    out_name = "SimData/TrainingData/Train_ring_" + self.case_info['case_name'] + "_" +\
+                               str(self.ring_mag) + "_" + str(self.ring_width) + "_" + str(self.ring_angle) + \
+                               "_" + frame + ".csv"
         else:
             if self.dim == 2:
-                out_name = "SimData/TestingData/Test_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
+                out_name = "SimData/TestingData/Test_2d_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
                             "_" + str(self.exf_mag) + "_" + frame + ".csv"
             else:
-                out_name = "SimData/TestingData/Test_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + \
-                           "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + "_" + frame + ".csv"
+                if self.force_type == 'dir':
+                    out_name = "SimData/TrainingData/Test_dir_" + self.case_info['case_name'] + "_" + \
+                               str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + \
+                               "_" + frame + ".csv"
+                elif self.force_type == 'ring':
+                    out_name = "SimData/TrainingData/Test_ring_" + self.case_info['case_name'] + "_" + \
+                               str(self.ring_mag) + "_" + str(self.ring_width) + "_" + str(self.ring_angle) + \
+                               "_" + frame + ".csv"
 
         ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim
         out = np.ones([self.n_vertices, ele_count], dtype=float)
-        tt = time.time()
-        A_finals = get_local_transformation(self.n_vertices, self.mesh, self.ti_pos.to_numpy(), self.initial_rel_pos,
+        ltrans_start_t = time.time()
+        A_finals = get_local_transformation(self.n_vertices, self.mesh, self.ti_x.to_numpy(), init_rel_pos,
                                             self.ti_mass.to_numpy(), self.dim)
-        ttt = time.time()
-        print("solve As: ", ttt - tt)
+        ltrans_end_t = time.time()
+        print("get local transformation:", ltrans_end_t - ltrans_start_t)
         i = 0
+        pos_init_out = self.mesh.vertices
         if self.dim == 2:
             for res in A_finals:
                 out[i, 0:2] = pd_dis[i, :]  # pd pos
@@ -860,7 +714,7 @@ class PDSimulation:
                 out[i, 8:10] = gradE[i * 2: i * 2 + 2]
                 out[i, 10:12] = exf
                 out[i, 12:14] = vel[i, :]
-                out[i, 14:16] = self.pos_init_out[i, :]
+                out[i, 14:16] = pos_init_out[i, :]
                 i = i + 1
         else:
             for res in A_finals:
@@ -870,11 +724,11 @@ class PDSimulation:
                 out[i, 15:18] = gradE[i * 3: i * 3 + 3]
                 out[i, 18:21] = exf
                 out[i, 21:24] = vel[i, :]
-                out[i, 24:27] = self.pos_init_out[i, :]
+                out[i, 24:27] = pos_init_out[i, :]
                 i = i + 1
 
-        tttt = time.time()
-        print("append As: ", tttt - ttt)
+        fill_data_end = time.time()
+        print("fill data: ", fill_data_end - ltrans_end_t)
         np.savetxt(out_name, out, delimiter=',')
 
     def output_aux_data(self, f, pn_pos):
@@ -895,35 +749,36 @@ class PDSimulation:
                 name_pn = "SimData/PNAnimSeq/PN_ringC_" + self.case_info['case_name'] + "_" + str(self.ring_mag) + "_" + \
                           str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
 
-
-            output_3d_seq(self.ti_pos.to_numpy(), self.boundary_triangles, name_pd)
+            output_3d_seq(self.ti_x.to_numpy(), self.boundary_triangles, name_pd)
             output_3d_seq(pn_pos.to_numpy(), self.boundary_triangles, name_pn)
 
-    def Run(self, pn, is_test, frame_count, scene_info):
+    def run(self, pn, is_test, frame_count, scene_info):
         rhs_np = np.zeros(self.n_vertices * self.dim, dtype=np.float64)
-        # lhs_matrix_np = np.zeros(shape=(self.n_vertices * self.dim, self.n_vertices * self.dim), dtype=np.float64)
-        lhs_mat_val = np.zeros(shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,), dtype=np.float64)
-        lhs_mat_row = np.zeros(shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,), dtype=np.float64)
-        lhs_mat_col = np.zeros(shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,), dtype=np.float64)
+        lhs_mat_val = np.zeros(
+            shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,),
+            dtype=np.float64)
+        lhs_mat_row = np.zeros(
+            shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,),
+            dtype=np.float64)
+        lhs_mat_col = np.zeros(
+            shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,),
+            dtype=np.float64)
 
-        # Init Taichi global variables
         self.init_mesh_DmInv(self.dirichlet, len(self.dirichlet))
         self.precomputation(lhs_mat_row, lhs_mat_col, lhs_mat_val)
-        # lhs_matrix_np = self.ti_lhs_matrix.to_numpy()
         s_lhs_matrix_np = sparse.csr_matrix((lhs_mat_val, (lhs_mat_row, lhs_mat_col)),
                                             shape=(self.n_vertices * self.dim, self.n_vertices * self.dim),
                                             dtype=np.float64)
         pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
-
         if self.dim == 2:
-            # video_manager = ti.VideoManager(output_dir='SimData/TmpRenderedImgs', framerate=24, automatic_build=False)
             gui = scene_info['gui']
             filename = f'./SimData/TmpRenderedImgs/frame_rest.png'
-            draw_image(gui, filename, self.ti_pos.to_numpy(), self.mesh_offset, self.mesh_scale, self.ti_elements.to_numpy(), self.n_elements)
+            draw_image(gui, filename, self.ti_x.to_numpy(), self.mesh_offset, self.mesh_scale,
+                       self.ti_elements.to_numpy(), self.n_elements)
         else:
             gui = scene_info['gui']
             scene_info['model'].set_transform(self.case_info['transformation_mat'])
-            update_boundary_mesh(self.ti_pos, scene_info['boundary_pos'], self.case_info)
+            update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
             scene_info['scene'].input(gui)
             scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
             scene_info['scene'].render()
@@ -931,27 +786,23 @@ class PDSimulation:
             gui.show()
 
         frame_counter = 0
-        self.initial_com = calcCenterOfMass(np.arange(self.n_vertices), self.dim,
-                                            self.ti_mass.to_numpy(), self.ti_pos.to_numpy())  # this is right
-        self.initial_rel_pos = self.ti_pos_init.to_numpy() - self.initial_com
-        # self.set_dir_force_3D()
+        init_com = calcCenterOfMass(np.arange(self.n_vertices),
+                                    self.dim, self.ti_mass.to_numpy(),
+                                    self.ti_x.to_numpy())  # this is right
+        init_rel_pos = self.mesh.vertices - init_com
         while frame_counter < frame_count:
             print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
-            t_0 = time.time()
-            # self.set_ring_force_3D()
+            frame_start_t = time.time()
             self.update_force_field()
             self.build_sn()
-            self.warm_up()  # Warm up
+            self.warm_up()
 
-            pn_start = time.time()      # get info from pn
-            self.copy(self.ti_pos, self.input_xn)
-            self.copy(self.ti_vel, self.input_vn)
-            pn_dis, _pn_pos, pn_v = pn.data_one_frame(self.input_xn, self.input_vn)
-            # print("pn dis \n", self.pn_dis.to_numpy())
-            pn_end = time.time()
-            print("pn solve time: ", pn_end - pn_start)
+            pn_start_t = time.time()
+            pn_dis, _pn_pos, pn_v = pn.data_one_frame(self.ti_x, self.ti_vel)
+            pn_end_t = time.time()
+            print("pn solve time: ", pn_end_t - pn_start_t)
 
-            pd_start = time.time()
+            pd_start_t = time.time()
             for itr in range(self.solver_max_iteration):
                 self.local_solve_build_bp_for_all_constraints()
                 self.build_rhs(rhs_np)
@@ -962,27 +813,32 @@ class PDSimulation:
                 residual = self.check_residual()
                 if residual < self.solver_stop_residual:
                     break
-            pd_end = time.time()
-            print("pd solve time: ", pd_end - pd_start)
+            pd_end_t = time.time()
+            print("pd solve time: ", pd_end_t - pd_start_t)
 
-            self.update_velocity_pos()      # Update velocity and positions
-            self.gradE = pn.get_gradE_from_pd(self.ti_pos)      # get info from pn
-
+            self.update_velocity_pos()
+            # self.gradE.from_numpy(pn.get_gradE_from_pd(self.ti_x))
+            gradE = pn.get_gradE_from_pd(self.ti_x)
             t_out_start = time.time()
-            self.output_network_data(self.ti_pos_del.to_numpy(), pn_dis.to_numpy(), self.gradE, frame_counter, is_test)
+            self.output_network_data(self.ti_x_del.to_numpy(),
+                                     pn_dis.to_numpy(),
+                                     gradE, init_rel_pos,
+                                     frame_counter, is_test)
             t_out_end = time.time()
-            print("output time: ", t_out_end - t_out_start)
+            print("output network data time: ", t_out_end - t_out_start)
 
-            t_end = time.time()
-            print("whole time for one frame: ", t_end - t_0)
-            # Show result
             frame_counter += 1
+            frame_end_t = time.time()
+            print("whole time for one frame: ", frame_end_t - frame_start_t)
+
+            # Show result
             if self.dim == 2:
                 filename = f'./SimData/TmpRenderedImgs/frame_{frame_counter:05d}.png'
-                draw_image(gui, filename, self.ti_pos.to_numpy(), self.mesh_offset, self.mesh_scale,
+                draw_image(gui, filename, self.ti_x.to_numpy(), self.mesh_offset, self.mesh_scale,
                            self.ti_elements.to_numpy(), self.n_elements)
             else:
-                update_boundary_mesh(self.ti_pos, scene_info['boundary_pos'], self.case_info)
+                # update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
+                update_boundary_mesh(_pn_pos, scene_info['boundary_pos'], self.case_info)
                 scene_info['scene'].input(gui)
                 scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
                 scene_info['scene'].render()

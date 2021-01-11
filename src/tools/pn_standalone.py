@@ -9,16 +9,17 @@ from Utils.neo_hookean import fixed_corotated_energy
 from Utils.neo_hookean import fixed_corotated_first_piola_kirchoff_stress_derivative
 from Utils.reader import read
 from Utils.math_tools import svd, my_svd
-from Utils.utils_visualization import draw_image, update_boundary_mesh, get_force_field
+from Utils.utils_visualization import draw_image, update_boundary_mesh, get_force_field, get_ring_force_field
 
 ##############################################################################
-case_info = read(1)
+case_info = read(1007)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
 mesh_offset = case_info['mesh_offset']
 dim = case_info['dim']
-
+center = case_info['center']
+min_sphere_radius = case_info['min_sphere_radius']
 ##############################################################################
 
 ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
@@ -64,10 +65,9 @@ ti_U_field = ti.field(real, (n_elements, dim * dim, dim * dim))
 ti_V_field = ti.field(real, (n_elements, dim * dim, dim * dim))
 ti_indMap_field = ti.field(real, (n_elements, dim * (dim + 1)))
 
-
 # external force -- Angle: from [1, 0] -- counter-clock wise
-ex_force = ti.Vector.field(dim, real, 1)
-
+ex_force = ti.Vector.field(dim, real, n_particles)
+ti_center = ti.Vector([center[0], center[1], center[2]])
 
 def initial():
     x.from_numpy(mesh.vertices.astype(np.float64))
@@ -86,20 +86,26 @@ def initial():
     ex_force.fill(0)
 
 
-def set_exforce():
-    if dim == 2:
-        exf_angle = -45.0
-        exf_mag = 6
-        ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle))
+@ti.kernel
+def set_dir_force_3D():
+    if ti.static(dim == 2):
+        for i in range(n_particles):
+            ex_force[i] = ti.Vector(get_force_field(6, -45.0))
     else:
-        exf_angle1 = 0.0
-        exf_angle2 = 0.0
-        exf_mag = 0.0002
-        # 1001 6
-        # 1003 and 1004 0.06
-        # 1005 0.0002
-        ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
-        print("ex force: ", ex_force[0][0], " ", ex_force[0][1], " ", ex_force[0][2])
+        # exf_mag = 0.0002 # 1001: 6   1003 and 1004: 0.06  1005: 0.0002
+        for i in range(n_particles):
+            ex_force[i] = ti.Vector(get_force_field(0.0002, 45.0, 45.0, 3))
+
+
+# @ti.kernel
+# def set_ring_force_3D():
+#     for i in range(n_particles):
+#         ex_force[i] = get_ring_force_field(0.2, 0.3, ti_center, x[i], 0.0, 3)
+
+@ti.kernel
+def set_ring_force_3D():
+    for i in range(n_particles):
+        ex_force[i] = get_ring_force_field(0.04, 10.0, ti_center, x[i], 0.0, 3)
 
 
 @ti.func
@@ -132,15 +138,15 @@ def compute_xn_and_xTilde():
         for i in range(n_particles):
             xn[i] = x[i]
             xTilde[i] = x[i] + dt * v[i]
-            xTilde(0)[i] += dt * dt * (ex_force[0][0] / m[i])
-            xTilde(1)[i] += dt * dt * (ex_force[0][1] / m[i])
+            xTilde(0)[i] += dt * dt * (ex_force[i][0] / m[i])
+            xTilde(1)[i] += dt * dt * (ex_force[i][1] / m[i])
     if ti.static(dim == 3):
         for i in range(n_particles):
             xn[i] = x[i]
             xTilde[i] = x[i] + dt * v[i]
-            xTilde(0)[i] += dt * dt * (ex_force[0][0] / m[i])
-            xTilde(1)[i] += dt * dt * (ex_force[0][1] / m[i])
-            xTilde(2)[i] += dt * dt * (ex_force[0][2] / m[i])
+            xTilde(0)[i] += dt * dt * (ex_force[i][0] / m[i])
+            xTilde(1)[i] += dt * dt * (ex_force[i][1] / m[i])
+            xTilde(2)[i] += dt * dt * (ex_force[i][2] / m[i])
 
 
 @ti.kernel
@@ -339,29 +345,9 @@ def my_solve_linear_system():
     pass
 
 
-# def write_image(f):
-#     if dim == 2:
-#         for i in range(n_elements):
-#             for j in range(3):
-#                 a, b = vertices_[i, j], vertices_[i, (j + 1) % 3]
-#                 gui.line((particle_pos[a][0], particle_pos[a][1]),
-#                          (particle_pos[b][0], particle_pos[b][1]),
-#                          radius=1,
-#                          color=0x4FB99F)
-#         gui.show(f'output/bunny{f:06d}.png')
-#     else:
-#         f = open(f'output/bunny{f:06d}.obj', 'w')
-#         for i in range(n_particles):
-#             f.write('v %.6f %.6f %.6f\n' % (particle_pos[i, 0], particle_pos[i, 1], particle_pos[i, 2]))
-#         for [p0, p1, p2] in boundary_triangles_:
-#             f.write('f %d %d %d\n' % (p0 + 1, p1 + 1, p2 + 1))
-#         f.close()
-
-
 if __name__ == "__main__":
     initial()
     compute_restT_and_m()
-    set_exforce()
 
     video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
     frame_counter = 0
@@ -387,7 +373,9 @@ if __name__ == "__main__":
     # Compile time duration record
     # Before optimization: 73.18037104606628 s
     # After unrolling optimization: 2.7542989253997803 s -  0.002396106719970703 s
-    for f in range(1000):
+    # set_dir_force_3D()
+    for f in range(60):
+        set_ring_force_3D()
         print("==================== Frame: ", f, " ====================")
         compute_xn_and_xTilde()
         while True:
@@ -404,10 +392,12 @@ if __name__ == "__main__":
             # time_start = time.time()
             if dim == 2:
                 data_sol = solve_linear_system(data_mat, data_rhs, n_particles * dim,
-                                                         np.array(dirichlet), zero.to_numpy(), False, 0, cnt[None])
+                                               np.array(dirichlet), zero.to_numpy(),
+                                               False, 0, cnt[None])
             else:
                 data_sol = solve_linear_system3(data_mat, data_rhs, n_particles * dim,
-                                                         np.array(dirichlet), zero.to_numpy(), False, 0, cnt[None])
+                                                np.array(dirichlet), zero.to_numpy(),
+                                                False, 0, cnt[None])
             # time_end = time.time()
             # print("to_numpy() and solve linear system time:", time_end - time_start, 's')
 

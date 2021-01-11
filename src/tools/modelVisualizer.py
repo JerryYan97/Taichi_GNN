@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
-from Utils.utils_visualization import draw_pd_pn_image, set_3D_scene, update_boundary_mesh
+from Utils.utils_visualization import draw_pd_pn_image, update_boundary_mesh
 
 
 if __name__ == "__main__":
@@ -15,7 +15,7 @@ if __name__ == "__main__":
         for name in files:
             os.remove(os.path.join(root, name))
 
-    case_info = read(1005)
+    case_info = read(1006)
     n_particles = case_info['mesh'].num_vertices
     n_elements = 0
     if case_info['dim'] == 2:

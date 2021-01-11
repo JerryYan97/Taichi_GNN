@@ -10,7 +10,7 @@ import numpy as np
 import taichi as ti
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
-from Utils.utils_visualization import draw_image, get_force_field, update_boundary_mesh
+from Utils.utils_visualization import draw_image, get_force_field, update_boundary_mesh, get_ring_force_field, get_ring_circle_force_field
 from scipy import sparse
 from scipy.sparse.linalg import factorized
 from Utils.math_tools import svd, my_svd
@@ -18,15 +18,18 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1001
+test_case = 1007
 case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
 mesh_offset = case_info['mesh_offset']
 dim = case_info['dim']
+if dim == 3:
+    center = case_info['center']
+    min_sphere_radius = case_info['min_sphere_radius']
 # cpu 1.27 -- 1003,
-ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
+ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
 n_vertices = mesh.num_vertices
 
 # 2D and 3D scene settings:
@@ -52,11 +55,10 @@ dt = 0.01
 # Backup settings:
 # Bar: 10
 # Bunny: 50
-solver_max_iteration = 50
-solver_stop_residual = 0.0001
+solver_max_iteration = 20
+solver_stop_residual = 0.0005
 # external force -- counter-clock wise
-ti_ex_force = ti.Vector.field(dim, real, 1)
-
+ti_ex_force = ti.Vector.field(dim, real, n_vertices)
 
 # Taichi variables' initialization:
 ti_mass = ti.field(real, n_vertices)
@@ -79,6 +81,8 @@ ti_Sn = ti.field(real, n_vertices * dim)
 ti_phi = ti.field(real, n_elements)
 ti_weight_strain = ti.field(real, n_elements)
 ti_weight_volume = ti.field(real, n_elements)
+if dim == 3:
+    ti_center = ti.Vector([center[0], center[1], center[2]])
 
 
 def init():
@@ -111,17 +115,26 @@ def init():
 # Backup Settings:
 # Bunny: ti.Vector([0.0, 0.0, 0.1])
 # Dragon:
+# Dinosaur:
+@ti.kernel
 def set_exforce():
-    if dim == 2:
-        exf_angle = -45.0
-        exf_mag = 6
-        ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle))
+    if ti.static(dim == 2):
+        for i in range(n_vertices):
+            ti_ex_force[i] = ti.Vector(get_force_field(6, -45.0))
     else:
-        exf_angle1 = 45.0
-        exf_angle2 = 45.0
-        exf_mag = 6.0
-        ti_ex_force[0] = ti.Vector(get_force_field(exf_mag, exf_angle1, exf_angle2, 3))
-    # print("External force:", ti_ex_force)
+        for i in range(n_vertices):
+            ti_ex_force[i] = ti.Vector(get_force_field(0.1, 45.0, 45.0, 3))
+
+
+# @ti.kernel
+# def set_ring_force_3D():
+#     for i in range(n_vertices):
+#         ti_ex_force[i] = get_ring_circle_force_field(0.4, 0.3, ti_center, ti_pos[i], 0.0, 0.2*min_sphere_radius, 3)
+
+@ti.kernel
+def set_ring_force_3D():
+    for i in range(n_vertices):
+        ti_ex_force[i] = get_ring_force_field(0.04, 10.0, ti_center, ti_pos[i], 0.0, 3)
 
 
 @ti.func
@@ -230,8 +243,9 @@ def fill_idx_vec(ele_idx):
 
 
 @ti.kernel
-def precomputation(lhs_matrix_np: ti.ext_arr()):
+def precomputation(lhs_mat_row: ti.ext_arr(), lhs_mat_col: ti.ext_arr(), lhs_mat_val: ti.ext_arr()):
     dimp = dim+1
+    sparse_used_idx_cnt = 0
     for e_it in range(n_elements):
         if ti.static(dim == 2):
             ia, ib, ic = ti_elements[e_it]
@@ -316,39 +330,70 @@ def precomputation(lhs_matrix_np: ti.ext_arr()):
                 set_ti_A_i(t * n_elements + i, 8, 8, e23)
                 set_ti_A_i(t * n_elements + i, 8, 11, e33)
 
-    # # Add strain and area/volume constraints to the lhs matrix
+    # Sparse modification Changed:
     for ele_idx in range(n_elements):
-        for t in range(2):
-            fill_idx_vec(ele_idx)
+        fill_idx_vec(ele_idx)
+        ele_global_start_idx = ele_idx * dim * (dim + 1) * dim * (dim + 1)
+        ele_offset_idx = 0
+        for A_row_idx in range(dim * (dim + 1)):
+            for A_col_idx in range(dim * (dim + 1)):
+                lhs_row_idx = ti_q_idx_vec[ele_idx, A_row_idx]
+                lhs_col_idx = ti_q_idx_vec[ele_idx, A_col_idx]
+                weight_strain = ti_weight_strain[ele_idx]
+                weight_volume = ti_weight_volume[ele_idx]
+                cur_sparse_val = 0.0
+                if ti.static(dim) == 2:
+                    cur_sparse_val += (ti_A[ele_idx, 0, A_row_idx] * ti_A[ele_idx, 0, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 1, A_row_idx] * ti_A[ele_idx, 1, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 2, A_row_idx] * ti_A[ele_idx, 2, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 3, A_row_idx] * ti_A[ele_idx, 3, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 0, A_row_idx] * ti_A[ele_idx, 0, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 1, A_row_idx] * ti_A[ele_idx, 1, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 2, A_row_idx] * ti_A[ele_idx, 2, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 3, A_row_idx] * ti_A[ele_idx, 3, A_col_idx] * weight_volume)
+                else:
+                    cur_sparse_val += (ti_A[ele_idx, 0, A_row_idx] * ti_A[ele_idx, 0, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 1, A_row_idx] * ti_A[ele_idx, 1, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 2, A_row_idx] * ti_A[ele_idx, 2, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 3, A_row_idx] * ti_A[ele_idx, 3, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 4, A_row_idx] * ti_A[ele_idx, 4, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 5, A_row_idx] * ti_A[ele_idx, 5, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 6, A_row_idx] * ti_A[ele_idx, 6, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 7, A_row_idx] * ti_A[ele_idx, 7, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 8, A_row_idx] * ti_A[ele_idx, 8, A_col_idx] * weight_strain)
+                    cur_sparse_val += (ti_A[ele_idx, 0, A_row_idx] * ti_A[ele_idx, 0, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 1, A_row_idx] * ti_A[ele_idx, 1, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 2, A_row_idx] * ti_A[ele_idx, 2, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 3, A_row_idx] * ti_A[ele_idx, 3, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 4, A_row_idx] * ti_A[ele_idx, 4, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 5, A_row_idx] * ti_A[ele_idx, 5, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 6, A_row_idx] * ti_A[ele_idx, 6, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 7, A_row_idx] * ti_A[ele_idx, 7, A_col_idx] * weight_volume)
+                    cur_sparse_val += (ti_A[ele_idx, 8, A_row_idx] * ti_A[ele_idx, 8, A_col_idx] * weight_volume)
+                # lhs_matrix_np[lhs_row_idx, lhs_col_idx] += cur_sparse_val
+                cur_idx = ele_global_start_idx + ele_offset_idx
+                lhs_mat_row[cur_idx] = lhs_row_idx
+                lhs_mat_col[cur_idx] = lhs_col_idx
+                lhs_mat_val[cur_idx] = cur_sparse_val
+                ele_offset_idx += 1
+    sparse_used_idx_cnt += n_elements * dim * (dim + 1) * dim * (dim + 1)
 
-            # May need more considerations:
-            for A_row_idx in range(dim * (dim + 1)):
-                for A_col_idx in range(dim * (dim + 1)):
-                    lhs_row_idx = ti_q_idx_vec[ele_idx, A_row_idx]
-                    lhs_col_idx = ti_q_idx_vec[ele_idx, A_col_idx]
-                    for idx in range(dim * dim):
-                        weight = 0.0
-                        if t == 0:
-                            weight = ti_weight_strain[ele_idx]
-                        else:
-                            weight = ti_weight_volume[ele_idx]
-                        lhs_matrix_np[lhs_row_idx, lhs_col_idx] += (ti_A[ele_idx, idx, A_row_idx] * ti_A[ele_idx, idx, A_col_idx] * weight)
-
-    # Add positional constraints to the lhs matrix
+    # Add positional constraints and mass terms to the lhs matrix
     for i in range(n_vertices):
-        if ti_boundary_labels[i] == 1:
-            q_i_x_idx = i * dim
-            q_i_y_idx = i * dim + 1
-            lhs_matrix_np[q_i_x_idx, q_i_x_idx] += (m_weight_positional)  # This is the weight of positional constraints
-            lhs_matrix_np[q_i_y_idx, q_i_y_idx] += (m_weight_positional)
-            if ti.static(dim == 3):
-                q_i_z_idx = i * dim + 2
-                lhs_matrix_np[q_i_z_idx, q_i_z_idx] += (m_weight_positional)
+        global_start_idx = sparse_used_idx_cnt + i * dim
+        local_offset_idx = 0
+        for d in range(dim):
+            cur_sparse_val = 0.0
+            cur_sparse_val += (ti_mass[i] / (dt * dt))
+            if ti_boundary_labels[i] == 1:
+                cur_sparse_val += m_weight_positional
+            lhs_row_idx, lhs_col_idx = i * dim + d, i * dim + d
+            cur_idx = global_start_idx + local_offset_idx
+            lhs_mat_row[cur_idx] = lhs_row_idx
+            lhs_mat_col[cur_idx] = lhs_col_idx
+            lhs_mat_val[cur_idx] = cur_sparse_val
+            local_offset_idx += 1
 
-    # Construct lhs matrix without constraints
-    for i in range(n_vertices):
-        for d in ti.static(range(dim)):
-            lhs_matrix_np[i * dim + d, i * dim + d] += (ti_mass[i] / (dt * dt))
 
 
 @ti.func
@@ -432,11 +477,11 @@ def build_sn():
         Sn_idx2 = vert_idx*dim+1
         pos_i = ti_pos[vert_idx]
         vel_i = ti_vel[vert_idx]
-        ti_Sn[Sn_idx1] = pos_i[0] + dt * vel_i[0] + (dt ** 2) * ti_ex_force[0][0] / ti_mass[vert_idx]  # x-direction;
-        ti_Sn[Sn_idx2] = pos_i[1] + dt * vel_i[1] + (dt ** 2) * ti_ex_force[0][1] / ti_mass[vert_idx]  # y-direction;
+        ti_Sn[Sn_idx1] = pos_i[0] + dt * vel_i[0] + (dt ** 2) * ti_ex_force[vert_idx][0] / ti_mass[vert_idx]  # x-direction;
+        ti_Sn[Sn_idx2] = pos_i[1] + dt * vel_i[1] + (dt ** 2) * ti_ex_force[vert_idx][1] / ti_mass[vert_idx]  # y-direction;
         if ti.static(dim == 3):
             Sn_idx3 = vert_idx * dim + 2
-            ti_Sn[Sn_idx3] = pos_i[2] + dt * vel_i[2] + (dt ** 2) * ti_ex_force[0][2] / ti_mass[vert_idx]
+            ti_Sn[Sn_idx3] = pos_i[2] + dt * vel_i[2] + (dt ** 2) * ti_ex_force[vert_idx][2] / ti_mass[vert_idx]
 
 
 @ti.func
@@ -655,14 +700,19 @@ if __name__ == "__main__":
     # video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
     frame_counter = 0
     rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
-    lhs_matrix_np = np.zeros(shape=(n_vertices * dim, n_vertices * dim), dtype=np.float64)
+    lhs_mat_val = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
+    lhs_mat_row = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
+    lhs_mat_col = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
 
     init()
 
-    set_exforce()
+    # One direction force field
+    # set_exforce()
     init_mesh_DmInv(dirichlet, len(dirichlet))
-    precomputation(lhs_matrix_np)
-    s_lhs_matrix_np = sparse.csr_matrix(lhs_matrix_np)
+    precomputation(lhs_mat_row, lhs_mat_col, lhs_mat_val)
+    s_lhs_matrix_np = sparse.csr_matrix((lhs_mat_val, (lhs_mat_row, lhs_mat_col)),
+                                        shape=(n_vertices * dim, n_vertices * dim),
+                                        dtype=np.float64)
     pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
     wait = input("PRESS ENTER TO CONTINUE.")
@@ -686,6 +736,7 @@ if __name__ == "__main__":
     plot_array = []
 
     while frame_counter < 1000:
+        set_ring_force_3D()
         build_sn()
         # Warm up:
         warm_up()
