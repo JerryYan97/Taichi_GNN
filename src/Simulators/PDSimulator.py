@@ -837,7 +837,8 @@ class PDSimulation(SimulatorBase):
                 draw_image(gui, filename, self.ti_x.to_numpy(), self.mesh_offset, self.mesh_scale,
                            self.ti_elements.to_numpy(), self.n_elements)
             else:
-                update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
+                # update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
+                update_boundary_mesh(_pn_pos, scene_info['boundary_pos'], self.case_info)
                 scene_info['scene'].input(gui)
                 scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
                 scene_info['scene'].render()

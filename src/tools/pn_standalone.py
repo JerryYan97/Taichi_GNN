@@ -12,7 +12,7 @@ from Utils.math_tools import svd, my_svd
 from Utils.utils_visualization import draw_image, update_boundary_mesh, get_force_field, get_ring_force_field
 
 ##############################################################################
-case_info = read(1003)
+case_info = read(1007)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
@@ -97,10 +97,15 @@ def set_dir_force_3D():
             ex_force[i] = ti.Vector(get_force_field(0.0002, 45.0, 45.0, 3))
 
 
+# @ti.kernel
+# def set_ring_force_3D():
+#     for i in range(n_particles):
+#         ex_force[i] = get_ring_force_field(0.2, 0.3, ti_center, x[i], 0.0, 3)
+
 @ti.kernel
 def set_ring_force_3D():
     for i in range(n_particles):
-        ex_force[i] = get_ring_force_field(0.2, 0.3, ti_center, x[i], 0.0, 3)
+        ex_force[i] = get_ring_force_field(0.04, 10.0, ti_center, x[i], 0.0, 3)
 
 
 @ti.func
@@ -332,7 +337,7 @@ def output_residual(data_sol: ti.ext_arr()) -> real:
     for i in range(n_particles):
         for d in ti.static(range(dim)):
             residual = ti.max(residual, ti.abs(data_sol[i * dim + d]))
-    # print("Search Direction Residual : ", residual / dt)
+    print("Search Direction Residual : ", residual / dt)
     return residual
 
 
@@ -369,7 +374,7 @@ if __name__ == "__main__":
     # Before optimization: 73.18037104606628 s
     # After unrolling optimization: 2.7542989253997803 s -  0.002396106719970703 s
     # set_dir_force_3D()
-    for f in range(1000):
+    for f in range(60):
         set_ring_force_3D()
         print("==================== Frame: ", f, " ====================")
         compute_xn_and_xTilde()
