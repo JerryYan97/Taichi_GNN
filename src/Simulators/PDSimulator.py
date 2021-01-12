@@ -689,11 +689,11 @@ class PDSimulation(SimulatorBase):
                             "_" + str(self.exf_mag) + "_" + frame + ".csv"
             else:
                 if self.force_type == 'dir':
-                    out_name = "SimData/TrainingData/Test_dir_" + self.case_info['case_name'] + "_" + \
+                    out_name = "SimData/TestingData/Test_dir_" + self.case_info['case_name'] + "_" + \
                                str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + \
                                "_" + frame + ".csv"
                 elif self.force_type == 'ring':
-                    out_name = "SimData/TrainingData/Test_ring_" + self.case_info['case_name'] + "_" + \
+                    out_name = "SimData/TestingData/Test_ring_" + self.case_info['case_name'] + "_" + \
                                str(self.ring_mag) + "_" + str(self.ring_width) + "_" + str(self.ring_angle) + \
                                "_" + frame + ".csv"
 
