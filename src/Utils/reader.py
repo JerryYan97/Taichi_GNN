@@ -303,7 +303,6 @@ def deleteDuplicatedElementFromList(list):
             lastItem = currentItem
     return list
 
-# mesh, _, _, _ = read(1)
 
 def get_edge_list(mesh):
     edge_list = getM(mesh)
@@ -311,6 +310,11 @@ def get_edge_list(mesh):
     edge_list = deleteDuplicatedElementFromList(edge_list)
     print("hgjh")
     return edge_list
+
+
+def read_an_obj(file_name_path):
+    mesh = pymesh.load_mesh(file_name_path)
+    return mesh.vertices
 
 
 # bad_vertex = np.logical_not(np.all(np.isfinite(mesh.vertices), axis=1))

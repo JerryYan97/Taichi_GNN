@@ -3,39 +3,98 @@ import numpy as np
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
-from Simulators.PN import PNSimulation
-from Simulators.PD import PDSimulation
-from Utils.reader import read
-from Utils.utils_visualization import draw_pd_pn_image
+# from Simulators.PN import PNSimulation
+# from Simulators.PD import PDSimulation
+from Utils.reader import read, read_an_obj
+from Utils.utils_visualization import rotate_matrix_y_axis, update_boundary_mesh_np
 
-ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
 
-test_case = 2
-case_info = read(test_case)
-mesh = case_info['mesh']
-dirichlet = case_info['dirichlet']
-mesh_scale = case_info['mesh_scale']
-mesh_offset = case_info['mesh_offset']
-
-n_particles = mesh.num_vertices
-n_elements = mesh.num_faces
-
-rho = 1e2
-E = 1e4
-nu = 0.4
-dt = 0.01
-
-frame_count = 50
-
+# NOTE: It only works for 3D now
 if __name__ == '__main__':
-    if not os.path.exists("PD_PN_Compare"):
-        os.makedirs("PD_PN_Compare")
+    os.makedirs('SimData/PDAnimSeq/', exist_ok=True)
     for root, dirs, files in os.walk("PD_PN_Compare/"):
         for name in files:
             os.remove(os.path.join(root, name))
 
-    # PN debug:
-    pn = PNSimulation(int(test_case), 2)
-    pn.set_force(-45.0, 1.0)
-    pn.Run(1, frame_count)
+    # Read in the animation data from SimData/FinalRes/
+    PDNN_files_list, PD_files_list, PN_files_list = [], [], []
+    # PD-NN
+    for _, _, files in os.walk("../../SimData/FinalRes/GNNPDAnimSeq"):
+        PDNN_files_list.extend(files)
+    PDNN_files_list.sort()
+    print("PD-NN Anim files:\n", PDNN_files_list)
+    # PD
+    for _, _, files in os.walk("../../SimData/FinalRes/ReconstructPDAnimSeq"):
+        PD_files_list.extend(files)
+    PD_files_list.sort()
+    print("PD Anim files:\n", PD_files_list)
+    # PN
+    for _, _, files in os.walk("../../SimData/FinalRes/ReconstructPNAnimSeq"):
+        PN_files_list.extend(files)
+    PN_files_list.sort()
+    print("PN Anim files:\n", PN_files_list)
 
+    # Input and load the test case
+    test_case_id = int(input("Please input the test case ID:"))
+    case_info = read(test_case_id)
+    frame_num = len(PDNN_files_list)
+
+    # Init scene variables and adjust visualization parameters
+    import tina
+
+    # Please comment out the settings of other test cases and write down a note to tell which test case that your
+    # transformation belongs to.
+    # Test case 1007:
+    PD_transform = tina.translate([-1.0, -1.0, -1.0]) @ rotate_matrix_y_axis(0.0) @ tina.scale(1.0)
+    PDGNN_transform = tina.translate([0.0, -1.0, -1.0]) @ rotate_matrix_y_axis(0.0) @ tina.scale(1.0)
+    PN_transform = tina.translate([1.0, -1.0, -1.0]) @ rotate_matrix_y_axis(0.0) @ tina.scale(1.0)
+
+    PD_mesh_pos = ti.Vector.field(3, ti.f32, case_info['mesh'].num_vertices)
+    PDGNN_mesh_pos = ti.Vector.field(3, ti.f32, case_info['mesh'].num_vertices)
+    PN_mesh_pos = ti.Vector.field(3, ti.f32, case_info['mesh'].num_vertices)
+
+    scene = tina.Scene(culling=False, clipping=True, res=1024)
+
+    PD_mesh = tina.SimpleMesh()
+    PD_model = tina.MeshTransform(PD_mesh)
+
+    PDGNN_mesh = tina.SimpleMesh()
+    PDGNN_model = tina.MeshTransform(PDGNN_mesh)
+
+    PN_mesh = tina.SimpleMesh()
+    PN_model = tina.MeshTransform(PN_mesh)
+
+    scene.add_object(PDGNN_model)
+    scene.add_object(PD_model)
+    scene.add_object(PN_model)
+
+    video_manager = ti.VideoManager(output_dir='results/', framerate=12, automatic_build=False)
+    gui = ti.GUI('Model Visualizer', res=1024)
+
+    PDGNN_model.set_transform(PDGNN_transform)
+    PD_model.set_transform(PD_transform)
+    PN_model.set_transform(PN_transform)
+
+    PD_boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
+    PDGNN_boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
+    PN_boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
+
+    for frame_id in range(frame_num):
+        # Read files' pos
+        PD_new_pos = np.asarray(read_an_obj("../../SimData/FinalRes/ReconstructPDAnimSeq/" + PD_files_list[frame_id]))
+        PDGNN_new_pos = np.asarray(read_an_obj("../../SimData/FinalRes/GNNPDAnimSeq/" + PDNN_files_list[frame_id]))
+        PN_new_pos = np.asarray(read_an_obj("../../SimData/FinalRes/ReconstructPNAnimSeq/" + PN_files_list[frame_id]))
+
+        # Update files' pos
+        update_boundary_mesh_np(PD_new_pos, PD_boundary_pos, case_info)
+        update_boundary_mesh_np(PDGNN_new_pos, PDGNN_boundary_pos, case_info)
+        update_boundary_mesh_np(PN_new_pos, PN_boundary_pos, case_info)
+        scene.input(gui)
+        PD_mesh.set_face_verts(PD_boundary_pos)
+        PDGNN_mesh.set_face_verts(PDGNN_boundary_pos)
+        PN_mesh.set_face_verts(PN_boundary_pos)
+        scene.render()
+        gui.set_image(scene.img)
+        video_manager.write_frame(gui.get_image())
+        gui.show()
+    video_manager.make_video(gif=True, mp4=True)

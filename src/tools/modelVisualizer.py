@@ -1,4 +1,3 @@
-# import taichi_three as t3
 import taichi as ti
 import numpy as np
 import sys
@@ -46,9 +45,9 @@ if __name__ == "__main__":
     while True:
         if case_info['dim'] == 2:
             draw_pd_pn_image(gui, "modelVisualization/mesh.png",
-                            case_info['mesh'].vertices.astype(np.float64)[:, 0:2],
-                            case_info['mesh'].vertices.astype(np.float64)[:, 0:2],
-                            case_info['mesh_offset'], case_info['mesh_scale'], case_info['mesh'].faces, n_elements)
+                             case_info['mesh'].vertices.astype(np.float64)[:, 0:2],
+                             case_info['mesh'].vertices.astype(np.float64)[:, 0:2],
+                             case_info['mesh_offset'], case_info['mesh_scale'], case_info['mesh'].faces, n_elements)
         elif case_info['dim'] == 3:
             update_boundary_mesh(mesh_pos, boundary_pos, case_info)
             scene.input(gui)
