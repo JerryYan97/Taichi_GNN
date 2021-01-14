@@ -152,6 +152,23 @@ def rotate_matrix_y_axis(beta_degree):
                      [0.0, 0.0, 0.0, 1.0]])
 
 
+# Tait-Bryan angles
+def rotate_general(alpha_deg, beta_deg, gamma_deg):
+    alpha_rad = np.radians(alpha_deg)
+    beta_rad = np.radians(beta_deg)
+    gamma_rad = np.radians(gamma_deg)
+    return np.array([[np.cos(alpha_rad) * np.cos(beta_rad),
+                      np.cos(alpha_rad) * np.sin(beta_rad) * np.sin(gamma_rad) - np.sin(alpha_rad) * np.cos(gamma_rad),
+                      np.cos(alpha_rad) * np.sin(beta_rad) * np.cos(gamma_rad) + np.sin(alpha_rad) * np.sin(gamma_rad),
+                      0.0],
+                     [np.sin(alpha_rad) * np.cos(beta_rad),
+                      np.sin(alpha_rad) * np.sin(beta_rad) * np.sin(gamma_rad) + np.cos(alpha_rad) * np.cos(gamma_rad),
+                      np.sin(alpha_rad) * np.sin(beta_rad) * np.cos(gamma_rad) - np.cos(alpha_rad) * np.sin(gamma_rad),
+                      0.0],
+                     [-np.sin(beta_rad), np.cos(beta_rad) * np.sin(gamma_rad),
+                      np.cos(beta_rad) * np.cos(gamma_rad), 0.0],
+                     [0.0, 0.0, 0.0, 1.0]])
+
 # mag: magnitude of the Force
 # center: bbox center of the mesh
 # pos: the mesh point position that want to get the force

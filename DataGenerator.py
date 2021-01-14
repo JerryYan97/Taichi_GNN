@@ -18,9 +18,9 @@ nu = 0.4
 dt = 0.01
 
 running_times = 1
-frame_count = 30
+frame_count = 120
 
-test_case = 1007
+test_case = 1008
 
 # NOTE:
 # Please remember to save your data. It will delete all files in xxAnimSeq/ or xxData/ when you exe Run.py.
@@ -149,6 +149,7 @@ if __name__ == '__main__':
     # pd.Run(pn, is_test, frame_count, scene_info)
 
     # Test new structure -- Separately generate 2D and 3D
+    whole_start_t = time.time()
     sim_info = {'case_info': case_info, 'dt': dt, 'real': ti.f64}
     pd = PDSimulation(sim_info)
     pn = PNSimulation(sim_info)
@@ -173,8 +174,8 @@ if __name__ == '__main__':
 
         # 3D ring force field setting
         force_info['force_type'] = 'ring'
-        force_info['ring_mag'] = 0.038
-        force_info['ring_angle'] = 15.2
+        force_info['ring_mag'] = 0.4
+        force_info['ring_angle'] = 0.0
         force_info['ring_width'] = 100.0
 
         # 3D ring circle force field setting
@@ -187,6 +188,8 @@ if __name__ == '__main__':
     pn.set_force(force_info)
     pd.run(pn, is_test, frame_count, scene_info)
 
+    whole_end_t = time.time()
+    print("Whole simulation running time:", whole_end_t - whole_start_t)
     # New structure ring force large scale
     # sim_info = {'case_info': case_info, 'dt': dt, 'real': ti.f64}
     # pd = PDSimulation(sim_info)

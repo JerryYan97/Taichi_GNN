@@ -46,7 +46,7 @@ def output_3d_results(pn_x, corrected_pd_x, pd_x, f, case_info):
 
 
 if __name__ == "__main__":
-    case_info = read(1007)
+    case_info = read(1008)
     mesh = case_info['mesh']
     dirichlet = case_info['dirichlet']
     mesh_scale = case_info['mesh_scale']
@@ -63,6 +63,17 @@ if __name__ == "__main__":
     directory = os.getcwd() + '/SimData/TmpRenderedImgs/' + '_'.join(os.path.basename(sys.argv[0]) + "_combined") + '/'
     print('Tmp rendered results directory:', directory)
     testpath = "SimData/RunNNRes"
+
+    # Delete old results in the SimData/FinalRes folder
+    for root, dirs, files in os.walk("SimData/FinalRes/GNNPDAnimSeq"):
+        for name in files:
+            os.remove(os.path.join(root, name))
+    for root, dirs, files in os.walk("SimData/FinalRes/ReconstructPDAnimSeq"):
+        for name in files:
+            os.remove(os.path.join(root, name))
+    for root, dirs, files in os.walk("SimData/FinalRes/ReconstructPNAnimSeq"):
+        for name in files:
+            os.remove(os.path.join(root, name))
 
     # Init 2d rendering settings
     if dim == 2:

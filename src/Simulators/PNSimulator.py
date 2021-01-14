@@ -469,10 +469,10 @@ class PNSimulation(SimulatorBase):
             self.data_mat.fill(0)
             self.data_rhs.fill(0)
             self.data_sol.fill(0)
-            compute_hessian_grad_t_start = time.time()
+            # compute_hessian_grad_t_start = time.time()
             self.compute_hessian_and_gradient(self.data_mat, self.data_rhs)
-            compute_hessian_grad_t_end = time.time()
-            solve_t_start = time.time()
+            # compute_hessian_grad_t_end = time.time()
+            # solve_t_start = time.time()
             if self.dim == 2:
                 self.data_sol = solve_linear_system(self.data_mat, self.data_rhs, self.n_vertices * self.dim,
                                                     self.dirichlet, self.zero.to_numpy(),
@@ -481,9 +481,9 @@ class PNSimulation(SimulatorBase):
                 self.data_sol = solve_linear_system3(self.data_mat, self.data_rhs,
                                                      self.n_vertices * self.dim, self.dirichlet,
                                                      self.zero.to_numpy(), False, 0, self.cnt[None])
-            solve_t_end = time.time()
-            print("compute mat time:", compute_hessian_grad_t_end - compute_hessian_grad_t_start)
-            print("solve time:", solve_t_end - solve_t_start)
+            # solve_t_end = time.time()
+            # print("compute mat time:", compute_hessian_grad_t_end - compute_hessian_grad_t_start)
+            # print("solve time:", solve_t_end - solve_t_start)
             if self.output_residual(self.data_sol) < 1e-3 * self.dt:
                 break
             E0 = self.compute_energy()

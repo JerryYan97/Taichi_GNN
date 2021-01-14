@@ -29,7 +29,7 @@ parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
 # PN -> PD:
 # parser.add_argument('--epochs', type=int, default=500, help='Number of epochs to train.')
 # PD -> PN:
-parser.add_argument('--epochs', type=int, default=500, help='Number of epochs to train.')
+parser.add_argument('--epochs', type=int, default=1000, help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=0.0005, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=2e-3, help='Weight decay (L2 loss on parameters).')
 parser.add_argument('--hidden', type=int, default=32, help='Number of hidden units.')
@@ -57,13 +57,13 @@ if args.cuda:
 # After opt:
 # ~50s in total
 load_data_t_start = time.time()
-simDataset, case_info = load_data(1007, "/SimData/TrainingData")
+simDataset, case_info = load_data(1008, "/SimData/TrainingData")
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
 
 dim = case_info['dim']
 
-train_loader = DataLoader(dataset=simDataset, batch_size=32, shuffle=True, num_workers=8, pin_memory=False)
+train_loader = DataLoader(dataset=simDataset, batch_size=64, shuffle=True, num_workers=8, pin_memory=False)
 # train_loader = DataLoader(dataset=simDataset, batch_size=64, shuffle=True, num_workers=1)
 
 # For the purpose of dataset validation:

@@ -11,8 +11,8 @@ from Utils.utils_visualization import rotate_matrix_y_axis, update_boundary_mesh
 
 # NOTE: It only works for 3D now
 if __name__ == '__main__':
-    os.makedirs('SimData/PDAnimSeq/', exist_ok=True)
-    for root, dirs, files in os.walk("PD_PN_Compare/"):
+    os.makedirs('results/', exist_ok=True)
+    for root, dirs, files in os.walk("results/"):
         for name in files:
             os.remove(os.path.join(root, name))
 
@@ -38,6 +38,9 @@ if __name__ == '__main__':
     test_case_id = int(input("Please input the test case ID:"))
     case_info = read(test_case_id)
     frame_num = len(PDNN_files_list)
+
+    # Choose whether to use the video manager
+    use_video_manager = int(input("Please choose whether to use the video manager[0--not use/1--use]"))
 
     # Init scene variables and adjust visualization parameters
     import tina
@@ -68,7 +71,8 @@ if __name__ == '__main__':
     scene.add_object(PD_model)
     scene.add_object(PN_model)
 
-    video_manager = ti.VideoManager(output_dir='results/', framerate=12, automatic_build=False)
+    if use_video_manager == 1:
+        video_manager = ti.VideoManager(output_dir='results/', framerate=12, automatic_build=False)
     gui = ti.GUI('Model Visualizer', res=1024)
 
     PDGNN_model.set_transform(PDGNN_transform)
@@ -95,6 +99,11 @@ if __name__ == '__main__':
         PN_mesh.set_face_verts(PN_boundary_pos)
         scene.render()
         gui.set_image(scene.img)
-        video_manager.write_frame(gui.get_image())
-        gui.show()
-    video_manager.make_video(gif=True, mp4=True)
+        if use_video_manager == 1:
+            video_manager.write_frame(gui.get_image())
+            gui.show()
+        else:
+            file_name_path = "results/" + "anim_comp_" + str(frame_id).zfill(6) + ".png"
+            gui.show(file_name_path)
+    if use_video_manager == 1:
+        video_manager.make_video(gif=True, mp4=True)

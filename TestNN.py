@@ -36,7 +36,7 @@ PATH = "TrainedNN/state_dict_model_zero_loss_1k.pt"
 # PATH = "TrainedNN/state_dict_model_zero_loss_1k_prune.pt"
 
 # Model and optimizer
-simDataset, case_info = load_data(1007, "/SimData/TestingData")  # load test data
+simDataset, case_info = load_data(1008, "/SimData/TestingData")  # load test data
 dim = case_info['dim']
 test_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=False)
 # model = GCN_CNN(nfeat=simDataset.input_features_num,

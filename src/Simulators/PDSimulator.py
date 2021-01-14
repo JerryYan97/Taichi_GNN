@@ -96,8 +96,8 @@ class PDSimulation(SimulatorBase):
 
         # Material and Parameters
         self.m_weight_positional = 1e20
-        self.solver_max_iteration = 20
-        self.solver_stop_residual = 0.0005
+        self.solver_max_iteration = 10
+        self.solver_stop_residual = 0.001
 
         # Simulator Fields
         self.ti_volume = ti.field(self.real, self.n_elements)
