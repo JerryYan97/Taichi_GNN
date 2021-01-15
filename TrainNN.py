@@ -8,7 +8,8 @@ import torch.optim as optim
 import torch.nn as nn
 from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.GCNCNN_net import *
-from src.NeuralNetworks.GCN_net_Dec9 import *
+# from src.NeuralNetworks.GCN_net_Dec9 import *
+from src.NeuralNetworks.GCN3D_Jan14 import *
 import math
 from torch_geometric.data import DataLoader
 
@@ -29,8 +30,8 @@ parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
 # PN -> PD:
 # parser.add_argument('--epochs', type=int, default=500, help='Number of epochs to train.')
 # PD -> PN:
-parser.add_argument('--epochs', type=int, default=1000, help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.0005, help='Initial learning rate.')
+parser.add_argument('--epochs', type=int, default=500, help='Number of epochs to train.')
+parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=2e-3, help='Weight decay (L2 loss on parameters).')
 parser.add_argument('--hidden', type=int, default=32, help='Number of hidden units.')
 parser.add_argument('--dropout', type=float, default=0.3, help='Dropout rate (1 - keep probability).')
@@ -81,15 +82,16 @@ train_loader = DataLoader(dataset=simDataset, batch_size=64, shuffle=True, num_w
 #                 gcnout=20,
 #                 cnnout=simDataset.node_num * dim,
 #                 dropout=args.dropout).to(device)
-model = GCN_net_Dec9(
+# model = GCN_net_Dec9(
+model = GCN3D_Jan14(
                 nfeat=simDataset.input_features_num,
                 graph_node_num=simDataset.node_num,
                 cluster_num=simDataset.cluster_num,
-                gcn_hid1=32,
-                gcn_out1=48,
-                gcn_hid2=98,
-                gcn_out2=128,
-                fc_hid=60,
+                gcn_hid1=32 * 2,
+                gcn_out1=48 * 2,
+                gcn_hid2=98 * 2,
+                gcn_out2=128 * 2,
+                fc_hid=60 * 2,
                 fc_out=dim,
                 dropout=args.dropout).to(device)
 mse = nn.MSELoss(reduction='sum').to(device)
@@ -111,7 +113,7 @@ def Sim_train():
                            data.cluster.to(device)).reshape(data.num_graphs * simDataset.node_num, -1)
 
             l1_loss = torch.zeros(1).to(device)
-            reg = 1e-6
+            reg = 1e-4
             with torch.enable_grad():
                 for name, param in model.named_parameters():
                     if 'bias' not in name:

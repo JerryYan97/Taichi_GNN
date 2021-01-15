@@ -18,7 +18,7 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1008
+test_case = 1009
 case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -55,7 +55,7 @@ dt = 0.01
 # Backup settings:
 # Bar: 10
 # Bunny: 50
-solver_max_iteration = 10
+solver_max_iteration = 15
 solver_stop_residual = 0.001
 # external force -- counter-clock wise
 ti_ex_force = ti.Vector.field(dim, real, n_vertices)
@@ -134,7 +134,7 @@ def set_exforce():
 @ti.kernel
 def set_ring_force_3D():
     for i in range(n_vertices):
-        ti_ex_force[i] = get_ring_force_field(0.005, 10.0, ti_center, ti_pos[i], 0.0, 3)
+        ti_ex_force[i] = get_ring_force_field(0.04, 10.0, ti_center, ti_pos[i], 0.0, 3)
 
 
 @ti.func

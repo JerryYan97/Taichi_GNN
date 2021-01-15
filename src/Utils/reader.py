@@ -244,7 +244,7 @@ def read(testcase):
         return case_info
     elif testcase == 1007:
         from tina import translate, scale
-        # Dinosaur with bottom fixed
+        # ARM with bottom fixed
         mesh = pymesh.load_mesh(
             os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/armadillolow_17698v_72161t.msh")
         dirichlet_list = []
@@ -302,6 +302,38 @@ def read(testcase):
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
         # case_info['transformation_mat'] = translate([0.0, 0.0, -5.0]) @ rotate_matrix_y_axis(0.0) @ scale(0.1)
         case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
+        case_info['center'] = center
+        case_info['min_sphere_radius'] = min_sphere_radius
+        return case_info
+    elif testcase == 1009:
+        from tina import translate, scale
+        # Low low poly ARM Model
+        mesh = pymesh.load_mesh(
+            os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/Arm_low2_4713v_17920t.msh")
+        dirichlet_list = []
+        for i in range(mesh.num_vertices):
+            if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.01:
+                dirichlet_list.append(i)
+
+        dirichlet = np.array(dirichlet_list)
+        mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
+        mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
+
+        print("mesh elements:", mesh.elements)
+        center = (mesh.bbox[0] + mesh.bbox[1]) / 2.0
+        tmp = mesh.bbox[1] - mesh.bbox[0]
+        min_sphere_radius = np.linalg.norm(np.array([tmp[0], tmp[1], tmp[2]])) / 2.0
+
+        case_info['case_name'] = "fox"
+        case_info['mesh'] = mesh
+        case_info['dim'] = 3
+        case_info['dirichlet'] = dirichlet
+        case_info['mesh_scale'] = mesh_scale
+        case_info['mesh_offset'] = mesh_offset
+        case_info['boundary'] = find_boundary(mesh.elements)
+        case_info['boundary_tri_num'] = len(case_info['boundary'][2])
+        # case_info['transformation_mat'] = translate([0.0, 0.0, -5.0]) @ rotate_matrix_y_axis(0.0) @ scale(0.1)
+        case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_general(0.0, 180.0, 0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
         return case_info
