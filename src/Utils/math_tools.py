@@ -2,6 +2,7 @@ import taichi as ti
 import os
 from .external_func import *
 
+
 @ti.func
 def make_pd(symMtr):
     a = symMtr[0, 0]
@@ -65,6 +66,7 @@ def svd(F):
 
 @ti.func
 def project_pd(F):
+    ti.Matrix.e
     if ti.static(F.n == 2):
         return make_pd(F)
     if ti.static(F.n == 3):
@@ -125,8 +127,6 @@ def solve(F, rhs):
 
 # Taichi SVD and Ctypes SVD replacement.
 # A transformation from wrapper.cpp and relevant files.
-# Taichi large scale development problems:
-# 1.
 
 @ti.func
 def Get_Eigen_Values(A_Sym, lambda_vec):

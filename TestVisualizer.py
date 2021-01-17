@@ -123,7 +123,8 @@ if __name__ == "__main__":
             write_combined_image(pn_pos, corrected_pd_pos, pd_pos)
         else:
             output_3d_results(pn_pos, corrected_pd_pos, pd_pos, f, case_info)
-            update_boundary_mesh_np(corrected_pd_pos, scene_info['boundary_pos'], case_info)
+            # update_boundary_mesh_np(corrected_pd_pos, scene_info['boundary_pos'], case_info)
+            update_boundary_mesh_np(pn_pos, scene_info['boundary_pos'], case_info)
             scene_info['scene'].input(gui)
             scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
             scene_info['scene'].render()

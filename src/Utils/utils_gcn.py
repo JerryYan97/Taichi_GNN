@@ -14,7 +14,8 @@ from os import system
 from scipy.sparse import lil_matrix
 
 
-def mp_load_data(workload_list, proc_idx, filepath, files, node_num, edge_idx, cluster, transform, dim):
+# TODO: Transform here maybe not correct! Double-check it tomorrow.
+def mp_load_data(workload_list, proc_idx, filepath, files, node_num, edge_idx, cluster, dim):
     sample_list = []
     for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
         fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
@@ -29,8 +30,6 @@ def mp_load_data(workload_list, proc_idx, filepath, files, node_num, edge_idx, c
         y_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((node_num, -1)))
         x_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((node_num, -1)))
         sample = Data(x=x_data, edge_index=edge_idx, y=y_data, cluster=cluster)
-        if transform:
-            sample = transform(sample)
         sample_list.append(sample)
 
     print("proc", proc_idx, "-- start idx:", workload_list[proc_idx][0], " end idx:", workload_list[proc_idx][1])
@@ -59,6 +58,7 @@ class SIM_Data_Geo(InMemoryDataset):
         t5_2_end = time.time()
         print("t5-2:", t5_2_end - t5_2_start)
         self._edge_idx = mesh_edge_idx
+        self.edge_idx = mesh_edge_idx  # This is used for GCN2Conv's adj_t.
         self._filepath = filepath
         self._input_features_num = i_features_num
         self._node_num = mesh.num_vertices
@@ -87,7 +87,7 @@ class SIM_Data_Geo(InMemoryDataset):
         for i in range(cpu_cnt):
             proc_list.append(pool.apply_async(func=mp_load_data,
                                               args=(workload_list, i, self._filepath, self._files, self.node_num,
-                                                    self._edge_idx, self._cluster, self.transform, dim,)))
+                                                    self._edge_idx, self._cluster, dim,)))
         # Get multi-processing res:
         for i in range(cpu_cnt):
             sample_list.extend(proc_list[i].get())
@@ -136,7 +136,7 @@ def load_cluster(file_dir, test_case):
 # case 1001 -- 9.8G (Without optimization):
 # t1: 0.003854036331176758  t2: 0.03281879425048828  t3: 0.00013327598571777344  t4: 0.0012357234954833984
 #
-def load_data(test_case, path="/Outputs"):
+def load_data(test_case, path="/Outputs", transform=None):
     file_dir = os.getcwd()
     file_dir = file_dir + path
 
@@ -206,7 +206,7 @@ def load_data(test_case, path="/Outputs"):
 
         # Load Section 5
         t5_start = time.time()
-        tmp_data = SIM_Data_Geo(file_dir, edge_index, 24, 3, mesh, cluster, cluster_num, 3)
+        tmp_data = SIM_Data_Geo(file_dir, edge_index, 24, 3, mesh, cluster, cluster_num, 3, transform=transform)
         t5_end = time.time()
         print("t5:", t5_end - t5_start)
 

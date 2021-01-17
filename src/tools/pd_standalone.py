@@ -701,8 +701,8 @@ if __name__ == "__main__":
     frame_counter = 0
     rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
     lhs_mat_val = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
-    lhs_mat_row = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
-    lhs_mat_col = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
+    lhs_mat_row = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.int)
+    lhs_mat_col = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.int)
 
     init()
 

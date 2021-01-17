@@ -4,12 +4,15 @@ import argparse
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torch_geometric.transforms as T
 import torch.optim as optim
 import torch.nn as nn
+from torch_geometric.nn.conv.gcn_conv import gcn_norm
 from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.GCNCNN_net import *
 # from src.NeuralNetworks.GCN_net_Dec9 import *
-from src.NeuralNetworks.GCN3D_Jan14 import *
+# from src.NeuralNetworks.GCN3D_Jan14 import *
+from src.NeuralNetworks.GCN3D_Jan15 import *
 import math
 from torch_geometric.data import DataLoader
 
@@ -37,7 +40,8 @@ PATH = "TrainedNN/state_dict_model_zero_loss_1k.pt"
 # PATH = "TrainedNN/state_dict_model_zero_loss_1k_prune.pt"
 
 # Model and optimizer
-simDataset, case_info = load_data(1008, "/SimData/TestingData")  # load test data
+# simDataset, case_info = load_data(1008, "/SimData/TestingData")  # load test data
+simDataset, case_info = load_data(1008, "/SimData/TestingData", transform=T.Compose([T.ToSparseTensor()]))
 dim = case_info['dim']
 test_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=False)
 # model = GCN_CNN(nfeat=simDataset.input_features_num,
@@ -47,17 +51,24 @@ test_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=False)
 #                 cnnout=simDataset.node_num * dim,
 #                 dropout=args.dropout).to(device)
 # model = GCN_net_Dec9(
-model = GCN3D_Jan14(
-                nfeat=simDataset.input_features_num,
-                graph_node_num=simDataset.node_num,
-                cluster_num=simDataset.cluster_num,
-                gcn_hid1=32 * 2,
-                gcn_out1=48 * 2,
-                gcn_hid2=98 * 2,
-                gcn_out2=128 * 2,
-                fc_hid=60 * 2,
-                fc_out=dim,
-                dropout=args.dropout).to(device)
+# model = GCN3D_Jan14(
+#                 nfeat=simDataset.input_features_num,
+#                 graph_node_num=simDataset.node_num,
+#                 cluster_num=simDataset.cluster_num,
+#                 gcn_hid1=32 * 2,
+#                 gcn_out1=48 * 2,
+#                 gcn_hid2=98 * 2,
+#                 gcn_out2=128 * 2,
+#                 fc_hid=60 * 2,
+#                 fc_out=dim,
+#                 dropout=args.dropout).to(device)
+model = GCN3D_Jan15(num_layers=64,
+                    alpha=0.1,
+                    theta=0.5,
+                    graph_node_num=simDataset.node_num,
+                    nfeat=simDataset.input_features_num,
+                    fc_out=dim,
+                    dropout=args.dropout).to(device)
 model.load_state_dict(torch.load(PATH))
 mse = nn.MSELoss(reduction='sum').to(device)
 node_num = simDataset.node_num
@@ -71,21 +82,23 @@ def RunNN():
             ii = str(i).zfill(5)
             outname = "SimData/RunNNRes/frame" + ii + ".csv"
             output = model(data.x.float().to(device),
-                           data.edge_index.to(device),
+                           # data.edge_index.to(device),
+                           gcn_norm(data.adj_t).to(device),
                            data.num_graphs,
                            data.batch.to(device),
                            data.cluster.to(device)).reshape(data.num_graphs * simDataset.node_num, -1)
             npinputs = data.x.cpu().detach().numpy()
             npouts = output.cpu().detach().numpy()
-            l1_loss = torch.zeros(1).to(device)
-            reg = 1e-4
-            with torch.enable_grad():
-                for name, param in model.named_parameters():
-                    if 'bias' not in name:
-                        if 'GCN' in name:
-                            l1_loss = l1_loss + (reg * torch.sum(torch.abs(param.to(device))))
+            # l1_loss = torch.zeros(1).to(device)
+            # reg = 1e-4
+            # with torch.enable_grad():
+            #     for name, param in model.named_parameters():
+            #         if 'bias' not in name:
+            #             if 'GCN' in name:
+            #                 l1_loss = l1_loss + (reg * torch.sum(torch.abs(param.to(device))))
 
-            loss = mse(output, data.y.float().to(device)) + l1_loss
+            # loss = mse(output, data.y.float().to(device)) + l1_loss
+            loss = mse(output, data.y.float().to(device))
             print("Frame:", i,
                   "loss: ", loss.cpu().detach().numpy())
             # PD displacement, PD-GNN, ???, PN displacement
