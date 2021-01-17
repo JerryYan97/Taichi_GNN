@@ -215,7 +215,6 @@ def get_ring_circle_force_field(mag, width, center, pos, angle, min_radius, dim)
     t = (a*pos[0]+b*pos[1]+c*pos[2]+d)/(a*a+b*b+c*c)
     p = ti.Vector([pos[0]-a*t, pos[1]-b*t, pos[2]-c*t])
     T = ti.Vector([0.0, 0.0, 0.0])
-    # if (p-center).norm() > min_radius:
     if (p-pos).norm() <= width and (p-center).norm() > min_radius:
         l = (p-center).norm()
         L = l * l / ti.sqrt((p[0]-center[0])*(p[0]-center[0])+(p[2]-center[2])*(p[2]-center[2]))
@@ -229,3 +228,31 @@ def get_ring_circle_force_field(mag, width, center, pos, angle, min_radius, dim)
             T = (s*(p4-p)).normalized()                          # print("p4-p3: ", p4-p3)
             T = mag * T
     return T
+
+
+@ti.func
+def get_point_force_field(min, max, pos, force) -> ti.Vector:
+    T = ti.Vector([0.0, 0.0, 0.0])
+    if min[0] < pos[0] < max[0] and min[1] < pos[1] < max[1] and min[2] < pos[2] < max[2]:
+        T = force
+    else:
+        T = T
+    return T
+
+
+@ti.func
+def get_point_force_field_by_point(t_pos, pos, radius, force) -> ti.Vector:
+    T = ti.Vector([0.0, 0.0, 0.0])
+    if (t_pos - pos).norm() < radius:
+        T = force
+    else:
+        T = T
+    return T
+
+
+@ti.func
+def get_point_force_field_ref(min, max, pos, force, ti_force) -> ti.Vector:
+    if min[0] < pos[0] < max[0] and min[1] < pos[1] < max[1] and min[2] < pos[2] < max[2]:
+        ti_force = force
+    else:
+        ti_force = ti.Vector([0.0, 0.0, 0.0])

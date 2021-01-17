@@ -97,7 +97,7 @@ class PDSimulation(SimulatorBase):
         # Material and Parameters
         self.m_weight_positional = 1e20
         self.solver_max_iteration = 10
-        self.solver_stop_residual = 0.001
+        self.solver_stop_residual = 0.0012
 
         # Simulator Fields
         self.ti_volume = ti.field(self.real, self.n_elements)
@@ -658,7 +658,8 @@ class PDSimulation(SimulatorBase):
         for i in range(self.n_vertices):
             residual += (self.ti_last_pos_new[i] - self.ti_x_new[i]).norm()
             self.ti_last_pos_new[i] = self.ti_x_new[i]
-        # print("residual:", residual)
+        residual /= (1.0 * self.n_vertices)
+        print("residual:", residual)
         return residual
 
     def output_network_data(self, pd_dis, pn_dis, gradE, init_rel_pos, frame, T):
@@ -683,6 +684,18 @@ class PDSimulation(SimulatorBase):
                     out_name = "SimData/TrainingData/Train_ring_" + self.case_info['case_name'] + "_" +\
                                str(self.ring_mag) + "_" + str(self.ring_width) + "_" + str(self.ring_angle) + \
                                "_" + frame + ".csv"
+                elif self.force_type == 'ring_circle':
+                    out_name = "SimData/TrainingData/Train_rc_" + self.case_info['case_name'] + "_" + \
+                               str(self.ring_mag) + "_" + str(self.ring_width) + "_" + str(self.ring_angle) + \
+                               "_" + frame + ".csv"
+                elif self.force_type == 'point':
+                    out_name = "SimData/TrainingData/Train_pf_" + self.case_info['case_name'] + "_" + \
+                               str(self.p_mag) + "_" + str(self.p_force) + \
+                               "_" + frame + ".csv"
+                elif self.force_type == 'point_by_point':
+                    out_name = "SimData/TrainingData/Train_pbp_" + self.case_info['case_name'] + "_" + \
+                               str(self.pf_mag) + "_" + str(self.pf_force) + "_" + str(self.pf_radius) + \
+                               "_" + frame + ".csv"
         else:
             if self.dim == 2:
                 out_name = "SimData/TestingData/Test_2d_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
@@ -695,6 +708,18 @@ class PDSimulation(SimulatorBase):
                 elif self.force_type == 'ring':
                     out_name = "SimData/TestingData/Test_ring_" + self.case_info['case_name'] + "_" + \
                                str(self.ring_mag) + "_" + str(self.ring_width) + "_" + str(self.ring_angle) + \
+                               "_" + frame + ".csv"
+                elif self.force_type == 'ring_circle':
+                    out_name = "SimData/TestingData/Test_rc_" + self.case_info['case_name'] + "_" + \
+                               str(self.ring_mag) + "_" + str(self.ring_width) + "_" + str(self.ring_angle) + \
+                               "_" + frame + ".csv"
+                elif self.force_type == 'point':
+                    out_name = "SimData/TestingData/Test_pf_" + self.case_info['case_name'] + "_" + \
+                               str(self.pf_mag) + "_" + str(self.pf_force) + \
+                               "_" + frame + ".csv"
+                elif self.force_type == 'point_by_point':
+                    out_name = "SimData/TestingData/Test_pbp_" + self.case_info['case_name'] + "_" + \
+                               str(self.pf_mag) + "_" + str(self.pf_force) + "_" + str(self.pf_radius) + \
                                "_" + frame + ".csv"
 
         ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim
@@ -748,6 +773,16 @@ class PDSimulation(SimulatorBase):
                           str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
                 name_pn = "SimData/PNAnimSeq/PN_ringC_" + self.case_info['case_name'] + "_" + str(self.ring_mag) + "_" + \
                           str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
+            elif self.force_type == 'point':
+                name_pd = "SimData/PDAnimSeq/PD_pF_" + self.case_info['case_name'] + "_" + str(self.pf_mag) + "_" + \
+                          str(self.pf_force) + "_" + str(f).zfill(6) + ".obj"
+                name_pn = "SimData/PNAnimSeq/PN_pF_" + self.case_info['case_name'] + "_" + str(self.pf_mag) + "_" + \
+                          str(self.pf_force) + "_" + str(f).zfill(6) + ".obj"
+            elif self.force_type == 'point_by_point':
+                name_pd = "SimData/PDAnimSeq/PD_pbpF_" + self.case_info['case_name'] + "_" + str(self.pf_mag) + "_" + \
+                          str(self.pf_force) + "_" + str(self.pf_radius) + "_" + str(f).zfill(6) + ".obj"
+                name_pn = "SimData/PNAnimSeq/PN_pbpF_" + self.case_info['case_name'] + "_" + str(self.pf_mag) + "_" + \
+                          str(self.pf_force) + "_" + str(self.pf_radius) + "_"+ str(f).zfill(6) + ".obj"
 
             output_3d_seq(self.ti_x.to_numpy(), self.boundary_triangles, name_pd)
             output_3d_seq(pn_pos.to_numpy(), self.boundary_triangles, name_pn)
@@ -770,6 +805,15 @@ class PDSimulation(SimulatorBase):
                                             shape=(self.n_vertices * self.dim, self.n_vertices * self.dim),
                                             dtype=np.float64)
         pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
+
+        # set point force in 3d
+        if self.force_type == 'point':
+            self.set_point_force_3D()
+            pn.set_point_force_3D()
+        elif self.force_type == 'point_by_point':
+            self.set_point_force_by_point_3D()
+            pn.set_point_force_by_point_3D()
+
         if self.dim == 2:
             gui = scene_info['gui']
             filename = f'./SimData/TmpRenderedImgs/frame_rest.png'
@@ -793,7 +837,7 @@ class PDSimulation(SimulatorBase):
         while frame_counter < frame_count:
             print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
             frame_start_t = time.time()
-            self.update_force_field()
+            # self.update_force_field()
             self.build_sn()
             self.warm_up()
 
@@ -803,7 +847,8 @@ class PDSimulation(SimulatorBase):
             print("pn solve time: ", pn_end_t - pn_start_t)
 
             pd_start_t = time.time()
-            for itr in range(self.solver_max_iteration):
+            # for itr in range(self.solver_max_iteration):
+            while True:
                 self.local_solve_build_bp_for_all_constraints()
                 self.build_rhs(rhs_np)
 
@@ -824,6 +869,10 @@ class PDSimulation(SimulatorBase):
                                      pn_dis.to_numpy(),
                                      gradE, init_rel_pos,
                                      frame_counter, is_test)
+            # self.output_network_data(self.ti_x.to_numpy(),
+            #                          pn_dis.to_numpy(),
+            #                          gradE, init_rel_pos,
+            #                          frame_counter, is_test)
             t_out_end = time.time()
             print("output network data time: ", t_out_end - t_out_start)
 
@@ -837,8 +886,8 @@ class PDSimulation(SimulatorBase):
                 draw_image(gui, filename, self.ti_x.to_numpy(), self.mesh_offset, self.mesh_scale,
                            self.ti_elements.to_numpy(), self.n_elements)
             else:
-                # update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
-                update_boundary_mesh(_pn_pos, scene_info['boundary_pos'], self.case_info)
+                update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
+                # update_boundary_mesh(_pn_pos, scene_info['boundary_pos'], self.case_info)
                 scene_info['scene'].input(gui)
                 scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
                 scene_info['scene'].render()

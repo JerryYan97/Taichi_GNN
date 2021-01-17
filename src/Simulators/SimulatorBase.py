@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
 import sys, os
 import taichi as ti
+import numpy as np
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
-from Utils.utils_visualization import get_force_field, get_ring_force_field, get_ring_circle_force_field
+from Utils.utils_visualization import get_force_field, get_ring_force_field, \
+    get_ring_circle_force_field, get_point_force_field, get_point_force_field_by_point
 
 
 @ti.data_oriented
@@ -11,7 +13,6 @@ class SimulatorBase(ABC):
         self.case_info = sim_info['case_info']
         self.dt = sim_info['dt']
         self.real = sim_info['real']
-
         # Mesh
         self.dim = self.case_info['dim']
         self.mesh = self.case_info['mesh']
@@ -38,6 +39,7 @@ class SimulatorBase(ABC):
         self.nu = 0.4
         self.mu = self.E / (2 * (1 + self.nu))
         self.lam = self.E * self.nu / ((1 + self.nu) * (1 - 2 * self.nu))
+        self.p_ind = 0
 
         # External force
         self.ti_ex_force = ti.Vector.field(self.dim, self.real, self.n_vertices)
@@ -47,6 +49,7 @@ class SimulatorBase(ABC):
             self.exf_angle = 0.0
         else:
             self.center = self.case_info['center']
+
             self.ring_mag = 1.0
             self.ring_angle = 0.0
             self.ring_width = 0.2
@@ -56,24 +59,49 @@ class SimulatorBase(ABC):
             self.exf_angle2 = 0.0
             self.min_sphere_radius = self.case_info['min_sphere_radius']
 
+            self.pf_mag = 0.0
+            self.pf_bbox_ind = np.array([0.0, 0.0, 0.0])
+            self.pf_force = np.array([0.0, 0.0, 0.0])
+            self.b_min = self.case_info['bbox_min']
+            self.b_dx = self.case_info['bbox_dx']
+            self.ti_b_min = ti.Vector([self.b_min[0], self.b_min[1], self.b_min[2]])
+            self.ti_b_max = ti.Vector([self.b_min[0], self.b_min[1], self.b_min[2]])
+            self.ti_pf_force = ti.Vector([self.pf_force[0], self.pf_force[1], self.pf_force[2]])
+
+            self.pf_ind = -1
+            self.pf_radius = 0.0
+
+            self.ti_A = ti.Vector([0.0, 0.0, 0.0])
+
     @ti.kernel
-    def set_dir_force(self, dir_force: ti.template()):
+    def set_dir_force(self, dir_force: ti.template()):  # only need to set once
         for i in range(self.n_vertices):
             self.ti_ex_force[i] = dir_force
 
     @ti.kernel
-    def set_ring_force_3D(self):
+    def set_ring_force_3D(self):    # set every time
         for i in range(self.n_vertices):
             self.ti_ex_force[i] = get_ring_force_field(self.ring_mag, self.ring_width,
                                                        self.ti_center, self.ti_x[i],
                                                        self.ring_angle, 3)
 
     @ti.kernel
-    def set_ring_circle_force_3D(self):
+    def set_ring_circle_force_3D(self):     # set every time
         for i in range(self.n_vertices):
             self.ti_ex_force[i] = get_ring_circle_force_field(self.ring_mag, self.ring_width,
                                                               self.ti_center, self.ti_x[i], self.ring_angle,
                                                               self.ring_circle_radius * self.min_sphere_radius, 3)
+
+    @ti.kernel
+    def set_point_force_3D(self):   # set only one time
+        for i in range(self.n_vertices):
+            self.ti_ex_force[i] = get_point_force_field(self.ti_b_min, self.ti_b_max, self.ti_x[i], self.ti_pf_force)
+
+    @ti.kernel
+    def set_point_force_by_point_3D(self):   # set only one time
+        for i in range(self.n_vertices):  # t_pos, pos, radius, force
+            self.ti_ex_force[i] = get_point_force_field_by_point(self.ti_x[self.pf_ind], self.ti_x[i],
+                                                                 self.pf_radius, self.ti_pf_force)
 
     @ti.kernel
     def copy(self, x: ti.template(), y: ti.template()):
@@ -117,6 +145,33 @@ class SimulatorBase(ABC):
                 self.ring_width = force_info['ring_width']
                 self.ring_angle = force_info['ring_angle']
                 self.ring_circle_radius = force_info['ring_circle_radius']
+        elif force_info['force_type'] == 'point':
+            if force_info['dim'] == 2:
+                raise TypeError("Dim 2 doesn't have point force field.")
+            else:
+                self.pf_bbox_ind = force_info['p_force_box_ind']  # vec3
+                self.pf_force = force_info['f']
+                self.pf_mag = force_info['p_mag']
+                self.ti_b_min = ti.Vector([self.b_min[0] + self.b_dx[0] * (self.pf_bbox_ind[0]-1.0),
+                                           self.b_min[1] + self.b_dx[1] * (self.pf_bbox_ind[1]-1.0),
+                                           self.b_min[2] + self.b_dx[2] * (self.pf_bbox_ind[2]-1.0)])
+                self.ti_b_max = ti.Vector([self.b_min[0]+self.b_dx[0]*self.pf_bbox_ind[0],
+                                           self.b_min[1]+self.b_dx[1]*self.pf_bbox_ind[1],
+                                           self.b_min[2]+self.b_dx[2]*self.pf_bbox_ind[2]])
+                self.ti_pf_force = self.pf_mag * ti.Vector([self.pf_force[0], self.pf_force[1], self.pf_force[2]])
+                print("print min: ", self.ti_b_min[0], self.ti_b_min[1], self.ti_b_min[2])
+                print("print max: ", self.ti_b_max[0], self.ti_b_max[1], self.ti_b_max[2])
+        elif force_info['force_type'] == 'point_by_point':
+            if force_info['dim'] == 2:
+                raise TypeError("Dim 2 doesn't have point by point force field.")
+            else:
+                self.pf_ind = force_info['point_ind']  # vec3
+                self.pf_force = force_info['f']
+                self.pf_mag = force_info['p_mag']
+                self.pf_radius = force_info['p_radius']
+                self.ti_pf_force = self.pf_mag * ti.Vector([self.pf_force[0], self.pf_force[1], self.pf_force[2]])
+                print("print min: ", self.ti_b_min[0], self.ti_b_min[1], self.ti_b_min[2])
+                print("print max: ", self.ti_b_max[0], self.ti_b_max[1], self.ti_b_max[2])
         else:
             raise TypeError("The input force type is invalid")
 

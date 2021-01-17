@@ -9,10 +9,10 @@ from Utils.neo_hookean import fixed_corotated_energy
 from Utils.neo_hookean import fixed_corotated_first_piola_kirchoff_stress_derivative
 from Utils.math_tools import svd
 
+
 class PNSimulation(SimulatorBase):
     def __init__(self, sim_info):
         super().__init__(sim_info)
-
         # Simulator Fields
         self.ti_x_prev = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.ti_x_tilde = ti.Vector.field(self.dim, self.real, self.n_vertices)
@@ -23,7 +23,6 @@ class PNSimulation(SimulatorBase):
         self.cnt = ti.field(ti.i32, shape=())
         self.ti_restT = ti.Matrix.field(self.dim, self.dim, self.real, self.n_elements)
         self.zero = ti.Vector.field(self.dim, self.real, self.n_vertices)
-
         # Output
         self.del_p = ti.Vector.field(self.dim, self.real, self.n_vertices)
 
@@ -425,7 +424,7 @@ class PNSimulation(SimulatorBase):
         for i in range(self.n_vertices):
             for d in ti.static(range(self.dim)):
                 residual = ti.max(residual, ti.abs(data_sol[i * self.dim + d]))
-        print("PN Search Direction Residual : ", residual / self.dt)
+        # print("PN Search Direction Residual : ", residual / self.dt)
         return residual
 
     @ti.kernel
@@ -463,7 +462,7 @@ class PNSimulation(SimulatorBase):
     def data_one_frame(self, input_x, input_v):
         self.copy(input_x, self.ti_x)
         self.copy(input_v, self.ti_vel)
-        self.update_force_field()
+        # self.update_force_field()
         self.compute_xn_and_xTilde()
         while True:
             self.data_mat.fill(0)
@@ -484,7 +483,7 @@ class PNSimulation(SimulatorBase):
             # solve_t_end = time.time()
             # print("compute mat time:", compute_hessian_grad_t_end - compute_hessian_grad_t_start)
             # print("solve time:", solve_t_end - solve_t_start)
-            if self.output_residual(self.data_sol) < 1e-3 * self.dt:
+            if self.output_residual(self.data_sol) < 1e-4:
                 break
             E0 = self.compute_energy()
             self.save_xPrev()
