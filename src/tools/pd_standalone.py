@@ -10,7 +10,7 @@ import numpy as np
 import taichi as ti
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
-from Utils.utils_visualization import draw_image, get_force_field, update_boundary_mesh, get_ring_force_field, get_ring_circle_force_field
+from Utils.utils_visualization import draw_image, get_force_field, update_boundary_mesh, get_ring_force_field, get_ring_circle_force_field, get_point_force_field, get_point_force_field_by_point
 from scipy import sparse
 from scipy.sparse.linalg import factorized
 from Utils.math_tools import svd, my_svd
@@ -18,7 +18,7 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1009
+test_case = 1006
 case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -45,9 +45,12 @@ else:
     boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
 
 # Material settings:
-rho = 100
-E, nu = 1e4, 0.4  # Young's modulus and Poisson's ratio
+rho = 1e4
+E, nu = 5e4, 0.2  # Young's modulus and Poisson's ratio
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
+
+# add damping
+damping_coeff = 0.0
 
 # Solver settings:
 m_weight_positional = 1e20
@@ -111,6 +114,16 @@ def init():
     ti_weight_volume.fill(0)
     ti_ex_force.fill(0)
 
+
+# @ti.kernel
+# def set_point_force_3D():   # set only one time
+#     for i in range(n_vertices):
+#         ti_ex_force[i] = get_point_force_field(ti_b_min, ti_b_max, ti_pos_init[i], ti_pf_force)
+
+@ti.kernel
+def set_point_force_by_point_3D(pf_ind: ti.i32, pf_radius: ti.f64, x: ti.f32, y: ti.f32, z: ti.f32):   # set only one time
+    for i in range(n_vertices):  # t_pos, pos, radius, force
+        ti_ex_force[i] = get_point_force_field_by_point(ti_pos_init[pf_ind], ti_pos_init[i], pf_radius, ti.Vector([x,y,z]))
 
 # Backup Settings:
 # Bunny: ti.Vector([0.0, 0.0, 0.1])
@@ -384,7 +397,8 @@ def precomputation(lhs_mat_row: ti.ext_arr(), lhs_mat_col: ti.ext_arr(), lhs_mat
         local_offset_idx = 0
         for d in range(dim):
             cur_sparse_val = 0.0
-            cur_sparse_val += (ti_mass[i] / (dt * dt))
+            cur_sparse_val += (damping_coeff / dt) + (ti_mass[i] / (dt * dt))
+            # cur_sparse_val += (ti_mass[i] / (dt * dt))
             if ti_boundary_labels[i] == 1:
                 cur_sparse_val += m_weight_positional
             lhs_row_idx, lhs_col_idx = i * dim + d, i * dim + d
@@ -393,7 +407,6 @@ def precomputation(lhs_mat_row: ti.ext_arr(), lhs_mat_col: ti.ext_arr(), lhs_mat
             lhs_mat_col[cur_idx] = lhs_col_idx
             lhs_mat_val[cur_idx] = cur_sparse_val
             local_offset_idx += 1
-
 
 
 @ti.func
@@ -499,11 +512,11 @@ def Build_Bp_i_vec(idx):
 
 
 @ti.kernel
-def build_rhs(rhs: ti.ext_arr()):
+def build_rhs(rhs: ti.ext_arr(), dp_pos: ti.ext_arr()):
     one_over_dt2 = 1.0 / (dt ** 2)
     # Construct the first part of the rhs
     for i in range(n_vertices * dim):
-        rhs[i] = one_over_dt2 * ti_mass[i // dim] * ti_Sn[i]
+        rhs[i] = one_over_dt2 * ti_mass[i // dim] * ti_Sn[i] + (damping_coeff / dt * dp_pos[i // dim, i % dim])
     # Add strain and volume/area constraints to the rhs
     for t in ti.static(range(2)):
         for ele_idx in range(n_elements):
@@ -717,6 +730,12 @@ if __name__ == "__main__":
 
     wait = input("PRESS ENTER TO CONTINUE.")
 
+    # if force_type == 'point':
+    # set_point_force_3D()
+    # elif force_type == 'point_by_point':
+    mag = 0.1
+    set_point_force_by_point_3D(661, 0.1, mag*-1.0, mag*0.0, mag*0.0)
+
     if dim == 2:
         gui = ti.GUI('PN Standalone', background_color=0xf7f7f7)
         filename = f'./results/frame_rest.png'
@@ -736,7 +755,7 @@ if __name__ == "__main__":
     plot_array = []
 
     while frame_counter < 1000:
-        set_ring_force_3D()
+        # set_ring_force_3D()
         build_sn()
         # Warm up:
         warm_up()
@@ -744,7 +763,7 @@ if __name__ == "__main__":
         # last_record_energy = 1000000.0
         for itr in range(solver_max_iteration):
             local_solve_build_bp_for_all_constraints()
-            build_rhs(rhs_np)
+            build_rhs(rhs_np, ti_pos.to_numpy())
 
             # local_step_energy = compute_local_step_energy()
             # print("energy after local step:", local_step_energy)
