@@ -96,8 +96,8 @@ class PDSimulation(SimulatorBase):
         # Material and Parameters
         self.m_weight_positional = 1e20
         self.solver_max_iteration = 10
-        self.solver_stop_residual = 0.001
-        self.stop_acceleration = 0.01
+        self.solver_stop_residual = 0.04
+        self.stop_acceleration = 0.04
 
         self.damping_coeff = 0.4
 
@@ -676,8 +676,8 @@ class PDSimulation(SimulatorBase):
         for i in range(self.n_vertices):
             residual += (self.ti_last_pos_new[i] - self.ti_x_new[i]).norm()
             self.ti_last_pos_new[i] = self.ti_x_new[i]
-        residual /= (1.0 * self.n_vertices)
-        print("residual:", residual)
+        # residual /= (1.0 * self.n_vertices)
+        # print("residual:", residual)
         return residual
 
     @ti.kernel
@@ -760,11 +760,11 @@ class PDSimulation(SimulatorBase):
 
         ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim
         out = np.ones([self.n_vertices, ele_count], dtype=float)
-        ltrans_start_t = time.time()
+        # ltrans_start_t = time.time()
         A_finals = get_local_transformation(self.n_vertices, self.mesh, self.ti_x.to_numpy(), init_rel_pos,
                                             self.ti_mass.to_numpy(), self.dim)
-        ltrans_end_t = time.time()
-        print("get local transformation:", ltrans_end_t - ltrans_start_t)
+        # ltrans_end_t = time.time()
+        # print("get local transformation:", ltrans_end_t - ltrans_start_t)
         i = 0
         pos_init_out = self.mesh.vertices
         if self.dim == 2:
@@ -788,8 +788,8 @@ class PDSimulation(SimulatorBase):
                 out[i, 24:27] = pos_init_out[i, :]
                 i = i + 1
 
-        fill_data_end = time.time()
-        print("fill data: ", fill_data_end - ltrans_end_t)
+        # fill_data_end = time.time()
+        # print("fill data: ", fill_data_end - ltrans_end_t)
         np.savetxt(out_name, out, delimiter=',')
 
     def output_aux_data(self, f, pn_pos):
@@ -981,7 +981,7 @@ class PDSimulation(SimulatorBase):
         init_rel_pos = self.mesh.vertices - init_com
         while True:
             print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
-            frame_start_t = time.time()
+            # frame_start_t = time.time()
             # self.update_force_field()
             self.build_sn()
             self.warm_up()
@@ -1010,7 +1010,7 @@ class PDSimulation(SimulatorBase):
             # self.gradE.from_numpy(pn.get_gradE_from_pd(self.ti_x))
             gradE = pn.get_gradE_from_pd(self.ti_x)
             # t_out_start = time.time()
-            if frame_counter % 20 == 0:
+            if frame_counter % 10 == 0:
                 self.output_network_data(self.ti_x_del.to_numpy(),
                                          pn_dis.to_numpy(),
                                          gradE, init_rel_pos,
@@ -1023,8 +1023,8 @@ class PDSimulation(SimulatorBase):
             # print("output network data time: ", t_out_end - t_out_start)
 
             frame_counter += 1
-            frame_end_t = time.time()
-            print("whole time for one frame: ", frame_end_t - frame_start_t)
+            # frame_end_t = time.time()
+            # print("whole time for one frame: ", frame_end_t - frame_start_t)
 
             # Show result
             if self.dim == 2:

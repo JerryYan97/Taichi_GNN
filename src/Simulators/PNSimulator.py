@@ -440,6 +440,16 @@ class PNSimulation(SimulatorBase):
         return residual
 
     @ti.kernel
+    def output_residual2(self, data_sol: ti.ext_arr()) -> ti.f64:
+        residual = 0.0
+        for i in range(self.n_vertices):
+            res = 0.0
+            for d in ti.static(range(self.dim)):
+                res += data_sol[i * self.dim + d] * data_sol[i * self.dim + d]
+            residual += ti.sqrt(res)
+        return residual
+
+    @ti.kernel
     def compute_energy(self) -> ti.f64:
         total_energy = 0.0
         # inertia
@@ -499,7 +509,7 @@ class PNSimulation(SimulatorBase):
             # solve_t_end = time.time()
             # print("compute mat time:", compute_hessian_grad_t_end - compute_hessian_grad_t_start)
             # print("solve time:", solve_t_end - solve_t_start)
-            if self.output_residual(self.data_sol) < 1e-4:
+            if self.output_residual2(self.data_sol) < 1e-6:
                 break
             E0 = self.compute_energy()
             self.save_xPrev()

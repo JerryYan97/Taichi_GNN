@@ -9,10 +9,10 @@ from Utils.neo_hookean import fixed_corotated_energy
 from Utils.neo_hookean import fixed_corotated_first_piola_kirchoff_stress_derivative
 from Utils.reader import read
 from Utils.math_tools import svd, my_svd
-from Utils.utils_visualization import draw_image, update_boundary_mesh, get_force_field, get_ring_force_field, get_point_force_field_by_point
+from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3d_seq, get_force_field, get_ring_force_field, get_point_force_field_by_point
 
 ##############################################################################
-case_info = read(1006)
+case_info = read(1009)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
@@ -21,6 +21,7 @@ dim = case_info['dim']
 center = case_info['center']
 min_sphere_radius = case_info['min_sphere_radius']
 ##############################################################################
+_, _, boundary_triangles = case_info['boundary']
 
 ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 
@@ -72,7 +73,7 @@ ti_indMap_field = ti.field(real, (n_elements, dim * (dim + 1)))
 ex_force = ti.Vector.field(dim, real, n_particles)
 ti_center = ti.Vector([center[0], center[1], center[2]])
 
-damping_coeff = 0.2
+damping_coeff = 0.4
 
 
 def initial():
@@ -383,8 +384,28 @@ def output_residual(data_sol: ti.ext_arr()) -> real:
     return residual
 
 
+@ti.kernel
+def output_residual2(data_sol: ti.ext_arr()) -> real:
+    residual = 0.0
+    for i in range(n_particles):
+        res = 0.0
+        for d in ti.static(range(dim)):
+            res += data_sol[i * dim + d] * data_sol[i * dim + d]
+        residual += ti.sqrt(res)
+    print("Search Direction Residual : ", residual / dt)
+    return residual
+
+
 def my_solve_linear_system():
     pass
+
+
+def output_aux_data(f):
+    if dim == 3:
+        name_pn = "../../SimData/PNAnimSeq/PD_pbpF_" + case_info['case_name'] + "_" + str(0.000001) + \
+                  "_" + str(4.6) + "_" + str((-1.0, 0.0, 0.0)) + \
+                  "_" + str(0.1) + "_" + str(f).zfill(6) + ".obj"
+        output_3d_seq(x.to_numpy(), boundary_triangles, name_pn)
 
 
 if __name__ == "__main__":
@@ -413,8 +434,8 @@ if __name__ == "__main__":
     data_mat = np.zeros(shape=(3, 20000000), dtype=np.float64)
     data_sol = np.zeros(shape=(200000,), dtype=np.float64)
 
-    mag = 0.3
-    set_point_force_by_point_3D(661, 0.1, mag*-1.0, mag*0.0, mag*0.0)
+    mag = 4.6
+    set_point_force_by_point_3D(1, 0.1, mag*-1.0, mag*0.0, mag*0.0)
 
     # Compile time duration record
     # Before optimization: 73.18037104606628 s
@@ -447,7 +468,7 @@ if __name__ == "__main__":
             # time_end = time.time()
             # print("to_numpy() and solve linear system time:", time_end - time_start, 's')
 
-            if output_residual(data_sol) < 1e-4 * dt:
+            if output_residual2(data_sol) < 1e-6:
                 break
 
             # time_start = time.time()
@@ -465,6 +486,8 @@ if __name__ == "__main__":
 
         # time_start = time.time()
         compute_v()
+        output_aux_data(frame_counter)
+
         particle_pos = x.to_numpy()
         vertices_ = vertices.to_numpy()
         # time_end = time.time()

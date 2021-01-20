@@ -10,7 +10,7 @@ import numpy as np
 import taichi as ti
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
-from Utils.utils_visualization import draw_image, get_force_field, update_boundary_mesh, get_ring_force_field, get_ring_circle_force_field, get_point_force_field, get_point_force_field_by_point
+from Utils.utils_visualization import draw_image, get_force_field, output_3d_seq, update_boundary_mesh, get_ring_force_field, get_ring_circle_force_field, get_point_force_field, get_point_force_field_by_point
 from scipy import sparse
 from scipy.sparse.linalg import factorized
 from Utils.math_tools import svd, my_svd
@@ -31,6 +31,7 @@ if dim == 3:
 # cpu 1.27 -- 1003,
 ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
 n_vertices = mesh.num_vertices
+_, _, boundary_triangles = case_info['boundary']
 
 # 2D and 3D scene settings:
 if dim == 2:
@@ -60,7 +61,7 @@ dt = 0.01
 # Backup settings:
 # Bar: 10  Bunny: 50
 # solver_max_iteration = 10
-solver_stop_residual = 0.01
+solver_stop_residual = 0.4
 # external force -- counter-clock wise
 ti_ex_force = ti.Vector.field(dim, real, n_vertices)
 
@@ -730,6 +731,13 @@ def compute_local_step_energy():
     return (local_T1_energy + local_T2_energy)
 
 
+def output_aux_data(f):
+    if dim == 3:
+        name_pd = "../../SimData/PDAnimSeq/PD_pbpF_" + case_info['case_name'] + "_" + str(solver_stop_residual) + \
+                  "_" + str(4.6) + "_" + str(0.1) + "_" + str(f).zfill(6) + ".obj"
+        output_3d_seq(ti_pos.to_numpy(), boundary_triangles, name_pd)
+
+
 if __name__ == "__main__":
     os.makedirs("results", exist_ok=True)
     for root, dirs, files in os.walk("results/"):
@@ -756,7 +764,7 @@ if __name__ == "__main__":
 
     # wait = input("PRESS ENTER TO CONTINUE.")
 
-    mag = 6.6
+    mag = 4.6
     set_point_force_by_point_3D(1, 0.1, mag*-1.0, mag*0.0, mag*0.0)
 
     if dim == 2:
@@ -816,6 +824,8 @@ if __name__ == "__main__":
 
         # Update velocity and positions
         update_velocity_pos()
+        output_aux_data(frame_counter)
+
         frame_counter += 1
         filename = f'./results/frame_{frame_counter:05d}.png'
         if dim == 2:
@@ -828,7 +838,7 @@ if __name__ == "__main__":
             gui.set_image(scene.img)
             gui.show()
 
-        if check_acceleration_status() > 800 and frame_counter > 50:
+        if check_acceleration_status() > 800 and frame_counter > 500:
             break
 
 # video_manager.make_video(gif=True, mp4=True)
