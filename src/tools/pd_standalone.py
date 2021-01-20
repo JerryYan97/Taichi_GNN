@@ -18,7 +18,7 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1006
+test_case = 1009
 case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -46,20 +46,21 @@ else:
 
 # Material settings:
 rho = 1e4
-E, nu = 5e4, 0.2  # Young's modulus and Poisson's ratio
+E, nu = 5e4, 0.1  # Young's modulus and Poisson's ratio
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
 
+stop_acceleration = 0.04
+
 # add damping
-damping_coeff = 0.0
+damping_coeff = 0.4
 
 # Solver settings:
 m_weight_positional = 1e20
 dt = 0.01
 # Backup settings:
-# Bar: 10
-# Bunny: 50
-solver_max_iteration = 15
-solver_stop_residual = 0.001
+# Bar: 10  Bunny: 50
+# solver_max_iteration = 10
+solver_stop_residual = 0.01
 # external force -- counter-clock wise
 ti_ex_force = ti.Vector.field(dim, real, n_vertices)
 
@@ -71,7 +72,11 @@ ti_pos_new = ti.Vector.field(dim, real, n_vertices)
 ti_pos_init = ti.Vector.field(dim, real, n_vertices)
 ti_last_pos_new = ti.Vector.field(dim, real, n_vertices)
 ti_boundary_labels = ti.field(int, n_vertices)
+
 ti_vel = ti.Vector.field(dim, real, n_vertices)
+ti_vel_last = ti.Vector.field(dim, real, n_vertices)
+ti_vel_del = ti.Vector.field(dim, real, n_vertices)
+
 ti_elements = ti.Vector.field(dim + 1, int, n_elements)  # ids of three vertices of each face
 ti_Dm_inv = ti.Matrix.field(dim, dim, real, n_elements)  # The inverse of the init elements -- Dm
 ti_F = ti.Matrix.field(dim, dim, real, n_elements)
@@ -101,7 +106,11 @@ def init():
     ti_pos_new.fill(0)
     ti_last_pos_new.fill(0)
     ti_boundary_labels.fill(0)
+
     ti_vel.fill(0)
+    ti_vel_del.fill(0)
+    ti_vel_last.fill(0)
+
     ti_Dm_inv.fill(0)
     ti_F.fill(0)
     ti_A.fill(0)
@@ -397,8 +406,8 @@ def precomputation(lhs_mat_row: ti.ext_arr(), lhs_mat_col: ti.ext_arr(), lhs_mat
         local_offset_idx = 0
         for d in range(dim):
             cur_sparse_val = 0.0
-            cur_sparse_val += (damping_coeff / dt) + (ti_mass[i] / (dt * dt))
-            # cur_sparse_val += (ti_mass[i] / (dt * dt))
+            # cur_sparse_val += (-damping_coeff * vel[i, d] / dt) + (ti_mass[i] / (dt * dt))
+            cur_sparse_val += (ti_mass[i] / (dt * dt))
             if ti_boundary_labels[i] == 1:
                 cur_sparse_val += m_weight_positional
             lhs_row_idx, lhs_col_idx = i * dim + d, i * dim + d
@@ -485,16 +494,16 @@ def local_solve_build_bp_for_all_constraints():
 
 @ti.kernel
 def build_sn():
-    for vert_idx in range(n_vertices):  # number of vertices
-        Sn_idx1 = vert_idx*dim
-        Sn_idx2 = vert_idx*dim+1
-        pos_i = ti_pos[vert_idx]
-        vel_i = ti_vel[vert_idx]
-        ti_Sn[Sn_idx1] = pos_i[0] + dt * vel_i[0] + (dt ** 2) * ti_ex_force[vert_idx][0] / ti_mass[vert_idx]  # x-direction;
-        ti_Sn[Sn_idx2] = pos_i[1] + dt * vel_i[1] + (dt ** 2) * ti_ex_force[vert_idx][1] / ti_mass[vert_idx]  # y-direction;
+    for v_id in range(n_vertices):  # number of vertices
+        Sn_idx1 = v_id*dim
+        Sn_idx2 = v_id*dim+1
+        pos_i = ti_pos[v_id]
+        vel_i = ti_vel[v_id]
+        ti_Sn[Sn_idx1] = pos_i[0] + dt * vel_i[0]+(dt**2)*(ti_ex_force[v_id][0]/ti_mass[v_id]-ti_vel[v_id][0]*damping_coeff/ti_mass[v_id])
+        ti_Sn[Sn_idx2] = pos_i[1] + dt * vel_i[1]+(dt**2)*(ti_ex_force[v_id][1]/ti_mass[v_id]-ti_vel[v_id][1]*damping_coeff/ti_mass[v_id])
         if ti.static(dim == 3):
-            Sn_idx3 = vert_idx * dim + 2
-            ti_Sn[Sn_idx3] = pos_i[2] + dt * vel_i[2] + (dt ** 2) * ti_ex_force[vert_idx][2] / ti_mass[vert_idx]
+            Sn_idx3 = v_id * dim + 2
+            ti_Sn[Sn_idx3] = pos_i[2]+dt*vel_i[2]+(dt**2)*(ti_ex_force[v_id][2]/ti_mass[v_id]-ti_vel[v_id][2]*damping_coeff/ti_mass[v_id])
 
 
 @ti.func
@@ -512,11 +521,11 @@ def Build_Bp_i_vec(idx):
 
 
 @ti.kernel
-def build_rhs(rhs: ti.ext_arr(), dp_pos: ti.ext_arr()):
+def build_rhs(rhs: ti.ext_arr()): # dp_pos: ti.ext_arr(), dp_vel: ti.ext_arr()):
     one_over_dt2 = 1.0 / (dt ** 2)
     # Construct the first part of the rhs
     for i in range(n_vertices * dim):
-        rhs[i] = one_over_dt2 * ti_mass[i // dim] * ti_Sn[i] + (damping_coeff / dt * dp_pos[i // dim, i % dim])
+        rhs[i] = one_over_dt2 * ti_mass[i // dim] * ti_Sn[i]  # + (damping_coeff * dp_vel[i//dim, i%dim] / dt * dp_pos[i//dim, i%dim])
     # Add strain and volume/area constraints to the rhs
     for t in ti.static(range(2)):
         for ele_idx in range(n_elements):
@@ -594,8 +603,11 @@ def build_rhs(rhs: ti.ext_arr(), dp_pos: ti.ext_arr()):
 @ti.kernel
 def update_velocity_pos():
     for i in range(n_vertices):
-        ti_vel[i] = (ti_pos_new[i] - ti_pos[i]) / dt
-        ti_pos[i] = ti_pos_new[i]
+        ti_vel[i] = (ti_pos_new[i] - ti_pos[i]) / dt    # vel
+        ti_vel_del[i] = ti_vel[i] - ti_vel_last[i]
+        # if i % 400 == 0:
+        #     print("ti.vel_del: ", ti_vel_del[i], "ti.vel: ", ti_vel[i], "ti.last vel: ", ti_vel_last[i])
+        ti_pos[i] = ti_pos_new[i]   # pos
 
 
 @ti.kernel
@@ -628,6 +640,20 @@ def check_residual() -> ti.f32:
         ti_last_pos_new[i] = ti_pos_new[i]
     # print("residual:", residual)
     return residual
+
+
+@ti.kernel
+def check_acceleration_status() -> ti.i32:
+    # residual = 0.0
+    times = 0
+    for i in range(n_vertices):
+        # residual += (ti_vel_del[i]/dt).norm()
+        if (ti_vel_del[i]/dt).norm() < 0.001:
+            times = times + 1
+        ti_vel_last[i] = ti_vel[i]
+    # residual /= (1.0 * n_vertices)
+    # print("acceleration : ", residual, ", times: ",  times)
+    return times
 
 
 @ti.kernel
@@ -728,13 +754,10 @@ if __name__ == "__main__":
                                         dtype=np.float64)
     pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
-    wait = input("PRESS ENTER TO CONTINUE.")
+    # wait = input("PRESS ENTER TO CONTINUE.")
 
-    # if force_type == 'point':
-    # set_point_force_3D()
-    # elif force_type == 'point_by_point':
-    mag = 0.1
-    set_point_force_by_point_3D(661, 0.1, mag*-1.0, mag*0.0, mag*0.0)
+    mag = 6.6
+    set_point_force_by_point_3D(1, 0.1, mag*-1.0, mag*0.0, mag*0.0)
 
     if dim == 2:
         gui = ti.GUI('PN Standalone', background_color=0xf7f7f7)
@@ -754,16 +777,17 @@ if __name__ == "__main__":
     sim_t = 0.0
     plot_array = []
 
-    while frame_counter < 1000:
+    while True:
         # set_ring_force_3D()
         build_sn()
         # Warm up:
         warm_up()
         print("Frame ", frame_counter)
         # last_record_energy = 1000000.0
-        for itr in range(solver_max_iteration):
+        # for itr in range(solver_max_iteration):
+        while True:
             local_solve_build_bp_for_all_constraints()
-            build_rhs(rhs_np, ti_pos.to_numpy())
+            build_rhs(rhs_np)
 
             # local_step_energy = compute_local_step_energy()
             # print("energy after local step:", local_step_energy)
@@ -803,5 +827,8 @@ if __name__ == "__main__":
             scene.render()
             gui.set_image(scene.img)
             gui.show()
+
+        if check_acceleration_status() > 800 and frame_counter > 50:
+            break
 
 # video_manager.make_video(gif=True, mp4=True)

@@ -9,10 +9,10 @@ from Utils.neo_hookean import fixed_corotated_energy
 from Utils.neo_hookean import fixed_corotated_first_piola_kirchoff_stress_derivative
 from Utils.reader import read
 from Utils.math_tools import svd, my_svd
-from Utils.utils_visualization import draw_image, update_boundary_mesh, get_force_field, get_ring_force_field
+from Utils.utils_visualization import draw_image, update_boundary_mesh, get_force_field, get_ring_force_field, get_point_force_field_by_point
 
 ##############################################################################
-case_info = read(1007)
+case_info = read(1006)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
@@ -27,11 +27,11 @@ ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 real = ti.f64
 
 dt = 0.01
-E = 1e4
-nu = 0.4
+E = 5e4
+nu = 0.1
 la = E * nu / ((1 + nu) * (1 - 2 * nu))
 mu = E / (2 * (1 + nu))
-density = 100
+density = 1e4
 n_particles = mesh.num_vertices
 if dim == 2:
     n_elements = mesh.num_faces
@@ -53,6 +53,9 @@ xn = ti.Vector.field(dim, real, n_particles)
 v = ti.Vector.field(dim, real, n_particles)
 m = ti.field(real, n_particles)
 
+ti_vel_last = ti.Vector.field(dim, real, n_particles)
+ti_vel_del = ti.Vector.field(dim, real, n_particles)
+
 zero = ti.Vector.field(dim, real, n_particles)
 restT = ti.Matrix.field(dim, dim, real, n_elements)
 vertices = ti.field(ti.i32, (n_elements, dim + 1))
@@ -69,6 +72,9 @@ ti_indMap_field = ti.field(real, (n_elements, dim * (dim + 1)))
 ex_force = ti.Vector.field(dim, real, n_particles)
 ti_center = ti.Vector([center[0], center[1], center[2]])
 
+damping_coeff = 0.2
+
+
 def initial():
     x.from_numpy(mesh.vertices.astype(np.float64))
     if dim == 2:
@@ -82,6 +88,9 @@ def initial():
     m.fill(0)
     zero.fill(0)
     restT.fill(0)
+
+    ti_vel_last.fill(0)
+    ti_vel_del.fill(0)
     ################################ external force ######################################
     ex_force.fill(0)
 
@@ -106,6 +115,12 @@ def set_dir_force_3D():
 def set_ring_force_3D():
     for i in range(n_particles):
         ex_force[i] = get_ring_force_field(0.04, 10.0, ti_center, x[i], 0.0, 3)
+
+
+@ti.kernel
+def set_point_force_by_point_3D(pf_ind: ti.i32, pf_radius: ti.f64, xx: ti.f32, y: ti.f32, z: ti.f32):
+    for i in range(n_particles):  # t_pos, pos, radius, force
+        ex_force[i] = get_point_force_field_by_point(x[pf_ind], x[i], pf_radius, ti.Vector([xx, y, z]))
 
 
 @ti.func
@@ -144,9 +159,34 @@ def compute_xn_and_xTilde():
         for i in range(n_particles):
             xn[i] = x[i]
             xTilde[i] = x[i] + dt * v[i]
-            xTilde(0)[i] += dt * dt * (ex_force[i][0] / m[i])
-            xTilde(1)[i] += dt * dt * (ex_force[i][1] / m[i])
-            xTilde(2)[i] += dt * dt * (ex_force[i][2] / m[i])
+            xTilde(0)[i] += dt * dt * (ex_force[i][0] / m[i]) - dt * dt * (damping_coeff * v[i][0]) / m[i]
+            xTilde(1)[i] += dt * dt * (ex_force[i][1] / m[i]) - dt * dt * (damping_coeff * v[i][1]) / m[i]
+            xTilde(2)[i] += dt * dt * (ex_force[i][2] / m[i]) - dt * dt * (damping_coeff * v[i][2]) / m[i]
+
+@ti.kernel
+def check_acceleration_status() -> ti.f64:
+    residual = 0.0
+    for i in range(n_particles):
+        residual += (ti_vel_del[i]/dt).norm()
+    residual /= (1.0 * n_particles)
+    print("acceleration :", residual)
+    return residual
+
+
+@ti.kernel
+def compute_rayleigh_damping():
+    total_energy = 0.0
+    # inertia
+    for i in range(n_particles):
+        total_energy += 0.5 * m[i] * (x[i] - xTilde[i]).norm_sqr()
+    # elasticity
+    for e in range(n_elements):
+        F = compute_T(e) @ restT[e].inverse()
+        vol0 = restT[e].determinant() / dim / (dim - 1)
+        U, sig, V = svd(F)
+        # U, sig, V = my_svd(F)
+        total_energy += fixed_corotated_energy(sig, la, mu) * dt * dt * vol0
+    return total_energy
 
 
 @ti.kernel
@@ -329,6 +369,8 @@ def apply_sol(alpha : real, data_sol: ti.ext_arr()):
 def compute_v():
     for i in range(n_particles):
         v[i] = (x[i] - xn[i]) / dt
+        ti_vel_del[i] = v[i] - ti_vel_last[i]
+        ti_vel_last[i] = v[i]
 
 
 @ti.kernel
@@ -337,7 +379,7 @@ def output_residual(data_sol: ti.ext_arr()) -> real:
     for i in range(n_particles):
         for d in ti.static(range(dim)):
             residual = ti.max(residual, ti.abs(data_sol[i * dim + d]))
-    print("Search Direction Residual : ", residual / dt)
+    # print("Search Direction Residual : ", residual / dt)
     return residual
 
 
@@ -348,6 +390,7 @@ def my_solve_linear_system():
 if __name__ == "__main__":
     initial()
     compute_restT_and_m()
+    stop_acceleration = 0.001
 
     video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
     frame_counter = 0
@@ -370,13 +413,16 @@ if __name__ == "__main__":
     data_mat = np.zeros(shape=(3, 20000000), dtype=np.float64)
     data_sol = np.zeros(shape=(200000,), dtype=np.float64)
 
+    mag = 0.3
+    set_point_force_by_point_3D(661, 0.1, mag*-1.0, mag*0.0, mag*0.0)
+
     # Compile time duration record
     # Before optimization: 73.18037104606628 s
     # After unrolling optimization: 2.7542989253997803 s -  0.002396106719970703 s
     # set_dir_force_3D()
-    for f in range(60):
-        set_ring_force_3D()
-        print("==================== Frame: ", f, " ====================")
+    while True:
+        # set_ring_force_3D()
+        print("==================== Frame: ", frame_counter, " ====================")
         compute_xn_and_xTilde()
         while True:
             data_rhs.fill(0)
@@ -437,6 +483,8 @@ if __name__ == "__main__":
             gui.set_image(scene.img)
             gui.show()
 
+        if check_acceleration_status() < stop_acceleration:
+            break
 
 # Case 1 performance record:
 # Energy computation time: 0.00030803680419921875 s

@@ -33,6 +33,10 @@ class PNSimulation(SimulatorBase):
         self.ti_U_field = ti.field(self.real, (self.n_elements, self.dim * self.dim, self.dim * self.dim))
         self.ti_V_field = ti.field(self.real, (self.n_elements, self.dim * self.dim, self.dim * self.dim))
         self.ti_indMap_field = ti.field(self.real, (self.n_elements, self.dim * (self.dim + 1)))
+        self.damping_coeff = 0.4
+
+        self.ti_vel_del = ti.Vector.field(self.dim, self.real, self.n_vertices)
+        self.ti_vel_last = ti.Vector.field(self.dim, self.real, self.n_vertices)
 
     def initial(self):
         self.base_initial()
@@ -44,6 +48,8 @@ class PNSimulation(SimulatorBase):
         self.zero.fill(0)
         self.ti_restT.fill(0)
 
+        self.ti_vel_del.fill(0)
+        self.ti_vel_last.fill(0)
         # Output
         self.del_p.fill(0)
 
@@ -125,9 +131,15 @@ class PNSimulation(SimulatorBase):
             for i in range(self.n_vertices):
                 self.ti_x_n[i] = self.ti_x[i]
                 self.ti_x_tilde[i] = self.ti_x[i] + self.dt * self.ti_vel[i]
-                self.ti_x_tilde(0)[i] += self.dt * self.dt * (self.ti_ex_force[i][0] / self.ti_mass[i])
-                self.ti_x_tilde(1)[i] += self.dt * self.dt * (self.ti_ex_force[i][1] / self.ti_mass[i])
-                self.ti_x_tilde(2)[i] += self.dt * self.dt * (self.ti_ex_force[i][2] / self.ti_mass[i])
+                # self.ti_x_tilde(0)[i] += self.dt * self.dt * (self.ti_ex_force[i][0] / self.ti_mass[i])
+                # self.ti_x_tilde(1)[i] += self.dt * self.dt * (self.ti_ex_force[i][1] / self.ti_mass[i])
+                # self.ti_x_tilde(2)[i] += self.dt * self.dt * (self.ti_ex_force[i][2] / self.ti_mass[i])
+                self.ti_x_tilde(0)[i] += self.dt*self.dt*(self.ti_ex_force[i][0]/self.ti_mass[i])-\
+                                         self.dt*self.dt*(self.damping_coeff*self.ti_vel[i][0]/self.ti_mass[i])
+                self.ti_x_tilde(1)[i] += self.dt*self.dt*(self.ti_ex_force[i][1]/self.ti_mass[i])-\
+                                         self.dt*self.dt*(self.damping_coeff*self.ti_vel[i][1]/self.ti_mass[i])
+                self.ti_x_tilde(2)[i] += self.dt*self.dt*(self.ti_ex_force[i][2]/self.ti_mass[i])-\
+                                         self.dt*self.dt*(self.damping_coeff*self.ti_vel[i][2]/self.ti_mass[i])
 
     @ti.func
     def compute_T(self, i):
@@ -456,12 +468,16 @@ class PNSimulation(SimulatorBase):
     def compute_v(self):
         for i in range(self.n_vertices):
             self.ti_vel[i] = (self.ti_x[i] - self.ti_x_n[i]) / self.dt
+            self.ti_vel_del[i] = self.ti_vel[i] - self.ti_vel_last[i]
+            self.ti_vel_last[i] = self.ti_vel[i]
             self.del_p[i] = self.ti_x[i] - self.ti_x_n[i]
 
     # Older version may has potential bugs:
     def data_one_frame(self, input_x, input_v):
         self.copy(input_x, self.ti_x)
         self.copy(input_v, self.ti_vel)
+        self.copy(input_v, self.ti_vel_last)
+
         # self.update_force_field()
         self.compute_xn_and_xTilde()
         while True:

@@ -21,6 +21,7 @@ def calcCenterOfMass(vind, dim, mass, pos):
     sum /= summ
     return sum
 
+
 def calcA_qq(q_i, dim):
     sum = np.zeros((dim, dim))
     for i in range(q_i.shape[0]):
@@ -90,19 +91,24 @@ def get_local_transformation(n_vertices, mesh, pos, init_pos, mass, dim):
 class PDSimulation(SimulatorBase):
     def __init__(self, sim_info):
         super().__init__(sim_info)
-
-        # Mesh
-        self.mesh.enable_connectivity()
+        self.mesh.enable_connectivity()  # Mesh
 
         # Material and Parameters
         self.m_weight_positional = 1e20
         self.solver_max_iteration = 10
-        self.solver_stop_residual = 0.0012
+        self.solver_stop_residual = 0.001
+        self.stop_acceleration = 0.01
+
+        self.damping_coeff = 0.4
 
         # Simulator Fields
         self.ti_volume = ti.field(self.real, self.n_elements)
         self.ti_x_new = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.ti_x_del = ti.Vector.field(self.dim, self.real, self.n_vertices)
+
+        self.ti_vel_last = ti.Vector.field(self.dim, self.real, self.n_vertices)
+        self.ti_vel_del = ti.Vector.field(self.dim, self.real, self.n_vertices)
+
         # self.gradE = ti.field(self.real, shape=200000)  # Keep the shape same as the rhs shape of PN
         self.ti_last_pos_new = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.ti_boundary_labels = ti.field(int, self.n_vertices)
@@ -128,6 +134,10 @@ class PDSimulation(SimulatorBase):
         self.ti_volume.fill(0)
         self.ti_x_new.fill(0)
         self.ti_x_del.fill(0)
+
+        self.ti_vel_del.fill(0)
+        self.ti_vel_last.fill(0)
+
         # self.gradE.fill(0)
         self.ti_last_pos_new.fill(0)
         self.ti_boundary_labels.fill(0)
@@ -437,6 +447,7 @@ class PDSimulation(SimulatorBase):
             local_offset_idx = 0
             for d in range(self.dim):
                 cur_sparse_val = 0.0
+                # cur_sparse_val += (-self.damping_coeff/self.dt)+(self.ti_mass[i]/(self.dt*self.dt))
                 cur_sparse_val += (self.ti_mass[i] / (self.dt * self.dt))
                 if self.ti_boundary_labels[i] == 1:
                     cur_sparse_val += self.m_weight_positional
@@ -519,19 +530,19 @@ class PDSimulation(SimulatorBase):
 
     @ti.kernel
     def build_sn(self):
-        for vert_idx in range(self.n_vertices):  # number of vertices
-            Sn_idx1 = vert_idx * self.dim
-            Sn_idx2 = vert_idx * self.dim + 1
-            pos_i = self.ti_x[vert_idx]
-            vel_i = self.ti_vel[vert_idx]
-            self.ti_Sn[Sn_idx1] = pos_i[0] + self.dt * vel_i[0] + (self.dt ** 2) * self.ti_ex_force[vert_idx][0] / \
-                                  self.ti_mass[vert_idx]  # x-direction;
-            self.ti_Sn[Sn_idx2] = pos_i[1] + self.dt * vel_i[1] + (self.dt ** 2) * self.ti_ex_force[vert_idx][1] / \
-                                  self.ti_mass[vert_idx]  # y-direction;
+        for v_id in range(self.n_vertices):  # number of vertices
+            Sn_idx1 = v_id * self.dim
+            Sn_idx2 = v_id * self.dim + 1
+            pos_i = self.ti_x[v_id]
+            vel_i = self.ti_vel[v_id]
+            self.ti_Sn[Sn_idx1] = pos_i[0] + self.dt * vel_i[0] + (self.dt ** 2) * (self.ti_ex_force[v_id][0] / \
+                                  self.ti_mass[v_id]-vel_i[0]*self.damping_coeff/self.ti_mass[v_id])
+            self.ti_Sn[Sn_idx2] = pos_i[1] + self.dt * vel_i[1] + (self.dt ** 2) * (self.ti_ex_force[v_id][1] / \
+                                  self.ti_mass[v_id]-vel_i[1]*self.damping_coeff/self.ti_mass[v_id])
             if ti.static(self.dim == 3):
-                Sn_idx3 = vert_idx * self.dim + 2
-                self.ti_Sn[Sn_idx3] = pos_i[2] + self.dt * vel_i[2] + (self.dt ** 2) * self.ti_ex_force[vert_idx][2] / \
-                                      self.ti_mass[vert_idx]
+                Sn_idx3 = v_id * self.dim + 2
+                self.ti_Sn[Sn_idx3] = pos_i[2] + self.dt * vel_i[2] + (self.dt ** 2) * (self.ti_ex_force[v_id][2]/ \
+                                  self.ti_mass[v_id]-vel_i[2]*self.damping_coeff/self.ti_mass[v_id])
 
     @ti.func
     def Build_Bp_i_vec(self, idx):
@@ -547,11 +558,14 @@ class PDSimulation(SimulatorBase):
             return Bp_i_vec
 
     @ti.kernel
-    def build_rhs(self, rhs: ti.ext_arr()):
+    def build_rhs(self, rhs: ti.ext_arr()):  #, dp_pos: ti.ext_arr()):
         one_over_dt2 = 1.0 / (self.dt ** 2)
         # Construct the first part of the rhs
         for i in range(self.n_vertices * self.dim):
             rhs[i] = one_over_dt2 * self.ti_mass[i // self.dim] * self.ti_Sn[i]
+        # for i in ti.static(range(self.n_vertices * self.dim)):
+        #     rhs[i] = one_over_dt2 * self.ti_mass[i // self.dim] * self.ti_Sn[i] - \
+        #              (self.damping_coeff / self.dt * dp_pos[i // self.dim, i % self.dim])
         # Add strain and volume/area constraints to the rhs
         for t in ti.static(range(2)):
             for ele_idx in range(self.n_elements):
@@ -628,7 +642,11 @@ class PDSimulation(SimulatorBase):
     @ti.kernel
     def update_velocity_pos(self):
         for i in range(self.n_vertices):
+            # vel
             self.ti_vel[i] = (self.ti_x_new[i] - self.ti_x[i]) / self.dt
+            self.ti_vel_del[i] = self.ti_vel[i] - self.ti_vel_last[i]
+            # self.ti_vel_last[i] = self.ti_vel[i]
+            # pos
             self.ti_x_del[i] = self.ti_x_new[i] - self.ti_x[i]
             self.ti_x[i] = self.ti_x_new[i]
 
@@ -661,6 +679,24 @@ class PDSimulation(SimulatorBase):
         residual /= (1.0 * self.n_vertices)
         print("residual:", residual)
         return residual
+
+    @ti.kernel
+    def check_acceleration_status(self) -> ti.f64:
+        residual = 0.0
+        for i in range(self.n_vertices):
+            residual += (self.ti_vel_del[i]/self.dt).norm()
+        residual /= (1.0 * self.n_vertices)
+        print("acceleration :", residual)
+        return residual
+
+    @ti.kernel
+    def check_acceleration_status_times(self) -> ti.i32:
+        times = 0
+        for i in range(self.n_vertices):
+            if (self.ti_vel_del[i] / self.dt).norm() < 0.001:
+                times = times + 1
+            self.ti_vel_last[i] = self.ti_vel[i]
+        return times
 
     def output_network_data(self, pd_dis, pn_dis, gradE, init_rel_pos, frame, T):
         vel = self.ti_vel.to_numpy()
@@ -850,7 +886,7 @@ class PDSimulation(SimulatorBase):
             # for itr in range(self.solver_max_iteration):
             while True:
                 self.local_solve_build_bp_for_all_constraints()
-                self.build_rhs(rhs_np)
+                self.build_rhs(rhs_np, self.ti_pos.to_numpy())
 
                 pos_new_np = pre_fact_lhs_solve(rhs_np)
                 self.update_pos_new_from_numpy(pos_new_np)
@@ -895,3 +931,119 @@ class PDSimulation(SimulatorBase):
                 gui.show()
 
             self.output_aux_data(frame_counter, _pn_pos)
+
+    def run_auto_stop(self, pn, is_test, scene_info):
+        rhs_np = np.zeros(self.n_vertices * self.dim, dtype=np.float64)
+        lhs_mat_val = np.zeros(
+            shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,),
+            dtype=np.float64)
+        lhs_mat_row = np.zeros(
+            shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,),
+            dtype=np.float64)
+        lhs_mat_col = np.zeros(
+            shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,),
+            dtype=np.float64)
+
+        self.init_mesh_DmInv(self.dirichlet, len(self.dirichlet))
+        self.precomputation(lhs_mat_row, lhs_mat_col, lhs_mat_val)
+        s_lhs_matrix_np = sparse.csr_matrix((lhs_mat_val, (lhs_mat_row, lhs_mat_col)),
+                                            shape=(self.n_vertices * self.dim, self.n_vertices * self.dim),
+                                            dtype=np.float64)
+        pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
+
+        # set point force in 3d
+        if self.force_type == 'point':
+            self.set_point_force_3D()
+            pn.set_point_force_3D()
+        elif self.force_type == 'point_by_point':
+            self.set_point_force_by_point_3D()
+            pn.set_point_force_by_point_3D()
+
+        if self.dim == 2:
+            gui = scene_info['gui']
+            filename = f'./SimData/TmpRenderedImgs/frame_rest.png'
+            draw_image(gui, filename, self.ti_x.to_numpy(), self.mesh_offset, self.mesh_scale,
+                       self.ti_elements.to_numpy(), self.n_elements)
+        else:
+            gui = scene_info['gui']
+            scene_info['model'].set_transform(self.case_info['transformation_mat'])
+            update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
+            scene_info['scene'].input(gui)
+            scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
+            scene_info['scene'].render()
+            gui.set_image(scene_info['scene'].img)
+            gui.show()
+
+        frame_counter = 0
+        init_com = calcCenterOfMass(np.arange(self.n_vertices),
+                                    self.dim, self.ti_mass.to_numpy(),
+                                    self.ti_x.to_numpy())  # this is right
+        init_rel_pos = self.mesh.vertices - init_com
+        while True:
+            print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
+            frame_start_t = time.time()
+            # self.update_force_field()
+            self.build_sn()
+            self.warm_up()
+
+            # pn_start_t = time.time()
+            pn_dis, _pn_pos, pn_v = pn.data_one_frame(self.ti_x, self.ti_vel)
+            # pn_end_t = time.time()
+            # print("pn solve time: ", pn_end_t - pn_start_t)
+
+            # pd_start_t = time.time()
+            # for itr in range(self.solver_max_iteration):
+            while True:
+                self.local_solve_build_bp_for_all_constraints()
+                self.build_rhs(rhs_np)
+
+                pos_new_np = pre_fact_lhs_solve(rhs_np)
+                self.update_pos_new_from_numpy(pos_new_np)
+
+                residual = self.check_residual()
+                if residual < self.solver_stop_residual:
+                    break
+            # pd_end_t = time.time()
+            # print("pd solve time: ", pd_end_t - pd_start_t)
+
+            self.update_velocity_pos()
+            # self.gradE.from_numpy(pn.get_gradE_from_pd(self.ti_x))
+            gradE = pn.get_gradE_from_pd(self.ti_x)
+            # t_out_start = time.time()
+            if frame_counter % 20 == 0:
+                self.output_network_data(self.ti_x_del.to_numpy(),
+                                         pn_dis.to_numpy(),
+                                         gradE, init_rel_pos,
+                                         frame_counter, is_test)
+            # self.output_network_data(self.ti_x.to_numpy(),
+            #                          pn_dis.to_numpy(),
+            #                          gradE, init_rel_pos,
+            #                          frame_counter, is_test)
+            # t_out_end = time.time()
+            # print("output network data time: ", t_out_end - t_out_start)
+
+            frame_counter += 1
+            frame_end_t = time.time()
+            print("whole time for one frame: ", frame_end_t - frame_start_t)
+
+            # Show result
+            if self.dim == 2:
+                filename = f'./SimData/TmpRenderedImgs/frame_{frame_counter:05d}.png'
+                draw_image(gui, filename, self.ti_x.to_numpy(), self.mesh_offset, self.mesh_scale,
+                           self.ti_elements.to_numpy(), self.n_elements)
+            else:
+                update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
+                # update_boundary_mesh(_pn_pos, scene_info['boundary_pos'], self.case_info)
+                scene_info['scene'].input(gui)
+                scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
+                scene_info['scene'].render()
+                gui.set_image(scene_info['scene'].img)
+                gui.show()
+
+            self.output_aux_data(frame_counter, _pn_pos)
+
+            # set stop check
+            if self.check_acceleration_status_times() > 800 and frame_counter > 50:
+                break
+
+
