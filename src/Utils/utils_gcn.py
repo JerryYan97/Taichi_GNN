@@ -18,11 +18,13 @@ def mp_load_data(workload_list, proc_idx, filepath, files, node_num, edge_idx, c
     sample_list = []
     for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
         fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
+        # print("name: ", files[idx])
         if dim == 2:
             other = fperframe[:, 4:]
             pn_dis = fperframe[:, 2:4]
             pd_dis = fperframe[:, 0:2]  # a[start:stop] items start through stop-1
         else:
+            # print("name: ", files[idx], " shape: ", fperframe.shape)
             other = fperframe[:, 6:]
             pn_dis = fperframe[:, 3:6]
             pd_dis = fperframe[:, 0:3]  # a[start:stop] items start through stop-1
@@ -40,7 +42,7 @@ def mp_load_data(workload_list, proc_idx, filepath, files, node_num, edge_idx, c
 class SIM_Data_Geo(InMemoryDataset):
     def __init__(self, filepath, mesh_edge_idx,
                  i_features_num, o_features_num,
-                 mesh, cluster, clusters_num, dim,
+                 mesh, cluster, clusters_num, cluster_parent, belongs, dim,
                  transform=None, pre_transform=None):
         super(SIM_Data_Geo, self).__init__(None, transform, pre_transform)
         import time
@@ -66,12 +68,15 @@ class SIM_Data_Geo(InMemoryDataset):
 
         self._cluster = cluster
         self._cluster_num = clusters_num
+        self._cluster_parent = cluster_parent
+        self._cluster_belong = belongs
 
         # Section 5-3 multi-processing
         pool = mp.Pool()
         sample_list = []
         # Divide workloads:
         cpu_cnt = os.cpu_count()
+        print("cpu core account: ", cpu_cnt)
         files_cnt = self.len()
         files_per_proc_cnt = files_cnt // cpu_cnt
         workload_list = []
@@ -90,6 +95,7 @@ class SIM_Data_Geo(InMemoryDataset):
                                                     self._edge_idx, self._cluster, self.transform, dim,)))
         # Get multi-processing res:
         for i in range(cpu_cnt):
+            # print("i: ", i, ", get shape: ", len(proc_list[i].get()))
             sample_list.extend(proc_list[i].get())
 
         print("Sample list length:", len(sample_list))
@@ -124,19 +130,37 @@ class SIM_Data_Geo(InMemoryDataset):
 
 
 # file_dir: Top folder path.
-def load_cluster(file_dir, test_case):
-    cluster = np.genfromtxt(file_dir + "/MeshModels/SavedClusters/" + f"test_case{test_case}_cluster.csv",
-                            delimiter=',', dtype=int)
+def load_cluster(file_dir, test_case, cluster_num):
+    filename = file_dir+"/MeshModels/SavedClusters/"+"test_case"+str(test_case)+"_cluster"+str(cluster_num)+".csv"
+    cluster = np.genfromtxt(filename, delimiter=',', dtype=int)
     cluster_num = cluster[len(cluster) - 1]
+    cluster_list = list(cluster[:len(cluster) - 1])
+    cluster_parent = list({}.fromkeys(cluster_list).keys())
+    cluster_parent_tensor_np = np.asarray(cluster_parent, dtype=np.int32)
+    # cluster_parent_tensor = torch.tensor(np.asarray(cluster_parent, dtype=np.int32))
     cluster = torch.tensor(cluster[:len(cluster) - 1])
-    return cluster, cluster_num
+
+    belongs = []
+    for a in range(cluster_num):
+        inds = [i for i, x in enumerate(cluster) if x == cluster_parent[a]]
+        belongs.append(inds)
+        # if a == 0:
+        #     ind_t = torch.tensor(np.asarray(inds, dtype=np.int32))
+        #     ind_t = ind_t.unsqueeze(1)
+        # else:
+        #     print("already: ", ind_t.size())
+        #     print("new: ", np.asarray(inds, dtype=np.int32).shape)
+        #     ind_t = torch.cat((ind_t, torch.tensor(np.asarray(inds, dtype=np.int32))), 1)
+    # belongs_t = torch.FloatTensor(belongs)
+    # print("belongs :", belongs)
+    return cluster, cluster_num, cluster_parent_tensor_np, belongs
 
 
 # Load data record:
 # case 1001 -- 9.8G (Without optimization):
 # t1: 0.003854036331176758  t2: 0.03281879425048828  t3: 0.00013327598571777344  t4: 0.0012357234954833984
 #
-def load_data(test_case, path="/Outputs"):
+def load_data(test_case, cluster_num, path="/Outputs"):
     file_dir = os.getcwd()
     file_dir = file_dir + path
 
@@ -161,8 +185,8 @@ def load_data(test_case, path="/Outputs"):
                 edge_index = np.hstack((edge_index, [[k], [i]]))
                 edge_index = np.hstack((edge_index, [[i], [k]]))
         edge_index = torch.LongTensor(edge_index)
-        cluster, cluster_num = load_cluster(os.getcwd(), test_case)
-        return SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, cluster, cluster_num, 2)
+        cluster, cluster_num, cluster_parent, belongs = load_cluster(os.getcwd(), test_case, cluster_num)
+        return SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, cluster, cluster_num, cluster_parent, belongs, 2)
     else:
         import time
         t1_start = time.time()
@@ -200,17 +224,17 @@ def load_data(test_case, path="/Outputs"):
 
         # Load Section 4
         t4_start = time.time()
-        cluster, cluster_num = load_cluster(os.getcwd(), test_case)
+        cluster, cluster_num, cluster_parent, belongs = load_cluster(os.getcwd(), test_case, cluster_num)
         t4_end = time.time()
         print("t4:", t4_end - t4_start)
 
         # Load Section 5
         t5_start = time.time()
-        tmp_data = SIM_Data_Geo(file_dir, edge_index, 24, 3, mesh, cluster, cluster_num, 3)
+        tmp_data = SIM_Data_Geo(file_dir, edge_index, 24, 3, mesh, cluster, cluster_num, cluster_parent, belongs, 3)
         t5_end = time.time()
         print("t5:", t5_end - t5_start)
 
-        return tmp_data, case_info
+        return tmp_data, case_info, cluster_parent, belongs
 
 
 def normalize(mx):
@@ -396,6 +420,53 @@ def update_centers(mesh, center_pos, parent_list, child_list, belonging):
     return center_pos, np.linalg.norm(delta_list), parent_list
 
 
+def get_mesh_map_sub_help(workload_list, t, mesh):
+    result = []
+    for p in range(workload_list[t][0], workload_list[t][1]):
+        adj_v = mesh.get_vertex_adjacent_vertices(p)
+        for j in range(adj_v.shape[0]):
+            p1 = mesh.vertices[p]
+            p2 = mesh.vertices[adj_v[j]]
+            dp = LA.norm(p1 - p2)
+            result.append([p1, p2, dp])
+            result.append([p2, p1, dp])
+    return result
+
+# TODO:
+def get_mesh_map_mp(mesh, pool):
+    # Divide workloads
+    cpu_cnt = os.cpu_count()
+    works_per_proc_cnt = mesh.num_vertices // cpu_cnt
+    workloads_list = []
+    proc_list = []
+    for i in range(cpu_cnt):
+        cur_proc_workload = [i * works_per_proc_cnt, (i + 1) * works_per_proc_cnt - 1]
+        if i == cpu_cnt - 1:
+            cur_proc_workload[1] = mesh.num_vertices - 1
+        workloads_list.append(cur_proc_workload)
+    # Parallel call
+    for t in range(cpu_cnt):
+        proc_list.append(pool.apply_async(func=get_mesh_map_sub_help,
+                                          args=(workloads_list, t, mesh,)))
+    # map = lil_matrix((mesh.num_vertices, mesh.num_vertices), dtype=float)
+
+    # Get results
+    for t in range(cpu_cnt):
+        print(proc_list[t].get())
+
+    # mesh.enable_connectivity()
+    # for p in range(mesh.num_vertices):
+    #     adj_v = mesh.get_vertex_adjacent_vertices(p)
+    #     for j in range(adj_v.shape[0]):
+    #         n1 = p
+    #         n2 = adj_v[j]
+    #         p1 = mesh.vertices[n1]
+    #         p2 = mesh.vertices[n2]
+    #         dp = LA.norm(p1 - p2)
+    #         map[n1, n2] = map[n2, n1] = dp
+    # return map
+
+
 def get_mesh_map(mesh):
     map = lil_matrix((mesh.num_vertices, mesh.num_vertices), dtype=float)
     mesh.enable_connectivity()
@@ -435,3 +506,30 @@ def K_means_multiprocess(mesh, k):
     pool.join()
 
     return center_pos, child_list, parent_list, belonging
+
+# TODO:
+def K_means_multiprocess_with_parents(mesh, k, parents):
+    center_pos = []
+    whole_list = [n for n in range(0, mesh.num_vertices)]
+    parent_list = parents
+    child_list = [x for x in whole_list if x not in parent_list]
+    for p in parent_list:
+        center_pos.append(mesh.vertices[p, :])
+    norm_d = 10000.0
+    pool = mp.Pool()
+
+    cluster_helper = MeshKmeansHelper(k, mesh.num_vertices, get_mesh_map(mesh))
+
+    while norm_d > 1.0:
+        cluster_helper.generate_spt_list(parent_list, pool)
+        belonging = cluster_helper.generate_belongs(child_list, parent_list, pool)
+        center_pos, norm_d, parent_list = update_centers(mesh, center_pos, parent_list, child_list, belonging)
+        child_list = [x for x in whole_list if x not in parent_list]  # update child
+
+    cluster_helper.generate_spt_list(parent_list, pool)
+    belonging = cluster_helper.generate_belongs(child_list, parent_list, pool)
+    pool.close()
+    pool.join()
+
+    return center_pos, child_list, parent_list, belonging
+
