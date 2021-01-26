@@ -9,11 +9,15 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.utils_gcn import *
 from Utils.reader import read
 
-# Owing to the fixed color panel, it now just has only tests clusters num that is 10 and under 10.
-cluster_num = 10
-# Case 1002 doesn't work because it's particles' num is less than the clusters' num.
-test_case = 1008
+# # Owing to the fixed color panel, it now just has only tests clusters num that is 10 and under 10.
+# cluster_num = 10
+# # Case 1002 doesn't work because it's particles' num is less than the clusters' num.
+# test_case = 1008
 
+# Owing to the fixed color panel, it now just has only tests clusters num that is 10 and under 10.
+cluster_num = 32
+# Case 1002 doesn't work because it's particles' num is less than the clusters' num.
+test_case = 1009
 
 # Optimization record:
 # Before multiprocessing optimization:

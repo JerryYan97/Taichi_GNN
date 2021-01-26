@@ -34,8 +34,8 @@ class SimulatorBase(ABC):
         self.ti_elements = ti.Vector.field(self.dim + 1, int, self.n_elements)
 
         # Materials and parameters
-        self.rho = 100
-        self.E = 1e4
+        self.rho = 1e4
+        self.E = 4e4
         self.nu = 0.4
         self.mu = self.E / (2 * (1 + self.nu))
         self.lam = self.E * self.nu / ((1 + self.nu) * (1 - 2 * self.nu))
@@ -70,7 +70,6 @@ class SimulatorBase(ABC):
 
             self.pf_ind = -1
             self.pf_radius = 0.0
-
             self.ti_A = ti.Vector([0.0, 0.0, 0.0])
 
     @ti.kernel
@@ -99,7 +98,7 @@ class SimulatorBase(ABC):
 
     @ti.kernel
     def set_point_force_by_point_3D(self):   # set only one time
-        for i in range(self.n_vertices):  # t_pos, pos, radius, force
+        for i in range(self.n_vertices):     # t_pos, pos, radius, force
             self.ti_ex_force[i] = get_point_force_field_by_point(self.ti_x[self.pf_ind], self.ti_x[i],
                                                                  self.pf_radius, self.ti_pf_force)
 
@@ -159,8 +158,8 @@ class SimulatorBase(ABC):
                                            self.b_min[1]+self.b_dx[1]*self.pf_bbox_ind[1],
                                            self.b_min[2]+self.b_dx[2]*self.pf_bbox_ind[2]])
                 self.ti_pf_force = self.pf_mag * ti.Vector([self.pf_force[0], self.pf_force[1], self.pf_force[2]])
-                print("print min: ", self.ti_b_min[0], self.ti_b_min[1], self.ti_b_min[2])
-                print("print max: ", self.ti_b_max[0], self.ti_b_max[1], self.ti_b_max[2])
+                # print("print min: ", self.ti_b_min[0], self.ti_b_min[1], self.ti_b_min[2])
+                # print("print max: ", self.ti_b_max[0], self.ti_b_max[1], self.ti_b_max[2])
         elif force_info['force_type'] == 'point_by_point':
             if force_info['dim'] == 2:
                 raise TypeError("Dim 2 doesn't have point by point force field.")
@@ -170,8 +169,6 @@ class SimulatorBase(ABC):
                 self.pf_mag = force_info['p_mag']
                 self.pf_radius = force_info['p_radius']
                 self.ti_pf_force = self.pf_mag * ti.Vector([self.pf_force[0], self.pf_force[1], self.pf_force[2]])
-                print("print min: ", self.ti_b_min[0], self.ti_b_min[1], self.ti_b_min[2])
-                print("print max: ", self.ti_b_max[0], self.ti_b_max[1], self.ti_b_max[2])
         else:
             raise TypeError("The input force type is invalid")
 

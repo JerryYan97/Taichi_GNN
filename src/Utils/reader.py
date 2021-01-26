@@ -258,9 +258,9 @@ def read(testcase):
 
         case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
         case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
-        print("bb min: ", mesh.bbox[0])
-        print("bbox_min - tmp: ", case_info['bbox_min'])
-        print("bbox dx: ", case_info['bbox_dx'])
+        # print("bb min: ", mesh.bbox[0])
+        # print("bbox_min - tmp: ", case_info['bbox_min'])
+        # print("bbox dx: ", case_info['bbox_dx'])
 
         return case_info
     elif testcase == 1007:
@@ -293,6 +293,14 @@ def read(testcase):
         case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
+
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
+        print("bb min: ", mesh.bbox[0])
+        print("bb max: ", mesh.bbox[1])
+        print("bb center : ", center)
+
         return case_info
     elif testcase == 1008:
         from tina import translate, scale
@@ -325,6 +333,7 @@ def read(testcase):
         case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
+
         return case_info
     elif testcase == 1009:
         from tina import translate, scale
@@ -345,7 +354,7 @@ def read(testcase):
         tmp = mesh.bbox[1] - mesh.bbox[0]
         min_sphere_radius = np.linalg.norm(np.array([tmp[0], tmp[1], tmp[2]])) / 2.0
 
-        case_info['case_name'] = "fox"
+        case_info['case_name'] = "arm_small"
         case_info['mesh'] = mesh
         case_info['dim'] = 3
         case_info['dirichlet'] = dirichlet
@@ -354,9 +363,19 @@ def read(testcase):
         case_info['boundary'] = find_boundary(mesh.elements)
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
         # case_info['transformation_mat'] = translate([0.0, 0.0, -5.0]) @ rotate_matrix_y_axis(0.0) @ scale(0.1)
-        case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_general(0.0, 180.0, 0.0) @ scale(1.0)
+        case_info['transformation_mat'] = translate([0.0, -1.0, 0.8]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
+
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
+        print("bb min: ", mesh.bbox[0])
+        print("bb max: ", mesh.bbox[1])
+        print("bb center : ", center)
+        # print("bbox_min - tmp: ", case_info['bbox_min'])
+        # print("bbox dx: ", case_info['bbox_dx'])
+
         return case_info
     else:
         raise Exception("Invalid testcase selection.")

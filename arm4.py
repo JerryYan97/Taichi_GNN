@@ -19,12 +19,7 @@ if __name__ == '__main__':
     os.makedirs('SimData/PDAnimSeq/', exist_ok=True)
     os.makedirs('SimData/PNAnimSeq/', exist_ok=True)
     os.makedirs('SimData/TmpRenderedImgs/', exist_ok=True)
-    # for root, dirs, files in os.walk("SimData/PDAnimSeq"):
-    #     for name in files:
-    #         os.remove(os.path.join(root, name))
-    # for root, dirs, files in os.walk("SimData/PNAnimSeq"):
-    #     for name in files:
-    #         os.remove(os.path.join(root, name))
+
     if is_test == 0:
         os.makedirs('SimData/TrainingData/', exist_ok=True)
     else:
@@ -46,7 +41,7 @@ if __name__ == '__main__':
         scene_info['gui'] = ti.GUI('2D Simulation Data Generator -- PD -> PN', background_color=0xf7f7f7)
     else:
         import tina
-        scene_info['gui'] = ti.GUI('1')
+        scene_info['gui'] = ti.GUI('4')
         scene_info['scene'] = tina.Scene(culling=False, clipping=True)
         scene_info['tina_mesh'] = tina.SimpleMesh()
         scene_info['model'] = tina.MeshTransform(scene_info['tina_mesh'])
@@ -63,7 +58,8 @@ if __name__ == '__main__':
 
     for i in range(10):
         choose_p = random.choice(boundary_points)
-        print("/////////////////////////////////choose point: ", choose_p, " ", Mpos[choose_p]," //////////////////////////")
+        print("/////////////////////////////////choose point: ", choose_p, " ", Mpos[choose_p],
+              " //////////////////////////")
         pd.initial()
         pn.initial()
         pn.compute_restT_and_m()
@@ -77,13 +73,14 @@ if __name__ == '__main__':
             # 3D point force field setting
             force_info['force_type'] = 'point_by_point'
             force_info['point_ind'] = choose_p
-            force_info['f'] = np.array([-1.0, 0.0, 0.0])
+            force_info['f'] = np.array([0.0, 1.0, 0.0])
             force_info['p_mag'] = 0.1
             force_info['p_radius'] = 0.2
 
         pd.set_force(force_info)
         pn.set_force(force_info)
         pd.run_auto_stop(pn, is_test, scene_info)
+
         whole_end_t = time.time()
         print("Whole simulation running time:", whole_end_t - whole_start_t)
 

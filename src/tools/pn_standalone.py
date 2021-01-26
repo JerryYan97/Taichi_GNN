@@ -12,7 +12,7 @@ from Utils.math_tools import svd, my_svd
 from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3d_seq, get_force_field, get_ring_force_field, get_point_force_field_by_point
 
 ##############################################################################
-case_info = read(1009)
+case_info = read(1007)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
@@ -26,10 +26,10 @@ _, _, boundary_triangles = case_info['boundary']
 ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 
 real = ti.f64
-
+choose_p = 6941
 dt = 0.01
-E = 5e4
-nu = 0.1
+E = 3e4
+nu = 0.4
 la = E * nu / ((1 + nu) * (1 - 2 * nu))
 mu = E / (2 * (1 + nu))
 density = 1e4
@@ -73,7 +73,7 @@ ti_indMap_field = ti.field(real, (n_elements, dim * (dim + 1)))
 ex_force = ti.Vector.field(dim, real, n_particles)
 ti_center = ti.Vector([center[0], center[1], center[2]])
 
-damping_coeff = 0.4
+damping_coeff = 0.01
 
 
 def initial():
@@ -392,7 +392,9 @@ def output_residual2(data_sol: ti.ext_arr()) -> real:
         for d in ti.static(range(dim)):
             res += data_sol[i * dim + d] * data_sol[i * dim + d]
         residual += ti.sqrt(res)
-    print("Search Direction Residual : ", residual / dt)
+    # print("Search Direction Residual : ", residual / dt)
+    residual /= n_particles
+    print("Search Direction Residual : ", residual)
     return residual
 
 
@@ -411,7 +413,7 @@ def output_aux_data(f):
 if __name__ == "__main__":
     initial()
     compute_restT_and_m()
-    stop_acceleration = 0.001
+    stop_acceleration = 0.00001
 
     video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
     frame_counter = 0
@@ -434,8 +436,8 @@ if __name__ == "__main__":
     data_mat = np.zeros(shape=(3, 20000000), dtype=np.float64)
     data_sol = np.zeros(shape=(200000,), dtype=np.float64)
 
-    mag = 4.6
-    set_point_force_by_point_3D(1, 0.1, mag*-1.0, mag*0.0, mag*0.0)
+    mag = 0.08
+    set_point_force_by_point_3D(choose_p, 0.15, mag * -0.8660254, mag * -0.5, mag * 0.0)
 
     # Compile time duration record
     # Before optimization: 73.18037104606628 s
@@ -506,7 +508,7 @@ if __name__ == "__main__":
             gui.set_image(scene.img)
             gui.show()
 
-        if check_acceleration_status() < stop_acceleration:
+        if check_acceleration_status() < stop_acceleration and frame_counter > 50:
             break
 
 # Case 1 performance record:

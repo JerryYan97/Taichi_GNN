@@ -1,7 +1,7 @@
 from src.Simulators.PDSimulator import *
 from src.Simulators.PNSimulator import *
 from src.Utils.reader import read
-import os, random, time, torch
+import os, random, time, math, torch
 import numpy as np
 # ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
 ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
@@ -46,7 +46,7 @@ if __name__ == '__main__':
         scene_info['gui'] = ti.GUI('2D Simulation Data Generator -- PD -> PN', background_color=0xf7f7f7)
     else:
         import tina
-        scene_info['gui'] = ti.GUI('1')
+        scene_info['gui'] = ti.GUI('5')
         scene_info['scene'] = tina.Scene(culling=False, clipping=True)
         scene_info['tina_mesh'] = tina.SimpleMesh()
         scene_info['model'] = tina.MeshTransform(scene_info['tina_mesh'])
@@ -63,7 +63,8 @@ if __name__ == '__main__':
 
     for i in range(10):
         choose_p = random.choice(boundary_points)
-        print("/////////////////////////////////choose point: ", choose_p, " ", Mpos[choose_p]," //////////////////////////")
+        print("/////////////////////////////////choose point: ", choose_p, " ", Mpos[choose_p],
+              " //////////////////////////")
         pd.initial()
         pn.initial()
         pn.compute_restT_and_m()
@@ -77,13 +78,14 @@ if __name__ == '__main__':
             # 3D point force field setting
             force_info['force_type'] = 'point_by_point'
             force_info['point_ind'] = choose_p
-            force_info['f'] = np.array([-1.0, 0.0, 0.0])
+            force_info['f'] = np.array([math.sin(-math.pi/3), math.cos(-math.pi/3), 0.0])
             force_info['p_mag'] = 0.1
             force_info['p_radius'] = 0.2
 
         pd.set_force(force_info)
         pn.set_force(force_info)
         pd.run_auto_stop(pn, is_test, scene_info)
+
         whole_end_t = time.time()
         print("Whole simulation running time:", whole_end_t - whole_start_t)
 

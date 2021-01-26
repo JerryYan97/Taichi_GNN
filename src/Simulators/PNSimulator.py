@@ -33,7 +33,7 @@ class PNSimulation(SimulatorBase):
         self.ti_U_field = ti.field(self.real, (self.n_elements, self.dim * self.dim, self.dim * self.dim))
         self.ti_V_field = ti.field(self.real, (self.n_elements, self.dim * self.dim, self.dim * self.dim))
         self.ti_indMap_field = ti.field(self.real, (self.n_elements, self.dim * (self.dim + 1)))
-        self.damping_coeff = 0.4
+        self.damping_coeff = 0.05
 
         self.ti_vel_del = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.ti_vel_last = ti.Vector.field(self.dim, self.real, self.n_vertices)
@@ -447,6 +447,7 @@ class PNSimulation(SimulatorBase):
             for d in ti.static(range(self.dim)):
                 res += data_sol[i * self.dim + d] * data_sol[i * self.dim + d]
             residual += ti.sqrt(res)
+        # print("PN Search Direction Residual : ", residual)
         return residual
 
     @ti.kernel
@@ -509,7 +510,7 @@ class PNSimulation(SimulatorBase):
             # solve_t_end = time.time()
             # print("compute mat time:", compute_hessian_grad_t_end - compute_hessian_grad_t_start)
             # print("solve time:", solve_t_end - solve_t_start)
-            if self.output_residual2(self.data_sol) < 1e-6:
+            if self.output_residual2(self.data_sol) < 1e-4:
                 break
             E0 = self.compute_energy()
             self.save_xPrev()

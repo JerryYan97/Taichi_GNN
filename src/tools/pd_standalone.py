@@ -18,7 +18,7 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1009
+test_case = 1007
 case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -31,7 +31,8 @@ if dim == 3:
 # cpu 1.27 -- 1003,
 ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
 n_vertices = mesh.num_vertices
-_, _, boundary_triangles = case_info['boundary']
+boundary_points, _, boundary_triangles = case_info['boundary']
+print(boundary_points)
 
 # 2D and 3D scene settings:
 if dim == 2:
@@ -47,21 +48,22 @@ else:
 
 # Material settings:
 rho = 1e4
-E, nu = 5e4, 0.1  # Young's modulus and Poisson's ratio
+E, nu = 4e4, 0.4  # Young's modulus and Poisson's ratio
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
 
 stop_acceleration = 0.04
 
 # add damping
-damping_coeff = 0.4
+damping_coeff = 0.01
 
+choose_p = 6724
 # Solver settings:
 m_weight_positional = 1e20
 dt = 0.01
 # Backup settings:
 # Bar: 10  Bunny: 50
-# solver_max_iteration = 10
-solver_stop_residual = 0.4
+solver_max_iteration = 50
+solver_stop_residual = 0.08
 # external force -- counter-clock wise
 ti_ex_force = ti.Vector.field(dim, real, n_vertices)
 
@@ -130,10 +132,14 @@ def init():
 #     for i in range(n_vertices):
 #         ti_ex_force[i] = get_point_force_field(ti_b_min, ti_b_max, ti_pos_init[i], ti_pf_force)
 
+
+# set only one time
 @ti.kernel
-def set_point_force_by_point_3D(pf_ind: ti.i32, pf_radius: ti.f64, x: ti.f32, y: ti.f32, z: ti.f32):   # set only one time
+def set_point_force_by_point_3D(pf_ind: ti.i32, pf_radius: ti.f64, x: ti.f32, y: ti.f32, z: ti.f32):
     for i in range(n_vertices):  # t_pos, pos, radius, force
-        ti_ex_force[i] = get_point_force_field_by_point(ti_pos_init[pf_ind], ti_pos_init[i], pf_radius, ti.Vector([x,y,z]))
+        ti_ex_force[i] = get_point_force_field_by_point(ti_pos_init[pf_ind],
+                                                        ti_pos_init[i], pf_radius,
+                                                        ti.Vector([x, y, z]))
 
 # Backup Settings:
 # Bunny: ti.Vector([0.0, 0.0, 0.1])
@@ -149,10 +155,13 @@ def set_exforce():
             ti_ex_force[i] = ti.Vector(get_force_field(0.1, 45.0, 45.0, 3))
 
 
-# @ti.kernel
-# def set_ring_force_3D():
-#     for i in range(n_vertices):
-#         ti_ex_force[i] = get_ring_circle_force_field(0.4, 0.3, ti_center, ti_pos[i], 0.0, 0.2*min_sphere_radius, 3)
+@ti.kernel
+def set_ring_circle_force_3D():
+    # for i in range(n_vertices):
+    #     ti_ex_force[i] = get_ring_circle_force_field(0.1, 0.3, ti_center, ti_pos[i], 30.0, 0.2*min_sphere_radius, 3)
+    for i in range(n_vertices):
+        ti_ex_force[i] = get_ring_force_field(0.04, 10.0, ti_center, ti_pos[i], 0.0, 3)
+
 
 @ti.kernel
 def set_ring_force_3D():
@@ -639,6 +648,7 @@ def check_residual() -> ti.f32:
     for i in range(n_vertices):
         residual += (ti_last_pos_new[i] - ti_pos_new[i]).norm()
         ti_last_pos_new[i] = ti_pos_new[i]
+    residual /= n_vertices
     # print("residual:", residual)
     return residual
 
@@ -733,8 +743,9 @@ def compute_local_step_energy():
 
 def output_aux_data(f):
     if dim == 3:
-        name_pd = "../../SimData/PDAnimSeq/PD_pbpF_" + case_info['case_name'] + "_" + str(solver_stop_residual) + \
-                  "_" + str(4.6) + "_" + str(0.1) + "_" + str(f).zfill(6) + ".obj"
+        name_pd = "../../SimData/PDAnimSeq/PD_pbpF_" + case_info['case_name'] + "_" + \
+                  str(solver_stop_residual) + "_" + \
+                  str(4.6) + "_" + str(0.1) + "_" + str(f).zfill(6) + ".obj"
         output_3d_seq(ti_pos.to_numpy(), boundary_triangles, name_pd)
 
 
@@ -762,10 +773,8 @@ if __name__ == "__main__":
                                         dtype=np.float64)
     pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
-    # wait = input("PRESS ENTER TO CONTINUE.")
-
-    mag = 4.6
-    set_point_force_by_point_3D(1, 0.1, mag*-1.0, mag*0.0, mag*0.0)
+    mag = 0.1
+    set_point_force_by_point_3D(choose_p, 0.2, mag*-1.0, mag*0.0, mag*0.0)
 
     if dim == 2:
         gui = ti.GUI('PN Standalone', background_color=0xf7f7f7)
@@ -786,7 +795,7 @@ if __name__ == "__main__":
     plot_array = []
 
     while True:
-        # set_ring_force_3D()
+        # set_ring_circle_force_3D()
         build_sn()
         # Warm up:
         warm_up()
@@ -796,7 +805,6 @@ if __name__ == "__main__":
         while True:
             local_solve_build_bp_for_all_constraints()
             build_rhs(rhs_np)
-
             # local_step_energy = compute_local_step_energy()
             # print("energy after local step:", local_step_energy)
             # if local_step_energy > last_record_energy:
@@ -805,10 +813,8 @@ if __name__ == "__main__":
             #     if (local_step_energy - last_record_energy) / local_step_energy > 0.01:
             #         print("Large Error: LOCAL")
             # last_record_energy = local_step_energy
-
             pos_new_np = pre_fact_lhs_solve(rhs_np)
             update_pos_new_from_numpy(pos_new_np)
-
             # global_step_energy = compute_global_step_energy()
             # print("energy after global step:", global_step_energy)
             # plot_array.append([itr, global_step_energy])
@@ -824,7 +830,7 @@ if __name__ == "__main__":
 
         # Update velocity and positions
         update_velocity_pos()
-        output_aux_data(frame_counter)
+        # output_aux_data(frame_counter)
 
         frame_counter += 1
         filename = f'./results/frame_{frame_counter:05d}.png'
@@ -840,5 +846,6 @@ if __name__ == "__main__":
 
         if check_acceleration_status() > 800 and frame_counter > 500:
             break
+
 
 # video_manager.make_video(gif=True, mp4=True)
