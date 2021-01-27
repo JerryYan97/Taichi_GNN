@@ -49,18 +49,18 @@ print("data load time:", load_data_t_end - load_data_t_start)
 
 dim = case_info['dim']
 
-train_loader = DataLoader(dataset=simDataset, batch_size=8, shuffle=True, num_workers=16, pin_memory=False)
+train_loader = DataLoader(dataset=simDataset, batch_size=4, shuffle=True, num_workers=16, pin_memory=False)
 
 h1 = 256
 h2 = 512
-h3 = 256
+h3 = 512
 model = GCNOLD(nfeat=simDataset.input_features_num,
                graph_node_num=simDataset.node_num,
                cluster_num=simDataset.cluster_num,
                gcn_hid1=h1,
                gcn_hid2=h2,
                gcn_hid3=h3,
-               gcn_out1=256,
+               gcn_out1=512,
                gcn_out2=256,
                gcn_out3=256,
                fc_hid=16,
