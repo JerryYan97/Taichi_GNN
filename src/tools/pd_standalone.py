@@ -47,10 +47,8 @@ else:
 
 # Material settings:
 rho = 1e4
-E, nu = 5e4, 0.1  # Young's modulus and Poisson's ratio
+E, nu = 3e4, 0.4  # Young's modulus and Poisson's ratio
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
-
-stop_acceleration = 0.04
 
 # add damping
 damping_coeff = 0.4
@@ -61,7 +59,7 @@ dt = 0.01
 # Backup settings:
 # Bar: 10  Bunny: 50
 # solver_max_iteration = 10
-solver_stop_residual = 0.4
+solver_stop_residual = 0.001
 # external force -- counter-clock wise
 ti_ex_force = ti.Vector.field(dim, real, n_vertices)
 
@@ -447,7 +445,7 @@ def compute_volume_constraint(sigma):
         return ti.Matrix.rows([[sigma_star_11_k, 0.0], [0.0, sigma_star_22_k]])
     else:
         sigma_star_11_k, sigma_star_22_k, sigma_star_33_k = 1.0, 1.0, 1.0
-        for itr in ti.static(range(10)):
+        for itr in ti.static(range(2)):
             D_k = ti.Vector([sigma_star_11_k - sigma[0, 0],
                              sigma_star_22_k - sigma[1, 1],
                              sigma_star_33_k - sigma[2, 2]])
@@ -744,7 +742,7 @@ if __name__ == "__main__":
         for name in files:
             os.remove(os.path.join(root, name))
 
-    # video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
+    video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
     frame_counter = 0
     rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
     lhs_mat_val = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
@@ -764,7 +762,7 @@ if __name__ == "__main__":
 
     # wait = input("PRESS ENTER TO CONTINUE.")
 
-    mag = 4.6
+    mag = 16.0
     set_point_force_by_point_3D(1, 0.1, mag*-1.0, mag*0.0, mag*0.0)
 
     if dim == 2:
@@ -836,9 +834,11 @@ if __name__ == "__main__":
             tina_mesh.set_face_verts(boundary_pos)
             scene.render()
             gui.set_image(scene.img)
+            video_manager.write_frame(gui.get_image())
             gui.show()
 
-        if check_acceleration_status() > 800 and frame_counter > 500:
+        # if check_acceleration_status() > 800 and frame_counter > 500:
+        if frame_counter > 500:
             break
 
-# video_manager.make_video(gif=True, mp4=True)
+    video_manager.make_video(gif=True, mp4=True)

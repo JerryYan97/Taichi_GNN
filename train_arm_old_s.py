@@ -42,14 +42,14 @@ if args.cuda:
 
 
 load_data_t_start = time.time()
-simDataset, case_info, cluster_parent, cluster_belong = load_data(1007, 128, "/SimData/TrainingData")
+simDataset, case_info, cluster_parent, cluster_belong = load_data(1007, 512, "/SimData/TrainingData")
 # print("ok!")
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
 
 dim = case_info['dim']
 
-train_loader = DataLoader(dataset=simDataset, batch_size=4, shuffle=True, num_workers=16, pin_memory=False)
+train_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=True, num_workers=16, pin_memory=False)
 
 h1 = 256
 h2 = 512
@@ -76,6 +76,7 @@ optimizer = optim.Adam(model.parameters(), lr=args.lr)  #, weight_decay=args.wei
 model.cuda()
 mse.cuda()
 bs = train_loader.batch_size
+
 
 def Sim_train():
     start_record = False
