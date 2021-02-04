@@ -10,7 +10,7 @@ rho = 1e4
 E = 5e4
 nu = 0.1
 dt = 0.01
-test_case = 1009
+test_case = 1003
 
 # pd->pn
 if __name__ == '__main__':
@@ -27,8 +27,14 @@ if __name__ == '__main__':
             os.remove(os.path.join(root, name))
     if is_test == 0:
         os.makedirs('SimData/TrainingData/', exist_ok=True)
+        for root, dirs, files in os.walk("SimData/TrainingData/"):
+            for name in files:
+                os.remove(os.path.join(root, name))
     else:
         os.makedirs('SimData/TestingData/', exist_ok=True)
+        for root, dirs, files in os.walk("SimData/TestingData/"):
+            for name in files:
+                os.remove(os.path.join(root, name))
 
     case_info = read(test_case)
     MESH = case_info["mesh"]
@@ -57,7 +63,7 @@ if __name__ == '__main__':
     pn.set_material(rho, E, nu)
 
     for i in range(10):
-        choose_p = boundary_points[0]
+        choose_p = boundary_points[10]
         pd.initial()
         pn.initial()
         pn.compute_restT_and_m()

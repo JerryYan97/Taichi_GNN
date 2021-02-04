@@ -733,7 +733,7 @@ class PDSimulation(SimulatorBase):
                 elif self.acc_type == 'point_by_point':
                     out_name = "SimData/TrainingData/Train_pbp_" + self.case_info['case_name'] + "_" + \
                                str(self.pf_mag) + "_" + str(self.pf_acc) + "_" + str(self.pf_radius) + \
-                               "_" + frame + ".csv"
+                               "_" + str(self.pf_ind) + "_" + frame + ".csv"
         else:
             if self.dim == 2:
                 out_name = "SimData/TestingData/Test_2d_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
@@ -758,7 +758,7 @@ class PDSimulation(SimulatorBase):
                 elif self.acc_type == 'point_by_point':
                     out_name = "SimData/TestingData/Test_pbp_" + self.case_info['case_name'] + "_" + \
                                str(self.pf_mag) + "_" + str(self.pf_acc) + "_" + str(self.pf_radius) + \
-                               "_" + frame + ".csv"
+                               "_" + str(self.pf_ind) + "_" + frame + ".csv"
 
         ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim
         out = np.ones([self.n_vertices, ele_count], dtype=float)
@@ -815,9 +815,11 @@ class PDSimulation(SimulatorBase):
                           str(self.pf_acc) + "_" + str(f).zfill(6) + ".obj"
             elif self.acc_type == 'point_by_point':
                 name_pd = "SimData/PDAnimSeq/PD_pbpF_" + self.case_info['case_name'] + "_" + str(self.pf_mag) + "_" + \
-                          str(self.pf_acc) + "_" + str(self.pf_radius) + "_" + str(f).zfill(6) + ".obj"
+                          str(self.pf_acc) + "_" + str(self.pf_radius) + "_" + \
+                          str(self.pf_ind) + "_" + str(f).zfill(6) + ".obj"
                 name_pn = "SimData/PNAnimSeq/PN_pbpF_" + self.case_info['case_name'] + "_" + str(self.pf_mag) + "_" + \
-                          str(self.pf_acc) + "_" + str(self.pf_radius) + "_"+ str(f).zfill(6) + ".obj"
+                          str(self.pf_acc) + "_" + str(self.pf_radius) + "_" + \
+                          str(self.pf_ind) + "_" + str(f).zfill(6) + ".obj"
 
             output_3d_seq(self.ti_x.to_numpy(), self.boundary_triangles, name_pd)
             output_3d_seq(pn_pos.to_numpy(), self.boundary_triangles, name_pn)

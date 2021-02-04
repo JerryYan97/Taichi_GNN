@@ -40,8 +40,8 @@ else:
     boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
 
 # Material settings:
-rho = 1e4
-E, nu = 3e4, 0.4  # Young's modulus and Poisson's ratio
+rho = 1e5
+E, nu = 5e4, 0.4  # Young's modulus and Poisson's ratio
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
 
 # add damping
@@ -52,8 +52,8 @@ m_weight_positional = 1e20
 dt = 0.01
 # Backup settings:
 # Bar: 10  Bunny: 50
-solver_max_iteration = 1
-solver_stop_residual = 0.01
+solver_max_iteration = 10
+solver_stop_residual = 0.001
 # external acceleration -- counter-clock wise
 ti_ex_acc = ti.Vector.field(dim, real, n_vertices)
 
