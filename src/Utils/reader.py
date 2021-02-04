@@ -97,6 +97,10 @@ def read(testcase):
         case_info['transformation_mat'] = translate([0.0, -1.0, -5.0]) @ rotate_matrix_y_axis(-45.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
+
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
         return case_info
     elif testcase == 1002:
         from tina import translate, scale
@@ -119,6 +123,7 @@ def read(testcase):
         case_info['init_translate'] = [0.0, 0.0, 0.0]
         case_info['init_scale'] = 1.0
         case_info['transformation_mat'] = translate([0.0, 0.0, 0.0]) @ rotate_matrix_y_axis(45.0) @ scale(1.0)
+
         return case_info
     elif testcase == 1003:
         from tina import translate, scale
@@ -152,6 +157,9 @@ def read(testcase):
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
         return case_info
     elif testcase == 1004:
         from tina import translate, scale
@@ -178,6 +186,9 @@ def read(testcase):
         case_info['transformation_mat'] = translate([-0.3, -0.5, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
+
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
 
         return case_info
     elif testcase == 1005:
@@ -210,17 +221,20 @@ def read(testcase):
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
         return case_info
     elif testcase == 1006:
         from tina import translate, scale
         # Dinosaur with bottom fixed
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/dinosaurlow_16767v_68435t.msh")
         dirichlet_list = []
-        # for i in range(mesh.num_vertices):
-        #     if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.01 and mesh.vertices[i][0] <= mesh.bbox[0][0] + 0.5:
-        #         dirichlet_list.append(i)
-        #
-        # dirichlet = np.array(dirichlet_list)
+        for i in range(mesh.num_vertices):
+            if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.01 and mesh.vertices[i][0] <= mesh.bbox[0][0] + 0.5:
+                dirichlet_list.append(i)
+
+        dirichlet = np.array(dirichlet_list)
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
         mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
 
@@ -249,18 +263,8 @@ def read(testcase):
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
-        # think about the parms here
-        # tmp: [0.999568   0.84536174 0.33438714]
-        # min sphere: 0.6755715028418711
-        # bb min: [-0.417846 - 0.37304114 - 0.14670633]
-        # bbox_min - tmp: [-0.4678244 - 0.41530922 - 0.16342569]
-        # bbox dx: [0.04498056 0.03804128 0.01504742]
-
         case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
         case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
-        print("bb min: ", mesh.bbox[0])
-        print("bbox_min - tmp: ", case_info['bbox_min'])
-        print("bbox dx: ", case_info['bbox_dx'])
 
         return case_info
     elif testcase == 1007:
@@ -293,6 +297,10 @@ def read(testcase):
         case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
+
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
         return case_info
     elif testcase == 1008:
         from tina import translate, scale
@@ -325,6 +333,10 @@ def read(testcase):
         case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
+
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
         return case_info
     elif testcase == 1009:
         from tina import translate, scale
@@ -345,7 +357,7 @@ def read(testcase):
         tmp = mesh.bbox[1] - mesh.bbox[0]
         min_sphere_radius = np.linalg.norm(np.array([tmp[0], tmp[1], tmp[2]])) / 2.0
 
-        case_info['case_name'] = "fox"
+        case_info['case_name'] = "LowPolyArm"
         case_info['mesh'] = mesh
         case_info['dim'] = 3
         case_info['dirichlet'] = dirichlet
@@ -357,6 +369,10 @@ def read(testcase):
         case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
+
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
         return case_info
     else:
         raise Exception("Invalid testcase selection.")

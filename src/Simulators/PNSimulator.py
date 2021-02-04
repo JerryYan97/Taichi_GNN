@@ -33,7 +33,7 @@ class PNSimulation(SimulatorBase):
         self.ti_U_field = ti.field(self.real, (self.n_elements, self.dim * self.dim, self.dim * self.dim))
         self.ti_V_field = ti.field(self.real, (self.n_elements, self.dim * self.dim, self.dim * self.dim))
         self.ti_indMap_field = ti.field(self.real, (self.n_elements, self.dim * (self.dim + 1)))
-        self.damping_coeff = 0.4
+        self.damping_coeff = 0.0
 
         self.ti_vel_del = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.ti_vel_last = ti.Vector.field(self.dim, self.real, self.n_vertices)
@@ -125,20 +125,20 @@ class PNSimulation(SimulatorBase):
             for i in range(self.n_vertices):
                 self.ti_x_n[i] = self.ti_x[i]
                 self.ti_x_tilde[i] = self.ti_x[i] + self.dt * self.ti_vel[i]
-                self.ti_x_tilde(0)[i] += self.dt * self.dt * (self.ti_ex_force[i][0] / self.ti_mass[i])
-                self.ti_x_tilde(1)[i] += self.dt * self.dt * (self.ti_ex_force[i][1] / self.ti_mass[i])
+                self.ti_x_tilde(0)[i] += self.dt * self.dt * (self.ti_ex_acc[i][0])
+                self.ti_x_tilde(1)[i] += self.dt * self.dt * (self.ti_ex_acc[i][1])
         if ti.static(self.dim == 3):
             for i in range(self.n_vertices):
                 self.ti_x_n[i] = self.ti_x[i]
                 self.ti_x_tilde[i] = self.ti_x[i] + self.dt * self.ti_vel[i]
-                # self.ti_x_tilde(0)[i] += self.dt * self.dt * (self.ti_ex_force[i][0] / self.ti_mass[i])
-                # self.ti_x_tilde(1)[i] += self.dt * self.dt * (self.ti_ex_force[i][1] / self.ti_mass[i])
-                # self.ti_x_tilde(2)[i] += self.dt * self.dt * (self.ti_ex_force[i][2] / self.ti_mass[i])
-                self.ti_x_tilde(0)[i] += self.dt*self.dt*(self.ti_ex_force[i][0]/self.ti_mass[i])-\
+                # self.ti_x_tilde(0)[i] += self.dt * self.dt * (self.ti_ex_acc[i][0] / self.ti_mass[i])
+                # self.ti_x_tilde(1)[i] += self.dt * self.dt * (self.ti_ex_acc[i][1] / self.ti_mass[i])
+                # self.ti_x_tilde(2)[i] += self.dt * self.dt * (self.ti_ex_acc[i][2] / self.ti_mass[i])
+                self.ti_x_tilde(0)[i] += self.dt*self.dt*(self.ti_ex_acc[i][0])-\
                                          self.dt*self.dt*(self.damping_coeff*self.ti_vel[i][0]/self.ti_mass[i])
-                self.ti_x_tilde(1)[i] += self.dt*self.dt*(self.ti_ex_force[i][1]/self.ti_mass[i])-\
+                self.ti_x_tilde(1)[i] += self.dt*self.dt*(self.ti_ex_acc[i][1])-\
                                          self.dt*self.dt*(self.damping_coeff*self.ti_vel[i][1]/self.ti_mass[i])
-                self.ti_x_tilde(2)[i] += self.dt*self.dt*(self.ti_ex_force[i][2]/self.ti_mass[i])-\
+                self.ti_x_tilde(2)[i] += self.dt*self.dt*(self.ti_ex_acc[i][2])-\
                                          self.dt*self.dt*(self.damping_coeff*self.ti_vel[i][2]/self.ti_mass[i])
 
     @ti.func
@@ -488,7 +488,7 @@ class PNSimulation(SimulatorBase):
         self.copy(input_v, self.ti_vel)
         self.copy(input_v, self.ti_vel_last)
 
-        # self.update_force_field()
+        # self.update_acc_field()
         self.compute_xn_and_xTilde()
         while True:
             self.data_mat.fill(0)
@@ -509,7 +509,7 @@ class PNSimulation(SimulatorBase):
             # solve_t_end = time.time()
             # print("compute mat time:", compute_hessian_grad_t_end - compute_hessian_grad_t_start)
             # print("solve time:", solve_t_end - solve_t_start)
-            if self.output_residual2(self.data_sol) < 1e-6:
+            if self.output_residual2(self.data_sol) < 1e-4:
                 break
             E0 = self.compute_energy()
             self.save_xPrev()
@@ -522,37 +522,3 @@ class PNSimulation(SimulatorBase):
                 E = self.compute_energy()
         self.compute_v()
         return self.del_p, self.ti_x, self.ti_vel
-
-    # New structure:
-    # def data_one_frame(self, input_x, input_v):
-    #     self.copy(input_x, self.ti_x)
-    #     self.copy(input_v, self.ti_vel)
-    #     self.update_force_field()
-    #     self.compute_xn_and_xTilde()
-    #     E_prev = self.compute_energy()
-    #     self.save_xPrev()
-    #     while True:
-    #         self.data_mat.fill(0)
-    #         self.data_rhs.fill(0)
-    #         self.data_sol.fill(0)
-    #         self.compute_hessian_and_gradient(self.data_mat, self.data_rhs)
-    #         if self.dim == 2:
-    #             self.data_sol = solve_linear_system(self.data_mat, self.data_rhs, self.n_vertices * self.dim,
-    #                                                 self.dirichlet, self.zero.to_numpy(),
-    #                                                 False, 0, self.cnt[None])
-    #         else:
-    #             self.data_sol = solve_linear_system3(self.data_mat, self.data_rhs,
-    #                                                  self.n_vertices * self.dim, self.dirichlet,
-    #                                                  self.zero.to_numpy(), False, 0, self.cnt[None])
-    #         alpha = 1.0
-    #         while True:
-    #             self.apply_sol(alpha, self.data_sol)
-    #             alpha *= 0.5
-    #             E = self.compute_energy()
-    #             if E <= E_prev:
-    #                 break
-    #         E_prev = E
-    #         self.save_xPrev()
-    #         if self.output_residual(self.data_sol) < 1e-3 * self.dt:
-    #             break
-    #     return self.del_p, self.ti_x, self.ti_vel

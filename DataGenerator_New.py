@@ -19,12 +19,12 @@ if __name__ == '__main__':
     os.makedirs('SimData/PDAnimSeq/', exist_ok=True)
     os.makedirs('SimData/PNAnimSeq/', exist_ok=True)
     os.makedirs('SimData/TmpRenderedImgs/', exist_ok=True)
-    # for root, dirs, files in os.walk("SimData/PDAnimSeq"):
-    #     for name in files:
-    #         os.remove(os.path.join(root, name))
-    # for root, dirs, files in os.walk("SimData/PNAnimSeq"):
-    #     for name in files:
-    #         os.remove(os.path.join(root, name))
+    for root, dirs, files in os.walk("SimData/PDAnimSeq"):
+        for name in files:
+            os.remove(os.path.join(root, name))
+    for root, dirs, files in os.walk("SimData/PNAnimSeq"):
+        for name in files:
+            os.remove(os.path.join(root, name))
     if is_test == 0:
         os.makedirs('SimData/TrainingData/', exist_ok=True)
     else:
@@ -34,10 +34,6 @@ if __name__ == '__main__':
     MESH = case_info["mesh"]
     boundary_points, _, _ = case_info['boundary']
     boundary_points = list(boundary_points)
-    # print("n: ", MESH.num_vertices)
-    # for i in range(20):
-    #     random_num = random.choice(boundary_points)
-    #     print(random_num)
     scene_info = {}
 
     # 3D visualization variables init:
@@ -61,26 +57,26 @@ if __name__ == '__main__':
     pn.set_material(rho, E, nu)
 
     for i in range(10):
-        choose_p = random.choice(boundary_points)
+        choose_p = boundary_points[0]
         pd.initial()
         pn.initial()
         pn.compute_restT_and_m()
 
-        force_info = {'dim': case_info['dim']}
+        acc_info = {'dim': case_info['dim']}
         if case_info['dim'] == 2:
-            force_info['force_type'] = 'dir'
-            force_info['exf_angle'] = -45.0
-            force_info['exf_mag'] = 6
+            acc_info['acc_type'] = 'dir'
+            acc_info['exf_angle'] = -45.0
+            acc_info['exf_mag'] = 6
         else:
-            # 3D point force field setting
-            force_info['force_type'] = 'point_by_point'
-            force_info['point_ind'] = choose_p
-            force_info['f'] = np.array([-1.0, 0.0, 0.0])
-            force_info['p_mag'] = 4.6
-            force_info['p_radius'] = 0.1
+            # 3D point acc field setting
+            acc_info['acc_type'] = 'point_by_point'
+            acc_info['point_ind'] = choose_p
+            acc_info['f'] = np.array([-1.0, 0.0, 0.0])
+            acc_info['p_mag'] = 9.8
+            acc_info['p_radius'] = 0.1
 
-        pd.set_force(force_info)
-        pn.set_force(force_info)
+        pd.set_acc(acc_info)
+        pn.set_acc(acc_info)
         pd.run_auto_stop(pn, is_test, scene_info)
 
         whole_end_t = time.time()

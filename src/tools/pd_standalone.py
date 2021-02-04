@@ -1,16 +1,10 @@
-# TODO:
-# 1. A matrix complication time improvement. It requires to use field to replace matrix. However, it would loss some
-# handy funcs like transpose, product, etc.
-# 2. SVD change
-# 3. Speed optimization: Dragon and bunny are to slow
-# 4. High resolution model problems: High resolution Dragon model will break this simulator
 import os
 import sys
 import numpy as np
 import taichi as ti
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
-from Utils.utils_visualization import draw_image, get_force_field, output_3d_seq, update_boundary_mesh, get_ring_force_field, get_ring_circle_force_field, get_point_force_field, get_point_force_field_by_point
+from Utils.utils_visualization import draw_image, get_acc_field, output_3d_seq, update_boundary_mesh, get_ring_acc_field, get_ring_circle_acc_field, get_point_acc_field, get_point_acc_field_by_point
 from scipy import sparse
 from scipy.sparse.linalg import factorized
 from Utils.math_tools import svd, my_svd
@@ -51,17 +45,17 @@ E, nu = 3e4, 0.4  # Young's modulus and Poisson's ratio
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
 
 # add damping
-damping_coeff = 0.4
+damping_coeff = 0.0
 
 # Solver settings:
 m_weight_positional = 1e20
 dt = 0.01
 # Backup settings:
 # Bar: 10  Bunny: 50
-# solver_max_iteration = 10
-solver_stop_residual = 0.001
-# external force -- counter-clock wise
-ti_ex_force = ti.Vector.field(dim, real, n_vertices)
+solver_max_iteration = 1
+solver_stop_residual = 0.01
+# external acceleration -- counter-clock wise
+ti_ex_acc = ti.Vector.field(dim, real, n_vertices)
 
 # Taichi variables' initialization:
 ti_mass = ti.field(real, n_vertices)
@@ -120,42 +114,30 @@ def init():
     ti_phi.fill(0)
     ti_weight_strain.fill(0)
     ti_weight_volume.fill(0)
-    ti_ex_force.fill(0)
+    ti_ex_acc.fill(0)
 
-
-# @ti.kernel
-# def set_point_force_3D():   # set only one time
-#     for i in range(n_vertices):
-#         ti_ex_force[i] = get_point_force_field(ti_b_min, ti_b_max, ti_pos_init[i], ti_pf_force)
 
 @ti.kernel
-def set_point_force_by_point_3D(pf_ind: ti.i32, pf_radius: ti.f64, x: ti.f32, y: ti.f32, z: ti.f32):   # set only one time
-    for i in range(n_vertices):  # t_pos, pos, radius, force
-        ti_ex_force[i] = get_point_force_field_by_point(ti_pos_init[pf_ind], ti_pos_init[i], pf_radius, ti.Vector([x,y,z]))
+def set_point_acc_by_point_3D(pf_ind: ti.i32, pf_radius: ti.f64, x: ti.f32, y: ti.f32, z: ti.f32):   # set only one time
+    for i in range(n_vertices):  # t_pos, pos, radius, acc
+        ti_ex_acc[i] = get_point_acc_field_by_point(ti_pos_init[pf_ind], ti_pos_init[i], pf_radius, ti.Vector([x,y,z]))
+
 
 # Backup Settings:
-# Bunny: ti.Vector([0.0, 0.0, 0.1])
-# Dragon:
-# Dinosaur:
 @ti.kernel
-def set_exforce():
+def set_exacc():
     if ti.static(dim == 2):
         for i in range(n_vertices):
-            ti_ex_force[i] = ti.Vector(get_force_field(6, -45.0))
+            ti_ex_acc[i] = ti.Vector(get_acc_field(6, -45.0))
     else:
         for i in range(n_vertices):
-            ti_ex_force[i] = ti.Vector(get_force_field(0.1, 45.0, 45.0, 3))
+            ti_ex_acc[i] = ti.Vector([0.1, 0.1, 0.1])
 
-
-# @ti.kernel
-# def set_ring_force_3D():
-#     for i in range(n_vertices):
-#         ti_ex_force[i] = get_ring_circle_force_field(0.4, 0.3, ti_center, ti_pos[i], 0.0, 0.2*min_sphere_radius, 3)
 
 @ti.kernel
-def set_ring_force_3D():
+def set_ring_acc_3D():
     for i in range(n_vertices):
-        ti_ex_force[i] = get_ring_force_field(0.04, 10.0, ti_center, ti_pos[i], 0.0, 3)
+        ti_ex_acc[i] = get_ring_acc_field(0.04, 10.0, ti_center, ti_pos[i], 0.0, 3)
 
 
 @ti.func
@@ -444,21 +426,31 @@ def compute_volume_constraint(sigma):
             sigma_star_22_k = D2_kplus1 + sigma[1, 1]
         return ti.Matrix.rows([[sigma_star_11_k, 0.0], [0.0, sigma_star_22_k]])
     else:
-        sigma_star_11_k, sigma_star_22_k, sigma_star_33_k = 1.0, 1.0, 1.0
-        for itr in ti.static(range(2)):
-            D_k = ti.Vector([sigma_star_11_k - sigma[0, 0],
-                             sigma_star_22_k - sigma[1, 1],
-                             sigma_star_33_k - sigma[2, 2]])
-            C_D_k = sigma_star_11_k * sigma_star_22_k * sigma_star_33_k - 1.0
-            grad_C_D_k = ti.Vector([sigma_star_22_k * sigma_star_33_k,
-                                    sigma_star_11_k * sigma_star_33_k,
-                                    sigma_star_11_k * sigma_star_22_k])
-            first_term = (grad_C_D_k.dot(D_k) - C_D_k) / (grad_C_D_k.norm() ** 2)
-            D_kplus1 = first_term * D_k
-            sigma_star_11_k = D_kplus1[0] + sigma[0, 0]
-            sigma_star_22_k = D_kplus1[1] + sigma[1, 1]
-            sigma_star_33_k = D_kplus1[2] + sigma[2, 2]
-        return ti.Matrix.rows([[sigma_star_11_k, 0.0, 0.0], [0.0, sigma_star_22_k, 0.0], [0.0, 0.0, sigma_star_33_k]])
+        tol = 0.00001
+        max_it = 2
+        s1, s2, s3 = sigma[0, 0], sigma[1, 1], sigma[2, 2]
+        x = 1.0 - s1
+        y = 1.0 - s2
+        z = 1.0 - s3
+        for itr in range(max_it):
+            a, b, c = x + s1, y + s2, z + s3
+            f = a * b * c - 1.0
+            g1, g2, g3 = b * c, a * c, a * b
+            bot = g1 * g1 + g2 * g2 + g3 * g3
+            if ti.abs(bot) < tol:
+                break
+            top = x * g1 + y * g2 + z * g3 - f
+            div = top / bot
+            x0, y0, z0 = x, y, z
+            x = div * g1
+            y = div * g2
+            z = div * g3
+            dx = x - x0
+            dy = y - y0
+            dz = z - z0
+            if dx * dx + dy * dy + dz * dz < tol * tol:
+                break
+        return ti.Matrix.rows([[x + s1, 0.0, 0.0], [0.0, y + s2, 0.0], [0.0, 0.0, z + s3]])
 
 
 # NOTE: This function doesn't build all constraints
@@ -498,11 +490,11 @@ def build_sn():
         Sn_idx2 = v_id*dim+1
         pos_i = ti_pos[v_id]
         vel_i = ti_vel[v_id]
-        ti_Sn[Sn_idx1] = pos_i[0] + dt * vel_i[0]+(dt**2)*(ti_ex_force[v_id][0]/ti_mass[v_id]-ti_vel[v_id][0]*damping_coeff/ti_mass[v_id])
-        ti_Sn[Sn_idx2] = pos_i[1] + dt * vel_i[1]+(dt**2)*(ti_ex_force[v_id][1]/ti_mass[v_id]-ti_vel[v_id][1]*damping_coeff/ti_mass[v_id])
+        ti_Sn[Sn_idx1] = pos_i[0] + dt * vel_i[0]+(dt**2)*(ti_ex_acc[v_id][0]-ti_vel[v_id][0]*damping_coeff/ti_mass[v_id])
+        ti_Sn[Sn_idx2] = pos_i[1] + dt * vel_i[1]+(dt**2)*(ti_ex_acc[v_id][1]-ti_vel[v_id][1]*damping_coeff/ti_mass[v_id])
         if ti.static(dim == 3):
             Sn_idx3 = v_id * dim + 2
-            ti_Sn[Sn_idx3] = pos_i[2]+dt*vel_i[2]+(dt**2)*(ti_ex_force[v_id][2]/ti_mass[v_id]-ti_vel[v_id][2]*damping_coeff/ti_mass[v_id])
+            ti_Sn[Sn_idx3] = pos_i[2]+dt*vel_i[2]+(dt**2)*(ti_ex_acc[v_id][2]-ti_vel[v_id][2]*damping_coeff/ti_mass[v_id])
 
 
 @ti.func
@@ -751,8 +743,8 @@ if __name__ == "__main__":
 
     init()
 
-    # One direction force field
-    # set_exforce()
+    # One direction acc field
+    set_exacc()
     init_mesh_DmInv(dirichlet, len(dirichlet))
     precomputation(lhs_mat_row, lhs_mat_col, lhs_mat_val)
     s_lhs_matrix_np = sparse.csr_matrix((lhs_mat_val, (lhs_mat_row, lhs_mat_col)),
@@ -762,8 +754,8 @@ if __name__ == "__main__":
 
     # wait = input("PRESS ENTER TO CONTINUE.")
 
-    mag = 16.0
-    set_point_force_by_point_3D(1, 0.1, mag*-1.0, mag*0.0, mag*0.0)
+    # mag = 16.0
+    # set_point_acc_by_point_3D(1, 0.1, mag*-1.0, mag*0.0, mag*0.0)
 
     if dim == 2:
         gui = ti.GUI('PN Standalone', background_color=0xf7f7f7)
@@ -784,14 +776,14 @@ if __name__ == "__main__":
     plot_array = []
 
     while True:
-        # set_ring_force_3D()
+        # set_ring_acc_3D()
         build_sn()
         # Warm up:
         warm_up()
         print("Frame ", frame_counter)
         # last_record_energy = 1000000.0
-        # for itr in range(solver_max_iteration):
-        while True:
+        for itr in range(solver_max_iteration):
+            # while True:
             local_solve_build_bp_for_all_constraints()
             build_rhs(rhs_np)
 
