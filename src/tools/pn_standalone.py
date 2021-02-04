@@ -9,10 +9,10 @@ from Utils.neo_hookean import fixed_corotated_energy
 from Utils.neo_hookean import fixed_corotated_first_piola_kirchoff_stress_derivative
 from Utils.reader import read
 from Utils.math_tools import svd, my_svd
-from Utils.utils_visualization import draw_image, update_boundary_mesh, get_force_field, get_ring_force_field
+from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3d_seq, get_acc_field, get_ring_acc_field, get_point_acc_field_by_point
 
 ##############################################################################
-case_info = read(1007)
+case_info = read(1009)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
@@ -21,17 +21,18 @@ dim = case_info['dim']
 center = case_info['center']
 min_sphere_radius = case_info['min_sphere_radius']
 ##############################################################################
+_, _, boundary_triangles = case_info['boundary']
 
 ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 
 real = ti.f64
 
 dt = 0.01
-E = 1e4
-nu = 0.4
+E = 5e4
+nu = 0.1
 la = E * nu / ((1 + nu) * (1 - 2 * nu))
 mu = E / (2 * (1 + nu))
-density = 100
+density = 1e4
 n_particles = mesh.num_vertices
 if dim == 2:
     n_elements = mesh.num_faces
@@ -53,6 +54,9 @@ xn = ti.Vector.field(dim, real, n_particles)
 v = ti.Vector.field(dim, real, n_particles)
 m = ti.field(real, n_particles)
 
+ti_vel_last = ti.Vector.field(dim, real, n_particles)
+ti_vel_del = ti.Vector.field(dim, real, n_particles)
+
 zero = ti.Vector.field(dim, real, n_particles)
 restT = ti.Matrix.field(dim, dim, real, n_elements)
 vertices = ti.field(ti.i32, (n_elements, dim + 1))
@@ -65,9 +69,11 @@ ti_U_field = ti.field(real, (n_elements, dim * dim, dim * dim))
 ti_V_field = ti.field(real, (n_elements, dim * dim, dim * dim))
 ti_indMap_field = ti.field(real, (n_elements, dim * (dim + 1)))
 
-# external force -- Angle: from [1, 0] -- counter-clock wise
-ex_force = ti.Vector.field(dim, real, n_particles)
+# external acc -- Angle: from [1, 0] -- counter-clock wise
+ex_acc = ti.Vector.field(dim, real, n_particles)
 ti_center = ti.Vector([center[0], center[1], center[2]])
+
+damping_coeff = 0.0
 
 def initial():
     x.from_numpy(mesh.vertices.astype(np.float64))
@@ -82,30 +88,34 @@ def initial():
     m.fill(0)
     zero.fill(0)
     restT.fill(0)
-    ################################ external force ######################################
-    ex_force.fill(0)
+
+    ti_vel_last.fill(0)
+    ti_vel_del.fill(0)
+    ################################ external accleration ######################################
+    ex_acc.fill(0)
 
 
 @ti.kernel
-def set_dir_force_3D():
+def set_dir_acc_3D():
     if ti.static(dim == 2):
         for i in range(n_particles):
-            ex_force[i] = ti.Vector(get_force_field(6, -45.0))
+            ex_acc[i] = ti.Vector(get_acc_field(6, -45.0))
     else:
         # exf_mag = 0.0002 # 1001: 6   1003 and 1004: 0.06  1005: 0.0002
         for i in range(n_particles):
-            ex_force[i] = ti.Vector(get_force_field(0.0002, 45.0, 45.0, 3))
+            ex_acc[i] = ti.Vector(get_acc_field(2.0, 45.0, 45.0, 3))
 
-
-# @ti.kernel
-# def set_ring_force_3D():
-#     for i in range(n_particles):
-#         ex_force[i] = get_ring_force_field(0.2, 0.3, ti_center, x[i], 0.0, 3)
 
 @ti.kernel
-def set_ring_force_3D():
+def set_ring_acc_3D():
     for i in range(n_particles):
-        ex_force[i] = get_ring_force_field(0.04, 10.0, ti_center, x[i], 0.0, 3)
+        ex_acc[i] = get_ring_acc_field(0.04, 10.0, ti_center, x[i], 0.0, 3)
+
+
+@ti.kernel
+def set_point_acc_by_point_3D(pf_ind: ti.i32, pf_radius: ti.f64, xx: ti.f32, y: ti.f32, z: ti.f32):
+    for i in range(n_particles):  # t_pos, pos, radius, acc
+        ex_acc[i] = get_point_acc_field_by_point(x[pf_ind], x[i], pf_radius, ti.Vector([xx, y, z]))
 
 
 @ti.func
@@ -138,15 +148,41 @@ def compute_xn_and_xTilde():
         for i in range(n_particles):
             xn[i] = x[i]
             xTilde[i] = x[i] + dt * v[i]
-            xTilde(0)[i] += dt * dt * (ex_force[i][0] / m[i])
-            xTilde(1)[i] += dt * dt * (ex_force[i][1] / m[i])
+            xTilde(0)[i] += dt * dt * (ex_acc[i][0])
+            xTilde(1)[i] += dt * dt * (ex_acc[i][1])
     if ti.static(dim == 3):
         for i in range(n_particles):
             xn[i] = x[i]
             xTilde[i] = x[i] + dt * v[i]
-            xTilde(0)[i] += dt * dt * (ex_force[i][0] / m[i])
-            xTilde(1)[i] += dt * dt * (ex_force[i][1] / m[i])
-            xTilde(2)[i] += dt * dt * (ex_force[i][2] / m[i])
+            xTilde(0)[i] += dt * dt * (ex_acc[i][0]) - dt * dt * (damping_coeff * v[i][0]) / m[i]
+            xTilde(1)[i] += dt * dt * (ex_acc[i][1]) - dt * dt * (damping_coeff * v[i][1]) / m[i]
+            xTilde(2)[i] += dt * dt * (ex_acc[i][2]) - dt * dt * (damping_coeff * v[i][2]) / m[i]
+
+
+@ti.kernel
+def check_acceleration_status() -> ti.f64:
+    residual = 0.0
+    for i in range(n_particles):
+        residual += (ti_vel_del[i]/dt).norm()
+    residual /= (1.0 * n_particles)
+    print("acceleration :", residual)
+    return residual
+
+
+@ti.kernel
+def compute_rayleigh_damping():
+    total_energy = 0.0
+    # inertia
+    for i in range(n_particles):
+        total_energy += 0.5 * m[i] * (x[i] - xTilde[i]).norm_sqr()
+    # elasticity
+    for e in range(n_elements):
+        F = compute_T(e) @ restT[e].inverse()
+        vol0 = restT[e].determinant() / dim / (dim - 1)
+        U, sig, V = svd(F)
+        # U, sig, V = my_svd(F)
+        total_energy += fixed_corotated_energy(sig, la, mu) * dt * dt * vol0
+    return total_energy
 
 
 @ti.kernel
@@ -329,6 +365,8 @@ def apply_sol(alpha : real, data_sol: ti.ext_arr()):
 def compute_v():
     for i in range(n_particles):
         v[i] = (x[i] - xn[i]) / dt
+        ti_vel_del[i] = v[i] - ti_vel_last[i]
+        ti_vel_last[i] = v[i]
 
 
 @ti.kernel
@@ -337,17 +375,34 @@ def output_residual(data_sol: ti.ext_arr()) -> real:
     for i in range(n_particles):
         for d in ti.static(range(dim)):
             residual = ti.max(residual, ti.abs(data_sol[i * dim + d]))
+    # print("Search Direction Residual : ", residual / dt)
+    return residual
+
+
+@ti.kernel
+def output_residual2(data_sol: ti.ext_arr()) -> real:
+    residual = 0.0
+    for i in range(n_particles):
+        res = 0.0
+        for d in ti.static(range(dim)):
+            res += data_sol[i * dim + d] * data_sol[i * dim + d]
+        residual += ti.sqrt(res)
     print("Search Direction Residual : ", residual / dt)
     return residual
 
 
-def my_solve_linear_system():
-    pass
+def output_aux_data(f):
+    if dim == 3:
+        name_pn = "../../SimData/PNAnimSeq/PD_pbpF_" + case_info['case_name'] + "_" + str(0.000001) + \
+                  "_" + str(4.6) + "_" + str((-1.0, 0.0, 0.0)) + \
+                  "_" + str(0.1) + "_" + str(f).zfill(6) + ".obj"
+        output_3d_seq(x.to_numpy(), boundary_triangles, name_pn)
 
 
 if __name__ == "__main__":
     initial()
     compute_restT_and_m()
+    stop_acceleration = 0.001
 
     video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
     frame_counter = 0
@@ -370,13 +425,16 @@ if __name__ == "__main__":
     data_mat = np.zeros(shape=(3, 20000000), dtype=np.float64)
     data_sol = np.zeros(shape=(200000,), dtype=np.float64)
 
+    mag = 4.6
+    # set_point_acc_by_point_3D(1, 0.1, mag*-1.0, mag*0.0, mag*0.0)
+
     # Compile time duration record
     # Before optimization: 73.18037104606628 s
     # After unrolling optimization: 2.7542989253997803 s -  0.002396106719970703 s
-    # set_dir_force_3D()
-    for f in range(60):
-        set_ring_force_3D()
-        print("==================== Frame: ", f, " ====================")
+    set_dir_acc_3D()
+    for f_cnt in range(100):
+        # set_ring_acc_3D()
+        print("==================== Frame: ", frame_counter, " ====================")
         compute_xn_and_xTilde()
         while True:
             data_rhs.fill(0)
@@ -384,12 +442,8 @@ if __name__ == "__main__":
             data_sol.fill(0)
             ti_intermediate_field.fill(0)
             ti_M_field.fill(0)
-            # time_start = time.time()
             compute_hessian_and_gradient(data_mat, data_rhs)
-            # time_end = time.time()
-            # print("compute_hessian_and_gradient time duration:", time_end - time_start, 's')
 
-            # time_start = time.time()
             if dim == 2:
                 data_sol = solve_linear_system(data_mat, data_rhs, n_particles * dim,
                                                np.array(dirichlet), zero.to_numpy(),
@@ -398,13 +452,10 @@ if __name__ == "__main__":
                 data_sol = solve_linear_system3(data_mat, data_rhs, n_particles * dim,
                                                 np.array(dirichlet), zero.to_numpy(),
                                                 False, 0, cnt[None])
-            # time_end = time.time()
-            # print("to_numpy() and solve linear system time:", time_end - time_start, 's')
 
-            if output_residual(data_sol) < 1e-4 * dt:
+            if output_residual(data_sol) < 1e-4:
                 break
 
-            # time_start = time.time()
             E0 = compute_energy()
             save_xPrev()
             alpha = 1.0
@@ -414,17 +465,13 @@ if __name__ == "__main__":
                 alpha *= 0.5
                 apply_sol(alpha, data_sol)
                 E = compute_energy()
-            # time_end = time.time()
-            # print("Energy computation time:", time_end - time_start, 's')
 
-        # time_start = time.time()
         compute_v()
+        output_aux_data(frame_counter)
+
         particle_pos = x.to_numpy()
         vertices_ = vertices.to_numpy()
-        # time_end = time.time()
-        # print("Compute v and particles to numpy() time:", time_end - time_start, 's')
 
-        # write_image(f)
         frame_counter += 1
         filename = f'./results/frame_{frame_counter:05d}.png'
         if dim == 2:
@@ -437,10 +484,5 @@ if __name__ == "__main__":
             gui.set_image(scene.img)
             gui.show()
 
-
-# Case 1 performance record:
-# Energy computation time: 0.00030803680419921875 s
-# compute_hessian_and_gradient time duration: 0.00013208389282226562 s
-# to_numpy() and solve linear system time: 0.17334318161010742 s --> after change to numpy: 0.06917214393615723 s
-# Compute v and particles to numpy() time: 0.0004885196685791016 s
-
+        # if check_acceleration_status() < stop_acceleration:
+        #     break

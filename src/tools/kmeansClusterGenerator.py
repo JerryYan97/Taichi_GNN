@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import warnings
 import time
 import sys
 import os
@@ -10,44 +11,24 @@ from Utils.utils_gcn import *
 from Utils.reader import read
 
 # Owing to the fixed color panel, it now just has only tests clusters num that is 10 and under 10.
-cluster_num = 10
+cluster_num = 8
 # Case 1002 doesn't work because it's particles' num is less than the clusters' num.
-test_case = 1005
+test_case = 2
 
-
-# Optimization record:
-# Before multiprocessing optimization:
-# case 1: 21.836742877960205 s
-# case 2: 1660.8389155864716 s
-# case 3: 91.31829476356506 s
-# case 4: 463.22716546058655 s
-# After multiprocessing optimization:
-# case 1: 3.13779354095459 s
-# case 2: 245.91074132919312 s
-# case 3: 12.78972315788269 s
-# case 4: 76.89776110649109 s
-# Multiprocessing + Dijkstra process optimization:
-# case 1: 0.667464017868042 s
-# case 2: 35.071603536605835 s
-# case 3: 2.235482692718506 s
-# case 4: 10.509188652038574 s
-# case 1001: 8.820295810699463 s
-# case 1002: None
-# case 1003: Timeout
-# case 1004: Timeout
-# Multiprocessing 2 + Taichi optimization:
-# case 1001: ~13.113672256469727s
-# case 1004: 2141.33443069458 s
-# case 1005: 3529.759060382843 s
-# Opt3:
-# case 1: 0.48258471488952637 s
-# case 2: 6.196524143218994 s
-# case 1001: 3.125687599182129 s
-# case 1004: 384.59628558158875 s
-# case 1005:
 
 def rgb_range01(rgb_np):
     return rgb_np / 255.0
+
+
+# https://www.iquilezles.org/www/articles/palettes/palettes.htm
+def color_palettes(t):
+    if t > 1.0 or t < 0.0:
+        raise Exception("Input should be [0, 1].")
+    a = np.array([0.5, 0.5, 0.5])
+    b = np.array([0.5, 0.5, 0.5])
+    c = np.array([1.0, 1.0, 1.0])
+    d = np.array([0.0, 0.33, 0.67])
+    return a + b * np.cos(2.0 * np.pi * (c * t + d))
 
 
 if __name__ == "__main__":
@@ -59,35 +40,36 @@ if __name__ == "__main__":
     dim = case_info['dim']
 
     time_start = time.time()
-    _, child_list, parent_list, belonging = K_means_multiprocess(mesh, cluster_num)
+    parent_list, belonging, belonging_len = K_means_multiprocess2(mesh, cluster_num)
     time_end = time.time()
     print("Kmeans execute time duration:", time_end-time_start, 's')
-
-    color_tab = ['tab:blue', 'tab:orange', 'tab:green', 'tab:purple', 'tab:olive', 'tab:gray', 'tab:cyan', 'tab:pink',
-                 'tab:red', 'tab:brown']
 
     # Save the cluster
     if not os.path.exists(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/SavedClusters"):
         os.makedirs("Saved_Cluster")
-    cluster = np.zeros(len(mesh.vertices) + 1, dtype=int)
-    for i in parent_list:
-        cluster[i] = i
-    for i in range(len(child_list)):
-        cluster[child_list[i]] = belonging[i]
-    cluster[len(mesh.vertices)] = cluster_num
+    cluster = np.zeros(len(mesh.vertices) * 2 + cluster_num + 1, dtype=np.float)
+    # Save clusters:
+    # NOTE: The new version of the cluster format is different from the original one.
+    # Line 1: number of clusters in this file.
+    # Line 2 -- 2 + n_vert: belongs of all the vertices. For each element, the value spans from 0 -- number of cluster
+    # Line 2 + n_vert + 1 -- 2 + 2 * n_vert + 1: The length of them from center.
+    cluster[0] = cluster_num
+    cluster[1:1 + mesh.num_vertices] = belonging
+    cluster[1 + mesh.num_vertices:1 + 2 * mesh.num_vertices] = belonging_len
+    cluster[1 + 2 * mesh.num_vertices:1 + 2 * mesh.num_vertices + cluster_num] = parent_list
     np.savetxt(os.path.dirname(os.path.abspath(__file__)) +
-               "/../../MeshModels/SavedClusters/" + f"test_case{test_case}_cluster.csv",
-               cluster, delimiter=',', fmt='%d')
+               "/../../MeshModels/SavedClusters/" + f"test_case{test_case}_c{cluster_num}_cluster.csv",
+               cluster, delimiter=',')
 
     if dim == 2:
         for i in range(cluster_num):
-            posidx = np.where(np.asarray(belonging) == parent_list[i])[0]
-            pos = mesh.vertices[np.asarray(child_list)[posidx]]
+            posidx = np.where(np.asarray(belonging) == i)[0]
+            pos = mesh.vertices[posidx]
             x = [item[0] for item in pos]
             x.append(mesh.vertices[parent_list[i], 0])
             y = [item[1] for item in pos]
             y.append(mesh.vertices[parent_list[i], 1])
-            plt.scatter(x, y, label="stars", color=color_tab[i], marker="*", s=30)
+            plt.scatter(x, y, label="stars", marker="*", s=30)
 
         plt.xlabel('x - axis')  # x-axis label
         plt.ylabel('y - axis')  # frequency label
@@ -105,16 +87,9 @@ if __name__ == "__main__":
 
         # Init particles info
         particles_list = []
-        label_color_list = np.array([rgb_range01(np.array([255.0, 66.0, 66.0])),
-                                     rgb_range01(np.array([245.0, 167.0, 66.0])),
-                                     rgb_range01(np.array([245.0, 239.0, 66.0])),
-                                     rgb_range01(np.array([129.0, 245.0, 66.0])),
-                                     rgb_range01(np.array([66.0, 245.0, 132.0])),
-                                     rgb_range01(np.array([66.0, 245.0, 218.0])),
-                                     rgb_range01(np.array([66.0, 197.0, 245.0])),
-                                     rgb_range01(np.array([66.0, 114.0, 245.0])),
-                                     rgb_range01(np.array([144.0, 66.0, 245.0])),
-                                     rgb_range01(np.array([242.0, 66.0, 245.0]))])
+        label_color_list = np.array(color_palettes(0.0))
+        for i in range(cluster_num - 1):
+            label_color_list = np.vstack((label_color_list, color_palettes(float(i + 1) / float(cluster_num))))
 
         pars = tina.SimpleParticles()
         material = tina.BlinnPhong()
@@ -123,14 +98,12 @@ if __name__ == "__main__":
         gui = ti.GUI('kmeans visualization')
 
         pars.set_particles(mesh.vertices)
-        pars.set_particle_radii(np.full(mesh.num_vertices, 0.01))
+        pars.set_particle_radii(np.full(mesh.num_vertices, 0.1))
         # Label particles color
         particles_color = np.full((mesh.num_vertices, 3), -1.0, dtype=float)
-        np_child_list = np.asarray(child_list)
-        for i in range(cluster_num):
-            pos_idx = np.asarray(np.asarray(belonging) == parent_list[i]).nonzero()[0]
-            particles_color[np_child_list[pos_idx]] = label_color_list[i]
-            particles_color[parent_list[i]] = label_color_list[i]
+        for i in range(mesh.num_vertices):
+            belong_cluster = belonging[i]
+            particles_color[i] = label_color_list[belong_cluster]
         pars.set_particle_colors(particles_color)
         while gui.running:
             scene.input(gui)

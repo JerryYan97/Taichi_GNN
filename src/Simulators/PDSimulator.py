@@ -21,6 +21,7 @@ def calcCenterOfMass(vind, dim, mass, pos):
     sum /= summ
     return sum
 
+
 def calcA_qq(q_i, dim):
     sum = np.zeros((dim, dim))
     for i in range(q_i.shape[0]):
@@ -90,19 +91,24 @@ def get_local_transformation(n_vertices, mesh, pos, init_pos, mass, dim):
 class PDSimulation(SimulatorBase):
     def __init__(self, sim_info):
         super().__init__(sim_info)
-
-        # Mesh
-        self.mesh.enable_connectivity()
+        self.mesh.enable_connectivity()  # Mesh
 
         # Material and Parameters
         self.m_weight_positional = 1e20
-        self.solver_max_iteration = 20
-        self.solver_stop_residual = 0.0005
+        self.solver_max_iteration = 10
+        self.solver_stop_residual = 0.1
+        self.stop_acceleration = 0.04
+
+        self.damping_coeff = 0.0
 
         # Simulator Fields
         self.ti_volume = ti.field(self.real, self.n_elements)
         self.ti_x_new = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.ti_x_del = ti.Vector.field(self.dim, self.real, self.n_vertices)
+
+        self.ti_vel_last = ti.Vector.field(self.dim, self.real, self.n_vertices)
+        self.ti_vel_del = ti.Vector.field(self.dim, self.real, self.n_vertices)
+
         # self.gradE = ti.field(self.real, shape=200000)  # Keep the shape same as the rhs shape of PN
         self.ti_last_pos_new = ti.Vector.field(self.dim, self.real, self.n_vertices)
         self.ti_boundary_labels = ti.field(int, self.n_vertices)
@@ -128,6 +134,10 @@ class PDSimulation(SimulatorBase):
         self.ti_volume.fill(0)
         self.ti_x_new.fill(0)
         self.ti_x_del.fill(0)
+
+        self.ti_vel_del.fill(0)
+        self.ti_vel_last.fill(0)
+
         # self.gradE.fill(0)
         self.ti_last_pos_new.fill(0)
         self.ti_boundary_labels.fill(0)
@@ -437,6 +447,7 @@ class PDSimulation(SimulatorBase):
             local_offset_idx = 0
             for d in range(self.dim):
                 cur_sparse_val = 0.0
+                # cur_sparse_val += (-self.damping_coeff/self.dt)+(self.ti_mass[i]/(self.dt*self.dt))
                 cur_sparse_val += (self.ti_mass[i] / (self.dt * self.dt))
                 if self.ti_boundary_labels[i] == 1:
                     cur_sparse_val += self.m_weight_positional
@@ -473,22 +484,31 @@ class PDSimulation(SimulatorBase):
                 sigma_star_22_k = D2_kplus1 + sigma[1, 1]
             return ti.Matrix.rows([[sigma_star_11_k, 0.0], [0.0, sigma_star_22_k]])
         else:
-            sigma_star_11_k, sigma_star_22_k, sigma_star_33_k = 1.0, 1.0, 1.0
-            for itr in ti.static(range(10)):
-                D_k = ti.Vector([sigma_star_11_k - sigma[0, 0],
-                                 sigma_star_22_k - sigma[1, 1],
-                                 sigma_star_33_k - sigma[2, 2]])
-                C_D_k = sigma_star_11_k * sigma_star_22_k * sigma_star_33_k - 1.0
-                grad_C_D_k = ti.Vector([sigma_star_22_k * sigma_star_33_k,
-                                        sigma_star_11_k * sigma_star_33_k,
-                                        sigma_star_11_k * sigma_star_22_k])
-                first_term = (grad_C_D_k.dot(D_k) - C_D_k) / (grad_C_D_k.norm() ** 2)
-                D_kplus1 = first_term * D_k
-                sigma_star_11_k = D_kplus1[0] + sigma[0, 0]
-                sigma_star_22_k = D_kplus1[1] + sigma[1, 1]
-                sigma_star_33_k = D_kplus1[2] + sigma[2, 2]
-            return ti.Matrix.rows(
-                [[sigma_star_11_k, 0.0, 0.0], [0.0, sigma_star_22_k, 0.0], [0.0, 0.0, sigma_star_33_k]])
+            tol = 0.00001
+            max_it = 1
+            s1, s2, s3 = sigma[0, 0], sigma[1, 1], sigma[2, 2]
+            x = 1.0 - s1
+            y = 1.0 - s2
+            z = 1.0 - s3
+            for itr in range(max_it):
+                a, b, c = x + s1, y + s2, z + s3
+                f = a * b * c - 1.0
+                g1, g2, g3 = b * c, a * c, a * b
+                bot = g1 * g1 + g2 * g2 + g3 * g3
+                if ti.abs(bot) < tol:
+                    break
+                top = x * g1 + y * g2 + z * g3 - f
+                div = top / bot
+                x0, y0, z0 = x, y, z
+                x = div * g1
+                y = div * g2
+                z = div * g3
+                dx = x - x0
+                dy = y - y0
+                dz = z - z0
+                if dx * dx + dy * dy + dz * dz < tol * tol:
+                    break
+            return ti.Matrix.rows([[x + s1, 0.0, 0.0], [0.0, y + s2, 0.0], [0.0, 0.0, z + s3]])
 
     # NOTE: This function doesn't build all constraints
     # It just builds strain constraints and area/volume constraints
@@ -519,19 +539,16 @@ class PDSimulation(SimulatorBase):
 
     @ti.kernel
     def build_sn(self):
-        for vert_idx in range(self.n_vertices):  # number of vertices
-            Sn_idx1 = vert_idx * self.dim
-            Sn_idx2 = vert_idx * self.dim + 1
-            pos_i = self.ti_x[vert_idx]
-            vel_i = self.ti_vel[vert_idx]
-            self.ti_Sn[Sn_idx1] = pos_i[0] + self.dt * vel_i[0] + (self.dt ** 2) * self.ti_ex_force[vert_idx][0] / \
-                                  self.ti_mass[vert_idx]  # x-direction;
-            self.ti_Sn[Sn_idx2] = pos_i[1] + self.dt * vel_i[1] + (self.dt ** 2) * self.ti_ex_force[vert_idx][1] / \
-                                  self.ti_mass[vert_idx]  # y-direction;
+        for v_id in range(self.n_vertices):  # number of vertices
+            Sn_idx1 = v_id * self.dim
+            Sn_idx2 = v_id * self.dim + 1
+            pos_i = self.ti_x[v_id]
+            vel_i = self.ti_vel[v_id]
+            self.ti_Sn[Sn_idx1] = pos_i[0] + self.dt * vel_i[0] + (self.dt ** 2) * (self.ti_ex_acc[v_id][0] - vel_i[0]*self.damping_coeff/self.ti_mass[v_id])
+            self.ti_Sn[Sn_idx2] = pos_i[1] + self.dt * vel_i[1] + (self.dt ** 2) * (self.ti_ex_acc[v_id][1] - vel_i[1]*self.damping_coeff/self.ti_mass[v_id])
             if ti.static(self.dim == 3):
-                Sn_idx3 = vert_idx * self.dim + 2
-                self.ti_Sn[Sn_idx3] = pos_i[2] + self.dt * vel_i[2] + (self.dt ** 2) * self.ti_ex_force[vert_idx][2] / \
-                                      self.ti_mass[vert_idx]
+                Sn_idx3 = v_id * self.dim + 2
+                self.ti_Sn[Sn_idx3] = pos_i[2] + self.dt * vel_i[2] + (self.dt ** 2) * (self.ti_ex_acc[v_id][2] - vel_i[2]*self.damping_coeff/self.ti_mass[v_id])
 
     @ti.func
     def Build_Bp_i_vec(self, idx):
@@ -547,11 +564,14 @@ class PDSimulation(SimulatorBase):
             return Bp_i_vec
 
     @ti.kernel
-    def build_rhs(self, rhs: ti.ext_arr()):
+    def build_rhs(self, rhs: ti.ext_arr()):  #, dp_pos: ti.ext_arr()):
         one_over_dt2 = 1.0 / (self.dt ** 2)
         # Construct the first part of the rhs
         for i in range(self.n_vertices * self.dim):
             rhs[i] = one_over_dt2 * self.ti_mass[i // self.dim] * self.ti_Sn[i]
+        # for i in ti.static(range(self.n_vertices * self.dim)):
+        #     rhs[i] = one_over_dt2 * self.ti_mass[i // self.dim] * self.ti_Sn[i] - \
+        #              (self.damping_coeff / self.dt * dp_pos[i // self.dim, i % self.dim])
         # Add strain and volume/area constraints to the rhs
         for t in ti.static(range(2)):
             for ele_idx in range(self.n_elements):
@@ -628,7 +648,11 @@ class PDSimulation(SimulatorBase):
     @ti.kernel
     def update_velocity_pos(self):
         for i in range(self.n_vertices):
+            # vel
             self.ti_vel[i] = (self.ti_x_new[i] - self.ti_x[i]) / self.dt
+            self.ti_vel_del[i] = self.ti_vel[i] - self.ti_vel_last[i]
+            # self.ti_vel_last[i] = self.ti_vel[i]
+            # pos
             self.ti_x_del[i] = self.ti_x_new[i] - self.ti_x[i]
             self.ti_x[i] = self.ti_x_new[i]
 
@@ -658,16 +682,31 @@ class PDSimulation(SimulatorBase):
         for i in range(self.n_vertices):
             residual += (self.ti_last_pos_new[i] - self.ti_x_new[i]).norm()
             self.ti_last_pos_new[i] = self.ti_x_new[i]
+        # residual /= (1.0 * self.n_vertices)
         # print("residual:", residual)
         return residual
 
+    @ti.kernel
+    def check_acceleration_status(self) -> ti.f64:
+        residual = 0.0
+        for i in range(self.n_vertices):
+            residual += (self.ti_vel_del[i]/self.dt).norm()
+        residual /= (1.0 * self.n_vertices)
+        print("acceleration :", residual)
+        return residual
+
+    @ti.kernel
+    def check_acceleration_status_times(self) -> ti.i32:
+        times = 0
+        for i in range(self.n_vertices):
+            if (self.ti_vel_del[i] / self.dt).norm() < 0.001:
+                times = times + 1
+            self.ti_vel_last[i] = self.ti_vel[i]
+        return times
+
     def output_network_data(self, pd_dis, pn_dis, gradE, init_rel_pos, frame, T):
         vel = self.ti_vel.to_numpy()
-        # gradE = grad_E.to_numpy()
-        if self.dim == 2:
-            exf = np.array([self.ti_ex_force[0][0], self.ti_ex_force[0][1]])
-        else:
-            exf = np.array([self.ti_ex_force[0][0], self.ti_ex_force[0][1], self.ti_ex_force[0][2]])
+        ex_acc = self.ti_ex_acc.to_numpy()
 
         frame = str(frame).zfill(5)
         if T == 0:
@@ -675,35 +714,58 @@ class PDSimulation(SimulatorBase):
                 out_name = "SimData/TrainingData/Train_2d_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
                            "_" + str(self.exf_mag) + "_" + frame + ".csv"
             else:
-                if self.force_type == 'dir':
+                if self.acc_type == 'dir':
                     out_name = "SimData/TrainingData/Train_dir_" + self.case_info['case_name'] + "_" + \
                                str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + \
                                "_" + frame + ".csv"
-                elif self.force_type == 'ring':
+                elif self.acc_type == 'ring':
                     out_name = "SimData/TrainingData/Train_ring_" + self.case_info['case_name'] + "_" +\
                                str(self.ring_mag) + "_" + str(self.ring_width) + "_" + str(self.ring_angle) + \
+                               "_" + frame + ".csv"
+                elif self.acc_type == 'ring_circle':
+                    out_name = "SimData/TrainingData/Train_rc_" + self.case_info['case_name'] + "_" + \
+                               str(self.ring_mag) + "_" + str(self.ring_width) + "_" + str(self.ring_angle) + \
+                               "_" + frame + ".csv"
+                elif self.acc_type == 'point':
+                    out_name = "SimData/TrainingData/Train_pf_" + self.case_info['case_name'] + "_" + \
+                               str(self.p_mag) + "_" + str(self.p_acc) + \
+                               "_" + frame + ".csv"
+                elif self.acc_type == 'point_by_point':
+                    out_name = "SimData/TrainingData/Train_pbp_" + self.case_info['case_name'] + "_" + \
+                               str(self.pf_mag) + "_" + str(self.pf_acc) + "_" + str(self.pf_radius) + \
                                "_" + frame + ".csv"
         else:
             if self.dim == 2:
                 out_name = "SimData/TestingData/Test_2d_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
                             "_" + str(self.exf_mag) + "_" + frame + ".csv"
             else:
-                if self.force_type == 'dir':
-                    out_name = "SimData/TrainingData/Test_dir_" + self.case_info['case_name'] + "_" + \
+                if self.acc_type == 'dir':
+                    out_name = "SimData/TestingData/Test_dir_" + self.case_info['case_name'] + "_" + \
                                str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + \
                                "_" + frame + ".csv"
-                elif self.force_type == 'ring':
-                    out_name = "SimData/TrainingData/Test_ring_" + self.case_info['case_name'] + "_" + \
+                elif self.acc_type == 'ring':
+                    out_name = "SimData/TestingData/Test_ring_" + self.case_info['case_name'] + "_" + \
                                str(self.ring_mag) + "_" + str(self.ring_width) + "_" + str(self.ring_angle) + \
+                               "_" + frame + ".csv"
+                elif self.acc_type == 'ring_circle':
+                    out_name = "SimData/TestingData/Test_rc_" + self.case_info['case_name'] + "_" + \
+                               str(self.ring_mag) + "_" + str(self.ring_width) + "_" + str(self.ring_angle) + \
+                               "_" + frame + ".csv"
+                elif self.acc_type == 'point':
+                    out_name = "SimData/TestingData/Test_pf_" + self.case_info['case_name'] + "_" + \
+                               str(self.pf_mag) + "_" + str(self.pf_acc) + \
+                               "_" + frame + ".csv"
+                elif self.acc_type == 'point_by_point':
+                    out_name = "SimData/TestingData/Test_pbp_" + self.case_info['case_name'] + "_" + \
+                               str(self.pf_mag) + "_" + str(self.pf_acc) + "_" + str(self.pf_radius) + \
                                "_" + frame + ".csv"
 
         ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim
         out = np.ones([self.n_vertices, ele_count], dtype=float)
-        ltrans_start_t = time.time()
+        
         A_finals = get_local_transformation(self.n_vertices, self.mesh, self.ti_x.to_numpy(), init_rel_pos,
                                             self.ti_mass.to_numpy(), self.dim)
-        ltrans_end_t = time.time()
-        print("get local transformation:", ltrans_end_t - ltrans_start_t)
+
         i = 0
         pos_init_out = self.mesh.vertices
         if self.dim == 2:
@@ -712,7 +774,7 @@ class PDSimulation(SimulatorBase):
                 out[i, 2:4] = pn_dis[i, :]  # pn pos
                 out[i, 4:8] = res
                 out[i, 8:10] = gradE[i * 2: i * 2 + 2]
-                out[i, 10:12] = exf
+                out[i, 10:12] = ex_acc[i, :]
                 out[i, 12:14] = vel[i, :]
                 out[i, 14:16] = pos_init_out[i, :]
                 i = i + 1
@@ -722,32 +784,40 @@ class PDSimulation(SimulatorBase):
                 out[i, 3:6] = pn_dis[i, :]  # pn pos
                 out[i, 6:15] = res
                 out[i, 15:18] = gradE[i * 3: i * 3 + 3]
-                out[i, 18:21] = exf
+                out[i, 18:21] = ex_acc[i, :]
                 out[i, 21:24] = vel[i, :]
                 out[i, 24:27] = pos_init_out[i, :]
                 i = i + 1
 
-        fill_data_end = time.time()
-        print("fill data: ", fill_data_end - ltrans_end_t)
         np.savetxt(out_name, out, delimiter=',')
 
     def output_aux_data(self, f, pn_pos):
         if self.dim == 3:
-            if self.force_type == 'dir':
+            if self.acc_type == 'dir':
                 name_pd = "SimData/PDAnimSeq/PD_dir_" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + "_" + \
                           str(self.exf_angle2) + "_"+str(self.exf_mag)+"_"+str(f).zfill(6)+".obj"
                 name_pn = "SimData/PNAnimSeq/PN_dir" + self.case_info['case_name'] + "_" + str(self.exf_angle1) + "_" + \
                           str(self.exf_angle2) + "_"+str(self.exf_mag)+"_"+str(f).zfill(6)+".obj"
-            elif self.force_type == 'ring':
+            elif self.acc_type == 'ring':
                 name_pd = "SimData/PDAnimSeq/PD_ring_" + self.case_info['case_name'] + "_" + str(self.ring_mag) + "_" + \
                           str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
                 name_pn = "SimData/PNAnimSeq/PN_ring_" + self.case_info['case_name'] + "_" + str(self.ring_mag) + "_" + \
                           str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
-            elif self.force_type == 'ring_circle':
+            elif self.acc_type == 'ring_circle':
                 name_pd = "SimData/PDAnimSeq/PD_ringC_" + self.case_info['case_name'] + "_" + str(self.ring_mag) + "_" + \
                           str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
                 name_pn = "SimData/PNAnimSeq/PN_ringC_" + self.case_info['case_name'] + "_" + str(self.ring_mag) + "_" + \
                           str(self.ring_width) + "_" + str(self.ring_angle) + "_" + str(f).zfill(6) + ".obj"
+            elif self.acc_type == 'point':
+                name_pd = "SimData/PDAnimSeq/PD_pF_" + self.case_info['case_name'] + "_" + str(self.pf_mag) + "_" + \
+                          str(self.pf_acc) + "_" + str(f).zfill(6) + ".obj"
+                name_pn = "SimData/PNAnimSeq/PN_pF_" + self.case_info['case_name'] + "_" + str(self.pf_mag) + "_" + \
+                          str(self.pf_acc) + "_" + str(f).zfill(6) + ".obj"
+            elif self.acc_type == 'point_by_point':
+                name_pd = "SimData/PDAnimSeq/PD_pbpF_" + self.case_info['case_name'] + "_" + str(self.pf_mag) + "_" + \
+                          str(self.pf_acc) + "_" + str(self.pf_radius) + "_" + str(f).zfill(6) + ".obj"
+                name_pn = "SimData/PNAnimSeq/PN_pbpF_" + self.case_info['case_name'] + "_" + str(self.pf_mag) + "_" + \
+                          str(self.pf_acc) + "_" + str(self.pf_radius) + "_"+ str(f).zfill(6) + ".obj"
 
             output_3d_seq(self.ti_x.to_numpy(), self.boundary_triangles, name_pd)
             output_3d_seq(pn_pos.to_numpy(), self.boundary_triangles, name_pn)
@@ -770,6 +840,15 @@ class PDSimulation(SimulatorBase):
                                             shape=(self.n_vertices * self.dim, self.n_vertices * self.dim),
                                             dtype=np.float64)
         pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
+
+        # set point acc in 3d
+        if self.acc_type == 'point':
+            self.set_point_acc_3D()
+            pn.set_point_acc_3D()
+        elif self.acc_type == 'point_by_point':
+            self.set_point_acc_by_point_3D()
+            pn.set_point_acc_by_point_3D()
+
         if self.dim == 2:
             gui = scene_info['gui']
             filename = f'./SimData/TmpRenderedImgs/frame_rest.png'
@@ -793,7 +872,7 @@ class PDSimulation(SimulatorBase):
         while frame_counter < frame_count:
             print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
             frame_start_t = time.time()
-            self.update_force_field()
+            # self.update_acc_field()
             self.build_sn()
             self.warm_up()
 
@@ -803,9 +882,10 @@ class PDSimulation(SimulatorBase):
             print("pn solve time: ", pn_end_t - pn_start_t)
 
             pd_start_t = time.time()
-            for itr in range(self.solver_max_iteration):
+            # for itr in range(self.solver_max_iteration):
+            while True:
                 self.local_solve_build_bp_for_all_constraints()
-                self.build_rhs(rhs_np)
+                self.build_rhs(rhs_np, self.ti_pos.to_numpy())
 
                 pos_new_np = pre_fact_lhs_solve(rhs_np)
                 self.update_pos_new_from_numpy(pos_new_np)
@@ -837,8 +917,8 @@ class PDSimulation(SimulatorBase):
                 draw_image(gui, filename, self.ti_x.to_numpy(), self.mesh_offset, self.mesh_scale,
                            self.ti_elements.to_numpy(), self.n_elements)
             else:
-                # update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
-                update_boundary_mesh(_pn_pos, scene_info['boundary_pos'], self.case_info)
+                update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
+                # update_boundary_mesh(_pn_pos, scene_info['boundary_pos'], self.case_info)
                 scene_info['scene'].input(gui)
                 scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
                 scene_info['scene'].render()
@@ -846,3 +926,115 @@ class PDSimulation(SimulatorBase):
                 gui.show()
 
             self.output_aux_data(frame_counter, _pn_pos)
+
+    def run_auto_stop(self, pn, is_test, scene_info):
+        rhs_np = np.zeros(self.n_vertices * self.dim, dtype=np.float64)
+        lhs_mat_val = np.zeros(
+            shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,),
+            dtype=np.float64)
+        lhs_mat_row = np.zeros(
+            shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,),
+            dtype=np.float64)
+        lhs_mat_col = np.zeros(
+            shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,),
+            dtype=np.float64)
+
+        self.init_mesh_DmInv(self.dirichlet, len(self.dirichlet))
+        self.precomputation(lhs_mat_row, lhs_mat_col, lhs_mat_val)
+        s_lhs_matrix_np = sparse.csr_matrix((lhs_mat_val, (lhs_mat_row, lhs_mat_col)),
+                                            shape=(self.n_vertices * self.dim, self.n_vertices * self.dim),
+                                            dtype=np.float64)
+        pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
+
+        # set point acc in 3d
+        if self.acc_type == 'point':
+            self.set_point_acc_3D()
+            pn.set_point_acc_3D()
+        elif self.acc_type == 'point_by_point':
+            self.set_point_acc_by_point_3D()
+            pn.set_point_acc_by_point_3D()
+
+        if self.dim == 2:
+            gui = scene_info['gui']
+            filename = f'./SimData/TmpRenderedImgs/frame_rest.png'
+            draw_image(gui, filename, self.ti_x.to_numpy(), self.mesh_offset, self.mesh_scale,
+                       self.ti_elements.to_numpy(), self.n_elements)
+        else:
+            gui = scene_info['gui']
+            scene_info['model'].set_transform(self.case_info['transformation_mat'])
+            update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
+            scene_info['scene'].input(gui)
+            scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
+            scene_info['scene'].render()
+            gui.set_image(scene_info['scene'].img)
+            gui.show()
+
+        frame_counter = 0
+        init_com = calcCenterOfMass(np.arange(self.n_vertices),
+                                    self.dim, self.ti_mass.to_numpy(),
+                                    self.ti_x.to_numpy())  # this is right
+        init_rel_pos = self.mesh.vertices - init_com
+        while True:
+            print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
+            # frame_start_t = time.time()
+            # self.update_acc_field()
+            self.build_sn()
+            self.warm_up()
+
+            # pn_start_t = time.time()
+            pn_dis, _pn_pos, pn_v = pn.data_one_frame(self.ti_x, self.ti_vel)
+            # pn_end_t = time.time()
+            # print("pn solve time: ", pn_end_t - pn_start_t)
+
+            # pd_start_t = time.time()
+            # for itr in range(self.solver_max_iteration):
+            while True:
+                self.local_solve_build_bp_for_all_constraints()
+                self.build_rhs(rhs_np)
+
+                pos_new_np = pre_fact_lhs_solve(rhs_np)
+                self.update_pos_new_from_numpy(pos_new_np)
+
+                residual = self.check_residual()
+                if residual < self.solver_stop_residual:
+                    break
+            # pd_end_t = time.time()
+            # print("pd solve time: ", pd_end_t - pd_start_t)
+
+            self.update_velocity_pos()
+            # self.gradE.from_numpy(pn.get_gradE_from_pd(self.ti_x))
+            gradE = pn.get_gradE_from_pd(self.ti_x)
+            # t_out_start = time.time()
+            if frame_counter % 10 == 0:
+                self.output_network_data(self.ti_x_del.to_numpy(),
+                                         pn_dis.to_numpy(),
+                                         gradE, init_rel_pos,
+                                         frame_counter, is_test)
+            # t_out_end = time.time()
+            # print("output network data time: ", t_out_end - t_out_start)
+
+            frame_counter += 1
+            # frame_end_t = time.time()
+            # print("whole time for one frame: ", frame_end_t - frame_start_t)
+
+            # Show result
+            if self.dim == 2:
+                filename = f'./SimData/TmpRenderedImgs/frame_{frame_counter:05d}.png'
+                draw_image(gui, filename, self.ti_x.to_numpy(), self.mesh_offset, self.mesh_scale,
+                           self.ti_elements.to_numpy(), self.n_elements)
+            else:
+                update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
+                # update_boundary_mesh(_pn_pos, scene_info['boundary_pos'], self.case_info)
+                scene_info['scene'].input(gui)
+                scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
+                scene_info['scene'].render()
+                gui.set_image(scene_info['scene'].img)
+                gui.show()
+
+            self.output_aux_data(frame_counter, _pn_pos)
+
+            # set stop check
+            if self.check_acceleration_status_times() > 800 and frame_counter > 50:
+                break
+
+

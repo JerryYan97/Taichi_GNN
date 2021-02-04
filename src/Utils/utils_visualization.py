@@ -124,7 +124,7 @@ def output_3d_seq(pos, boundary_tri, file_path):
 #         Angle1 will be used to determine the angle between y axis and the final direction.
 #         Angle2 will be used to determine the direction along the x-z plane with a start direction at [1, 0, 0].
 #         Angle1(Theta) should be a scalar in [0, pi). Angle2(Phi) should be a scalar in the range of [0, 2 * pi].
-def get_force_field(mag, angle1, angle2=0.0, dim=2):
+def get_acc_field(mag, angle1, angle2=0.0, dim=2):
     if dim == 2:
         x = mag * ti.cos(ts.pi / 180.0 * angle1)
         y = mag * ti.sin(ts.pi / 180.0 * angle1)
@@ -141,7 +141,7 @@ def get_force_field(mag, angle1, angle2=0.0, dim=2):
         z = mag * ti.cos(radian2)
         return [x, y, z]
     else:
-        raise Exception("Force field dim doesn't correct. Error dim is {}".format(dim))
+        raise Exception("Acc field dim doesn't correct. Error dim is {}".format(dim))
 
 
 def rotate_matrix_y_axis(beta_degree):
@@ -152,13 +152,30 @@ def rotate_matrix_y_axis(beta_degree):
                      [0.0, 0.0, 0.0, 1.0]])
 
 
-# mag: magnitude of the Force
+# Tait-Bryan angles
+def rotate_general(alpha_deg, beta_deg, gamma_deg):
+    alpha_rad = np.radians(alpha_deg)
+    beta_rad = np.radians(beta_deg)
+    gamma_rad = np.radians(gamma_deg)
+    return np.array([[np.cos(alpha_rad) * np.cos(beta_rad),
+                      np.cos(alpha_rad) * np.sin(beta_rad) * np.sin(gamma_rad) - np.sin(alpha_rad) * np.cos(gamma_rad),
+                      np.cos(alpha_rad) * np.sin(beta_rad) * np.cos(gamma_rad) + np.sin(alpha_rad) * np.sin(gamma_rad),
+                      0.0],
+                     [np.sin(alpha_rad) * np.cos(beta_rad),
+                      np.sin(alpha_rad) * np.sin(beta_rad) * np.sin(gamma_rad) + np.cos(alpha_rad) * np.cos(gamma_rad),
+                      np.sin(alpha_rad) * np.sin(beta_rad) * np.cos(gamma_rad) - np.cos(alpha_rad) * np.sin(gamma_rad),
+                      0.0],
+                     [-np.sin(beta_rad), np.cos(beta_rad) * np.sin(gamma_rad),
+                      np.cos(beta_rad) * np.cos(gamma_rad), 0.0],
+                     [0.0, 0.0, 0.0, 1.0]])
+
+# mag: magnitude of the Acceleration
 # center: bbox center of the mesh
-# pos: the mesh point position that want to get the force
-# angle: default: along x axis, used to change the force field
-# width: larger than this value, zero force
+# pos: the mesh point position that want to get the acceleration
+# angle: default: along x axis, used to change the acceleration field
+# width: larger than this value, zero acceleration
 @ti.func
-def get_ring_force_field(mag, width, center, pos, angle, dim) -> ti.Vector:
+def get_ring_acc_field(mag, width, center, pos, angle, dim) -> ti.Vector:
     radian = math.pi / 180.0 * angle
     p1 = center
     p2 = center + ti.Vector([0.0, 1.0*width, 0.0])
@@ -186,7 +203,7 @@ def get_ring_force_field(mag, width, center, pos, angle, dim) -> ti.Vector:
 
 
 @ti.func
-def get_ring_circle_force_field(mag, width, center, pos, angle, min_radius, dim) -> ti.Vector:
+def get_ring_circle_acc_field(mag, width, center, pos, angle, min_radius, dim) -> ti.Vector:
     radian = math.pi / 180.0 * angle
     p1 = center
     p2 = center + ti.Vector([0.0, 1.0*width, 0.0])
@@ -198,7 +215,6 @@ def get_ring_circle_force_field(mag, width, center, pos, angle, min_radius, dim)
     t = (a*pos[0]+b*pos[1]+c*pos[2]+d)/(a*a+b*b+c*c)
     p = ti.Vector([pos[0]-a*t, pos[1]-b*t, pos[2]-c*t])
     T = ti.Vector([0.0, 0.0, 0.0])
-    # if (p-center).norm() > min_radius:
     if (p-pos).norm() <= width and (p-center).norm() > min_radius:
         l = (p-center).norm()
         L = l * l / ti.sqrt((p[0]-center[0])*(p[0]-center[0])+(p[2]-center[2])*(p[2]-center[2]))
@@ -212,3 +228,31 @@ def get_ring_circle_force_field(mag, width, center, pos, angle, min_radius, dim)
             T = (s*(p4-p)).normalized()                          # print("p4-p3: ", p4-p3)
             T = mag * T
     return T
+
+
+@ti.func
+def get_point_acc_field(min, max, pos, acc) -> ti.Vector:
+    T = ti.Vector([0.0, 0.0, 0.0])
+    if min[0] < pos[0] < max[0] and min[1] < pos[1] < max[1] and min[2] < pos[2] < max[2]:
+        T = acc
+    else:
+        T = T
+    return T
+
+
+@ti.func
+def get_point_acc_field_by_point(t_pos, pos, radius, acc) -> ti.Vector:
+    T = ti.Vector([0.0, 0.0, 0.0])
+    if (t_pos - pos).norm() < radius:
+        T = acc
+    else:
+        T = T
+    return T
+
+
+@ti.func
+def get_point_acc_field_ref(min, max, pos, acc, ti_acc) -> ti.Vector:
+    if min[0] < pos[0] < max[0] and min[1] < pos[1] < max[1] and min[2] < pos[2] < max[2]:
+        ti_acc = acc
+    else:
+        ti_acc = ti.Vector([0.0, 0.0, 0.0])

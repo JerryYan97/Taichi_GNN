@@ -9,20 +9,25 @@ from collections import defaultdict
 from torch_geometric.data import InMemoryDataset, Data
 import scipy as sp
 import random
+from scipy.spatial import KDTree
+from collections import Counter
 from numpy import linalg as LA
 from os import system
 from scipy.sparse import lil_matrix
+import time
 
 
 def mp_load_data(workload_list, proc_idx, filepath, files, node_num, edge_idx, cluster, transform, dim):
     sample_list = []
     for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
         fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
+        # print("name: ", files[idx])
         if dim == 2:
             other = fperframe[:, 4:]
             pn_dis = fperframe[:, 2:4]
             pd_dis = fperframe[:, 0:2]  # a[start:stop] items start through stop-1
         else:
+            # print("name: ", files[idx], " shape: ", fperframe.shape)
             other = fperframe[:, 6:]
             pn_dis = fperframe[:, 3:6]
             pd_dis = fperframe[:, 0:3]  # a[start:stop] items start through stop-1
@@ -40,7 +45,7 @@ def mp_load_data(workload_list, proc_idx, filepath, files, node_num, edge_idx, c
 class SIM_Data_Geo(InMemoryDataset):
     def __init__(self, filepath, mesh_edge_idx,
                  i_features_num, o_features_num,
-                 mesh, cluster, clusters_num, dim,
+                 mesh, cluster, clusters_num, cluster_parent, belongs, dim,
                  transform=None, pre_transform=None):
         super(SIM_Data_Geo, self).__init__(None, transform, pre_transform)
         import time
@@ -66,12 +71,15 @@ class SIM_Data_Geo(InMemoryDataset):
 
         self._cluster = cluster
         self._cluster_num = clusters_num
+        self._cluster_parent = cluster_parent
+        self._cluster_belong = belongs
 
         # Section 5-3 multi-processing
         pool = mp.Pool()
         sample_list = []
         # Divide workloads:
         cpu_cnt = os.cpu_count()
+        print("cpu core account: ", cpu_cnt)
         files_cnt = self.len()
         files_per_proc_cnt = files_cnt // cpu_cnt
         workload_list = []
@@ -90,6 +98,7 @@ class SIM_Data_Geo(InMemoryDataset):
                                                     self._edge_idx, self._cluster, self.transform, dim,)))
         # Get multi-processing res:
         for i in range(cpu_cnt):
+            # print("i: ", i, ", get shape: ", len(proc_list[i].get()))
             sample_list.extend(proc_list[i].get())
 
         print("Sample list length:", len(sample_list))
@@ -124,19 +133,29 @@ class SIM_Data_Geo(InMemoryDataset):
 
 
 # file_dir: Top folder path.
-def load_cluster(file_dir, test_case):
-    cluster = np.genfromtxt(file_dir + "/MeshModels/SavedClusters/" + f"test_case{test_case}_cluster.csv",
-                            delimiter=',', dtype=int)
-    cluster_num = cluster[len(cluster) - 1]
-    cluster = torch.tensor(cluster[:len(cluster) - 1])
-    return cluster, cluster_num
+def load_cluster(file_dir, test_case, cluster_num, vert_num):
+    filename = file_dir+"/MeshModels/SavedClusters/"+"test_case"+str(test_case)+"_c"+str(cluster_num)+"_cluster"+".csv"
+    cluster = np.genfromtxt(filename, delimiter=',', dtype=np.float)
+    cluster_num = int(cluster[0])
+    belonging = torch.tensor(cluster[1:1+vert_num].astype(int))
+    belonging_len = cluster[1+vert_num:1+2*vert_num]
+    parent_np = cluster[1+2*vert_num:1+2*vert_num+cluster_num].astype(int)
+    cluster_parent = np.zeros(vert_num, dtype=np.int)
+    cluster_belongs = []
+    for a in range(cluster_num):
+        cluster_belongs.append([])
+    for i in range(vert_num):
+        belong_idx = belonging[i]
+        cluster_parent[i] = parent_np[belong_idx]
+        cluster_belongs[belong_idx].append(i)
+    return belonging, cluster_num, cluster_parent, cluster_belongs, belonging_len
 
 
 # Load data record:
 # case 1001 -- 9.8G (Without optimization):
 # t1: 0.003854036331176758  t2: 0.03281879425048828  t3: 0.00013327598571777344  t4: 0.0012357234954833984
 #
-def load_data(test_case, path="/Outputs"):
+def load_data(test_case, cluster_num, path="/Outputs"):
     file_dir = os.getcwd()
     file_dir = file_dir + path
 
@@ -161,8 +180,8 @@ def load_data(test_case, path="/Outputs"):
                 edge_index = np.hstack((edge_index, [[k], [i]]))
                 edge_index = np.hstack((edge_index, [[i], [k]]))
         edge_index = torch.LongTensor(edge_index)
-        cluster, cluster_num = load_cluster(os.getcwd(), test_case)
-        return SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, cluster, cluster_num, 2)
+        cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num, mesh.num_vertices)
+        return SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, cluster, cluster_num, cluster_parent, belongs, 2)
     else:
         import time
         t1_start = time.time()
@@ -200,17 +219,17 @@ def load_data(test_case, path="/Outputs"):
 
         # Load Section 4
         t4_start = time.time()
-        cluster, cluster_num = load_cluster(os.getcwd(), test_case)
+        cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num, mesh.num_vertices)
         t4_end = time.time()
         print("t4:", t4_end - t4_start)
 
         # Load Section 5
         t5_start = time.time()
-        tmp_data = SIM_Data_Geo(file_dir, edge_index, 24, 3, mesh, cluster, cluster_num, 3)
+        tmp_data = SIM_Data_Geo(file_dir, edge_index, 24, 3, mesh, cluster, cluster_num, cluster_parent, belongs, 3)
         t5_end = time.time()
         print("t5:", t5_end - t5_start)
 
-        return tmp_data, case_info
+        return tmp_data, case_info, cluster_parent, belongs
 
 
 def normalize(mx):
@@ -270,40 +289,62 @@ def min_distance(vertices_num, dist, min_dist_set):
     return min_index
 
 
-def spt_parallel_func(shared_adj_mat, src_list, vertices_num, idx):
-    dist = [float("inf")] * vertices_num
-    dist[src_list[idx]] = 0
-    min_dist_set = [False] * vertices_num
-    for count in range(vertices_num):
-        # minimum distance vertex that is not processed
-        u = min_distance(vertices_num, dist, min_dist_set)
-        # put minimum distance vertex in shortest tree
-        min_dist_set[u] = True
-        # Update dist value of the adjacent vertices
-        for v in range(vertices_num):
-            if shared_adj_mat[u, v] > 0 and min_dist_set[v] == False and dist[v] > dist[u] + shared_adj_mat[u, v]:
-                dist[v] = dist[u] + shared_adj_mat[u, v]
-    return dist
+def get_mesh_map(mesh):
+    map = lil_matrix((mesh.num_vertices, mesh.num_vertices), dtype=float)
+    mesh.enable_connectivity()
+    for p in range(mesh.num_vertices):
+        adj_v = mesh.get_vertex_adjacent_vertices(p)
+        for j in range(adj_v.shape[0]):
+            n1 = p
+            n2 = adj_v[j]
+            p1 = mesh.vertices[n1]
+            p2 = mesh.vertices[n2]
+            dp = LA.norm(p1 - p2)
+            map[n1, n2] = map[n2, n1] = dp
+    return map
 
 
-def childlist_helper_parallel_func(workload_list, proc_idx, childlist, parent_list, src_list, spt_list):
-    parent_id_list = []
-    for childlist_idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
-        childlist_item = childlist[childlist_idx]
+def spt_parallel_func2(workload_list, proc_idx, shared_adj_mat, src_list, vertices_num):
+    dist_list = []
+    for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1]):
+        dist = [float("inf")] * vertices_num
+        dist[src_list[idx]] = 0
+        min_dist_set = [False] * vertices_num
+        for count in range(vertices_num):
+            # if proc_idx == 0:
+            #     if count % 10 == 0:
+            #         print("finished:", float(count) * 100.0 / float(vertices_num))
+            # minimum distance vertex that is not processed
+            u = min_distance(vertices_num, dist, min_dist_set)
+            # put minimum distance vertex in shortest tree
+            min_dist_set[u] = True
+            # Update dist value of the adjacent vertices
+            for v in range(vertices_num):
+                if shared_adj_mat[u, v] > 0 and min_dist_set[v] == False and dist[v] > dist[u] + shared_adj_mat[u, v]:
+                    dist[v] = dist[u] + shared_adj_mat[u, v]
+        dist_list.append(dist)
+    return dist_list
+
+
+def belonging_parallel_func(workload_list, proc_idx, spt_list, cluster_num):
+    belonging_list = []
+    belonging_len_list = []
+    for vert_idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
         min_dis = 100000.0
-        parent_id = -1
-        for p in parent_list:
-            list_idx = src_list.index(p)
-            dis = spt_list[list_idx][childlist_item]
+        cluster_idx = -1
+        for i in range(cluster_num):
+            dis = spt_list[i][vert_idx]
             if dis < min_dis:
-                parent_id = p
+                cluster_idx = i
                 min_dis = dis
-        parent_id_list.append(parent_id)
-    return parent_id_list
+        belonging_list.append(cluster_idx)
+        belonging_len_list.append(min_dis)
+    return belonging_list, belonging_len_list
 
 
-class MeshKmeansHelper():
-    def __init__(self, cluster_num, vertices_num, adj_mat):
+class MeshKmeansHelper2():
+    def __init__(self, cluster_num, vertices_num, adj_mat, v_pos):
+        self._kdTree = KDTree(v_pos)
         self._k = cluster_num
         self._vertices_num = vertices_num
         self._adj_mat = adj_mat
@@ -316,38 +357,86 @@ class MeshKmeansHelper():
         # Init relevant lists
         self._spt_list = []
         self._src_list = src_list
-        # Generate spt list
-        res_list = []
-        for i in range(self.k):
-            res_list.append(pool.apply_async(func=spt_parallel_func,
-                                             args=(self._adj_mat, self._src_list, self._vertices_num, i,)))
-        for i in range(self.k):
-            self._spt_list.append(res_list[i].get())
-
-    def generate_belongs(self, child_list, parent_list, pool):
-        belonging = []
-
         # Divide workloads
         cpu_cnt = os.cpu_count()
-        child_list_len = len(child_list)
-        works_per_proc_cnt = child_list_len // cpu_cnt
+        total_works = self.k
+        rest_works = self.k
+        min_works_per_proc_cnt = total_works // cpu_cnt
+        max_works_per_proc_cnt = min_works_per_proc_cnt + 1
+        workloads_list = []
+        proc_list = []
+        for i in range(cpu_cnt):
+            rest_cpu = cpu_cnt - i  # Include itself.
+            first_need_assigned_work = total_works - rest_works
+            if rest_works == min_works_per_proc_cnt * rest_cpu:
+                # Do min works
+                cur_proc_workload = [first_need_assigned_work, first_need_assigned_work + min_works_per_proc_cnt]
+                rest_works -= min_works_per_proc_cnt
+            else:
+                # Do max works
+                cur_proc_workload = [first_need_assigned_work, first_need_assigned_work + max_works_per_proc_cnt]
+                rest_works -= max_works_per_proc_cnt
+            workloads_list.append(cur_proc_workload)
+
+        # Parallel call
+        for t in range(cpu_cnt):
+            proc_list.append(pool.apply_async(func=spt_parallel_func2,
+                                              args=(workloads_list, t, self._adj_mat,
+                                                    self._src_list, self._vertices_num,)))
+        # Get results
+        for t in range(cpu_cnt):
+            self._spt_list.extend(proc_list[t].get())
+
+    def generate_belongs(self, pool):
+        belonging = []
+        belonging_len = []
+        # Divide workloads
+        cpu_cnt = os.cpu_count()
+        works_per_proc_cnt = self._vertices_num // cpu_cnt
         workloads_list = []
         proc_list = []
         for i in range(cpu_cnt):
             cur_proc_workload = [i * works_per_proc_cnt, (i + 1) * works_per_proc_cnt - 1]
             if i == cpu_cnt - 1:
-                cur_proc_workload[1] = child_list_len - 1
+                cur_proc_workload[1] = self._vertices_num - 1
             workloads_list.append(cur_proc_workload)
-
         # Parallel call
         for t in range(cpu_cnt):
-            proc_list.append(pool.apply_async(func=childlist_helper_parallel_func,
-                                              args=(workloads_list, t, child_list, parent_list,
-                                                    self._src_list, self._spt_list,)))
+            proc_list.append(pool.apply_async(func=belonging_parallel_func,
+                                              args=(workloads_list, t, self._spt_list, self._k)))
         # Get results
         for t in range(cpu_cnt):
-            belonging.extend(proc_list[t].get())
-        return belonging
+            local_belonging, local_belonging_len = proc_list[t].get()
+            belonging.extend(local_belonging)
+            belonging_len.extend(local_belonging_len)
+        return belonging, belonging_len
+
+    def update_center(self, parent_list, belong_list, v_pos):
+        center_pos = np.zeros(shape=(self._k, 3), dtype=np.float)
+        cluster_cnt = np.zeros(self._k, dtype=np.int)
+        # Calculate center
+        for i in range(self._vertices_num):
+            cluster_belong = belong_list[i]
+            center_pos[cluster_belong] += v_pos[i]
+            cluster_cnt[cluster_belong] += 1
+        for i in range(self._k):
+            center_pos[i] /= cluster_cnt[i]
+        # Find new center
+        dd, ii = self._kdTree.query(center_pos)
+
+        # Check duplicate cluster center:
+        # https://stackoverflow.com/questions/11528078/determining-duplicate-values-in-an-array
+        tmp = [item for item, count in Counter(ii).items() if count > 1]
+        if len(tmp) != 0:
+            raise Exception("There is a duplicate cluster center.")
+
+        parent_list_new = np.asarray(ii, dtype=np.int)
+        change_amount = 0.0
+        for i in range(self._k):
+            center_old = v_pos[parent_list[i]]
+            center_new = v_pos[parent_list_new[i]]
+            change_amount += LA.norm(center_old - center_new)
+        return parent_list_new, change_amount
 
     def get_dist(self, src_idx, dst_idx):
         list_idx = self._src_list.index(src_idx)
@@ -370,68 +459,42 @@ class MeshKmeansHelper():
         return self._adj_mat
 
 
-def update_centers(mesh, center_pos, parent_list, child_list, belonging):
-    delta_list = []
-    for p in range(len(center_pos)):
-        c_pos = center_pos[p]
-        c_id_list = [i for i, x in enumerate(belonging) if x == parent_list[p]]
-        count = belonging.count(parent_list[p]) + 1
-        sum = c_pos
-        for c in c_id_list:
-            sum = np.add(sum, mesh.vertices[child_list[c], :])
-        sum = sum / (1.0 * count)
-        min_dis = 100000.0
-        new_c = -1
-        for c in child_list:
-            dis = np.linalg.norm(np.subtract(sum, mesh.vertices[c, :]))
-            if dis < min_dis:
-                min_dis = dis
-                new_c = c
-        dis2 = np.linalg.norm(np.subtract(sum, c_pos))
-        if min_dis < dis2:
-            center_pos[p] = mesh.vertices[new_c, :]
-            parent_list[p] = new_c
-        delta = np.linalg.norm(np.subtract(center_pos[p], c_pos))
-        delta_list.append(delta)
-    return center_pos, np.linalg.norm(delta_list), parent_list
+# New algorithm and add in length to their parents
+# Algorithm: https://yfzhong.wordpress.com/2014/11/25/using-k-means-algorithm-for-mesh-and-image-segmentation-matlab/
+# NOTE: This is deprecated. The most expensive part of it is the spt tree construction.
+# It doesn't have a good method to construct 128/256/512 spt tree in cpu in a short time. So, I will just try whether
+# Taichi can give better performance. Besides, cuGraph maybe also a good place to try.
+def K_means_multiprocess2(mesh, k):
+    if k > mesh.num_vertices:
+        raise Exception("k should be less than mesh's vertices num.")
 
+    if k < os.cpu_count():
+        raise Exception("Currently it doesn't support clusters num less than cpu cores num.")
 
-def get_mesh_map(mesh):
-    map = lil_matrix((mesh.num_vertices, mesh.num_vertices), dtype=float)
-    mesh.enable_connectivity()
-    for p in range(mesh.num_vertices):
-        adj_v = mesh.get_vertex_adjacent_vertices(p)
-        for j in range(adj_v.shape[0]):
-            n1 = p
-            n2 = adj_v[j]
-            p1 = mesh.vertices[n1]
-            p2 = mesh.vertices[n2]
-            dp = LA.norm(p1 - p2)
-            map[n1, n2] = map[n2, n1] = dp
-    return map
+    # Two adjustable parameters to control the convergence:
+    max_itr = 10
+    convergence_rate = 0.9
+    bbox_diag_len = LA.norm(mesh.bbox[0] - mesh.bbox[1])
 
-
-def K_means_multiprocess(mesh, k):
-    center_pos = []
     whole_list = [n for n in range(0, mesh.num_vertices)]
     parent_list = [i for i in range(0, mesh.num_vertices, (mesh.num_vertices // k) + 1)]
-    child_list = [x for x in whole_list if x not in parent_list]
-    for p in parent_list:
-        center_pos.append(mesh.vertices[p, :])
-    norm_d = 10000.0
+    belonging = np.arange(mesh.num_vertices, dtype=np.int)
     pool = mp.Pool()
 
-    cluster_helper = MeshKmeansHelper(k, mesh.num_vertices, get_mesh_map(mesh))
+    kmeans_helper = MeshKmeansHelper2(k, mesh.num_vertices, get_mesh_map(mesh), mesh.vertices)
 
-    while norm_d > 1.0:
-        cluster_helper.generate_spt_list(parent_list, pool)
-        belonging = cluster_helper.generate_belongs(child_list, parent_list, pool)
-        center_pos, norm_d, parent_list = update_centers(mesh, center_pos, parent_list, child_list, belonging)
-        child_list = [x for x in whole_list if x not in parent_list]  # update child
+    for itr in range(max_itr):
+        # assignment each point to its nearest center
+        kmeans_helper.generate_spt_list(parent_list, pool)
+        belonging, belonging_len = kmeans_helper.generate_belongs(pool)
+        # recalculate the center for each cluster
+        parent_list_last = parent_list
+        parent_list, change_amount = kmeans_helper.update_center(parent_list, belonging, mesh.vertices)
+        print("Total center pos change amount (Less is better):", change_amount)
+        if (1.0 - convergence_rate) * bbox_diag_len > change_amount:
+            break
 
-    cluster_helper.generate_spt_list(parent_list, pool)
-    belonging = cluster_helper.generate_belongs(child_list, parent_list, pool)
     pool.close()
     pool.join()
 
-    return center_pos, child_list, parent_list, belonging
+    return parent_list_last, belonging, belonging_len

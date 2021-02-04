@@ -1,16 +1,10 @@
-# TODO:
-# 1. A matrix complication time improvement. It requires to use field to replace matrix. However, it would loss some
-# handy funcs like transpose, product, etc.
-# 2. SVD change
-# 3. Speed optimization: Dragon and bunny are to slow
-# 4. High resolution model problems: High resolution Dragon model will break this simulator
 import os
 import sys
 import numpy as np
 import taichi as ti
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
-from Utils.utils_visualization import draw_image, get_force_field, update_boundary_mesh, get_ring_force_field, get_ring_circle_force_field
+from Utils.utils_visualization import draw_image, get_acc_field, output_3d_seq, update_boundary_mesh, get_ring_acc_field, get_ring_circle_acc_field, get_point_acc_field, get_point_acc_field_by_point
 from scipy import sparse
 from scipy.sparse.linalg import factorized
 from Utils.math_tools import svd, my_svd
@@ -18,7 +12,7 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1007
+test_case = 1009
 case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -31,6 +25,7 @@ if dim == 3:
 # cpu 1.27 -- 1003,
 ti.init(arch=ti.gpu, default_fp=ti.f64, debug=True)
 n_vertices = mesh.num_vertices
+_, _, boundary_triangles = case_info['boundary']
 
 # 2D and 3D scene settings:
 if dim == 2:
@@ -45,20 +40,22 @@ else:
     boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
 
 # Material settings:
-rho = 100
-E, nu = 1e4, 0.4  # Young's modulus and Poisson's ratio
+rho = 1e4
+E, nu = 3e4, 0.4  # Young's modulus and Poisson's ratio
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
+
+# add damping
+damping_coeff = 0.0
 
 # Solver settings:
 m_weight_positional = 1e20
 dt = 0.01
 # Backup settings:
-# Bar: 10
-# Bunny: 50
-solver_max_iteration = 20
-solver_stop_residual = 0.0005
-# external force -- counter-clock wise
-ti_ex_force = ti.Vector.field(dim, real, n_vertices)
+# Bar: 10  Bunny: 50
+solver_max_iteration = 1
+solver_stop_residual = 0.01
+# external acceleration -- counter-clock wise
+ti_ex_acc = ti.Vector.field(dim, real, n_vertices)
 
 # Taichi variables' initialization:
 ti_mass = ti.field(real, n_vertices)
@@ -68,7 +65,11 @@ ti_pos_new = ti.Vector.field(dim, real, n_vertices)
 ti_pos_init = ti.Vector.field(dim, real, n_vertices)
 ti_last_pos_new = ti.Vector.field(dim, real, n_vertices)
 ti_boundary_labels = ti.field(int, n_vertices)
+
 ti_vel = ti.Vector.field(dim, real, n_vertices)
+ti_vel_last = ti.Vector.field(dim, real, n_vertices)
+ti_vel_del = ti.Vector.field(dim, real, n_vertices)
+
 ti_elements = ti.Vector.field(dim + 1, int, n_elements)  # ids of three vertices of each face
 ti_Dm_inv = ti.Matrix.field(dim, dim, real, n_elements)  # The inverse of the init elements -- Dm
 ti_F = ti.Matrix.field(dim, dim, real, n_elements)
@@ -98,7 +99,11 @@ def init():
     ti_pos_new.fill(0)
     ti_last_pos_new.fill(0)
     ti_boundary_labels.fill(0)
+
     ti_vel.fill(0)
+    ti_vel_del.fill(0)
+    ti_vel_last.fill(0)
+
     ti_Dm_inv.fill(0)
     ti_F.fill(0)
     ti_A.fill(0)
@@ -109,32 +114,30 @@ def init():
     ti_phi.fill(0)
     ti_weight_strain.fill(0)
     ti_weight_volume.fill(0)
-    ti_ex_force.fill(0)
+    ti_ex_acc.fill(0)
+
+
+@ti.kernel
+def set_point_acc_by_point_3D(pf_ind: ti.i32, pf_radius: ti.f64, x: ti.f32, y: ti.f32, z: ti.f32):   # set only one time
+    for i in range(n_vertices):  # t_pos, pos, radius, acc
+        ti_ex_acc[i] = get_point_acc_field_by_point(ti_pos_init[pf_ind], ti_pos_init[i], pf_radius, ti.Vector([x,y,z]))
 
 
 # Backup Settings:
-# Bunny: ti.Vector([0.0, 0.0, 0.1])
-# Dragon:
-# Dinosaur:
 @ti.kernel
-def set_exforce():
+def set_exacc():
     if ti.static(dim == 2):
         for i in range(n_vertices):
-            ti_ex_force[i] = ti.Vector(get_force_field(6, -45.0))
+            ti_ex_acc[i] = ti.Vector(get_acc_field(6, -45.0))
     else:
         for i in range(n_vertices):
-            ti_ex_force[i] = ti.Vector(get_force_field(0.1, 45.0, 45.0, 3))
+            ti_ex_acc[i] = ti.Vector([0.1, 0.1, 0.1])
 
-
-# @ti.kernel
-# def set_ring_force_3D():
-#     for i in range(n_vertices):
-#         ti_ex_force[i] = get_ring_circle_force_field(0.4, 0.3, ti_center, ti_pos[i], 0.0, 0.2*min_sphere_radius, 3)
 
 @ti.kernel
-def set_ring_force_3D():
+def set_ring_acc_3D():
     for i in range(n_vertices):
-        ti_ex_force[i] = get_ring_force_field(0.04, 10.0, ti_center, ti_pos[i], 0.0, 3)
+        ti_ex_acc[i] = get_ring_acc_field(0.04, 10.0, ti_center, ti_pos[i], 0.0, 3)
 
 
 @ti.func
@@ -384,6 +387,7 @@ def precomputation(lhs_mat_row: ti.ext_arr(), lhs_mat_col: ti.ext_arr(), lhs_mat
         local_offset_idx = 0
         for d in range(dim):
             cur_sparse_val = 0.0
+            # cur_sparse_val += (-damping_coeff * vel[i, d] / dt) + (ti_mass[i] / (dt * dt))
             cur_sparse_val += (ti_mass[i] / (dt * dt))
             if ti_boundary_labels[i] == 1:
                 cur_sparse_val += m_weight_positional
@@ -393,7 +397,6 @@ def precomputation(lhs_mat_row: ti.ext_arr(), lhs_mat_col: ti.ext_arr(), lhs_mat
             lhs_mat_col[cur_idx] = lhs_col_idx
             lhs_mat_val[cur_idx] = cur_sparse_val
             local_offset_idx += 1
-
 
 
 @ti.func
@@ -423,21 +426,31 @@ def compute_volume_constraint(sigma):
             sigma_star_22_k = D2_kplus1 + sigma[1, 1]
         return ti.Matrix.rows([[sigma_star_11_k, 0.0], [0.0, sigma_star_22_k]])
     else:
-        sigma_star_11_k, sigma_star_22_k, sigma_star_33_k = 1.0, 1.0, 1.0
-        for itr in ti.static(range(10)):
-            D_k = ti.Vector([sigma_star_11_k - sigma[0, 0],
-                             sigma_star_22_k - sigma[1, 1],
-                             sigma_star_33_k - sigma[2, 2]])
-            C_D_k = sigma_star_11_k * sigma_star_22_k * sigma_star_33_k - 1.0
-            grad_C_D_k = ti.Vector([sigma_star_22_k * sigma_star_33_k,
-                                    sigma_star_11_k * sigma_star_33_k,
-                                    sigma_star_11_k * sigma_star_22_k])
-            first_term = (grad_C_D_k.dot(D_k) - C_D_k) / (grad_C_D_k.norm() ** 2)
-            D_kplus1 = first_term * D_k
-            sigma_star_11_k = D_kplus1[0] + sigma[0, 0]
-            sigma_star_22_k = D_kplus1[1] + sigma[1, 1]
-            sigma_star_33_k = D_kplus1[2] + sigma[2, 2]
-        return ti.Matrix.rows([[sigma_star_11_k, 0.0, 0.0], [0.0, sigma_star_22_k, 0.0], [0.0, 0.0, sigma_star_33_k]])
+        tol = 0.00001
+        max_it = 2
+        s1, s2, s3 = sigma[0, 0], sigma[1, 1], sigma[2, 2]
+        x = 1.0 - s1
+        y = 1.0 - s2
+        z = 1.0 - s3
+        for itr in range(max_it):
+            a, b, c = x + s1, y + s2, z + s3
+            f = a * b * c - 1.0
+            g1, g2, g3 = b * c, a * c, a * b
+            bot = g1 * g1 + g2 * g2 + g3 * g3
+            if ti.abs(bot) < tol:
+                break
+            top = x * g1 + y * g2 + z * g3 - f
+            div = top / bot
+            x0, y0, z0 = x, y, z
+            x = div * g1
+            y = div * g2
+            z = div * g3
+            dx = x - x0
+            dy = y - y0
+            dz = z - z0
+            if dx * dx + dy * dy + dz * dz < tol * tol:
+                break
+        return ti.Matrix.rows([[x + s1, 0.0, 0.0], [0.0, y + s2, 0.0], [0.0, 0.0, z + s3]])
 
 
 # NOTE: This function doesn't build all constraints
@@ -472,16 +485,16 @@ def local_solve_build_bp_for_all_constraints():
 
 @ti.kernel
 def build_sn():
-    for vert_idx in range(n_vertices):  # number of vertices
-        Sn_idx1 = vert_idx*dim
-        Sn_idx2 = vert_idx*dim+1
-        pos_i = ti_pos[vert_idx]
-        vel_i = ti_vel[vert_idx]
-        ti_Sn[Sn_idx1] = pos_i[0] + dt * vel_i[0] + (dt ** 2) * ti_ex_force[vert_idx][0] / ti_mass[vert_idx]  # x-direction;
-        ti_Sn[Sn_idx2] = pos_i[1] + dt * vel_i[1] + (dt ** 2) * ti_ex_force[vert_idx][1] / ti_mass[vert_idx]  # y-direction;
+    for v_id in range(n_vertices):  # number of vertices
+        Sn_idx1 = v_id*dim
+        Sn_idx2 = v_id*dim+1
+        pos_i = ti_pos[v_id]
+        vel_i = ti_vel[v_id]
+        ti_Sn[Sn_idx1] = pos_i[0] + dt * vel_i[0]+(dt**2)*(ti_ex_acc[v_id][0]-ti_vel[v_id][0]*damping_coeff/ti_mass[v_id])
+        ti_Sn[Sn_idx2] = pos_i[1] + dt * vel_i[1]+(dt**2)*(ti_ex_acc[v_id][1]-ti_vel[v_id][1]*damping_coeff/ti_mass[v_id])
         if ti.static(dim == 3):
-            Sn_idx3 = vert_idx * dim + 2
-            ti_Sn[Sn_idx3] = pos_i[2] + dt * vel_i[2] + (dt ** 2) * ti_ex_force[vert_idx][2] / ti_mass[vert_idx]
+            Sn_idx3 = v_id * dim + 2
+            ti_Sn[Sn_idx3] = pos_i[2]+dt*vel_i[2]+(dt**2)*(ti_ex_acc[v_id][2]-ti_vel[v_id][2]*damping_coeff/ti_mass[v_id])
 
 
 @ti.func
@@ -499,11 +512,11 @@ def Build_Bp_i_vec(idx):
 
 
 @ti.kernel
-def build_rhs(rhs: ti.ext_arr()):
+def build_rhs(rhs: ti.ext_arr()): # dp_pos: ti.ext_arr(), dp_vel: ti.ext_arr()):
     one_over_dt2 = 1.0 / (dt ** 2)
     # Construct the first part of the rhs
     for i in range(n_vertices * dim):
-        rhs[i] = one_over_dt2 * ti_mass[i // dim] * ti_Sn[i]
+        rhs[i] = one_over_dt2 * ti_mass[i // dim] * ti_Sn[i]  # + (damping_coeff * dp_vel[i//dim, i%dim] / dt * dp_pos[i//dim, i%dim])
     # Add strain and volume/area constraints to the rhs
     for t in ti.static(range(2)):
         for ele_idx in range(n_elements):
@@ -581,8 +594,11 @@ def build_rhs(rhs: ti.ext_arr()):
 @ti.kernel
 def update_velocity_pos():
     for i in range(n_vertices):
-        ti_vel[i] = (ti_pos_new[i] - ti_pos[i]) / dt
-        ti_pos[i] = ti_pos_new[i]
+        ti_vel[i] = (ti_pos_new[i] - ti_pos[i]) / dt    # vel
+        ti_vel_del[i] = ti_vel[i] - ti_vel_last[i]
+        # if i % 400 == 0:
+        #     print("ti.vel_del: ", ti_vel_del[i], "ti.vel: ", ti_vel[i], "ti.last vel: ", ti_vel_last[i])
+        ti_pos[i] = ti_pos_new[i]   # pos
 
 
 @ti.kernel
@@ -615,6 +631,20 @@ def check_residual() -> ti.f32:
         ti_last_pos_new[i] = ti_pos_new[i]
     # print("residual:", residual)
     return residual
+
+
+@ti.kernel
+def check_acceleration_status() -> ti.i32:
+    # residual = 0.0
+    times = 0
+    for i in range(n_vertices):
+        # residual += (ti_vel_del[i]/dt).norm()
+        if (ti_vel_del[i]/dt).norm() < 0.001:
+            times = times + 1
+        ti_vel_last[i] = ti_vel[i]
+    # residual /= (1.0 * n_vertices)
+    # print("acceleration : ", residual, ", times: ",  times)
+    return times
 
 
 @ti.kernel
@@ -691,13 +721,20 @@ def compute_local_step_energy():
     return (local_T1_energy + local_T2_energy)
 
 
+def output_aux_data(f):
+    if dim == 3:
+        name_pd = "../../SimData/PDAnimSeq/PD_pbpF_" + case_info['case_name'] + "_" + str(solver_stop_residual) + \
+                  "_" + str(4.6) + "_" + str(0.1) + "_" + str(f).zfill(6) + ".obj"
+        output_3d_seq(ti_pos.to_numpy(), boundary_triangles, name_pd)
+
+
 if __name__ == "__main__":
     os.makedirs("results", exist_ok=True)
     for root, dirs, files in os.walk("results/"):
         for name in files:
             os.remove(os.path.join(root, name))
 
-    # video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
+    video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
     frame_counter = 0
     rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
     lhs_mat_val = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
@@ -706,8 +743,8 @@ if __name__ == "__main__":
 
     init()
 
-    # One direction force field
-    # set_exforce()
+    # One direction acc field
+    set_exacc()
     init_mesh_DmInv(dirichlet, len(dirichlet))
     precomputation(lhs_mat_row, lhs_mat_col, lhs_mat_val)
     s_lhs_matrix_np = sparse.csr_matrix((lhs_mat_val, (lhs_mat_row, lhs_mat_col)),
@@ -715,7 +752,10 @@ if __name__ == "__main__":
                                         dtype=np.float64)
     pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
-    wait = input("PRESS ENTER TO CONTINUE.")
+    # wait = input("PRESS ENTER TO CONTINUE.")
+
+    # mag = 16.0
+    # set_point_acc_by_point_3D(1, 0.1, mag*-1.0, mag*0.0, mag*0.0)
 
     if dim == 2:
         gui = ti.GUI('PN Standalone', background_color=0xf7f7f7)
@@ -735,14 +775,15 @@ if __name__ == "__main__":
     sim_t = 0.0
     plot_array = []
 
-    while frame_counter < 1000:
-        set_ring_force_3D()
+    while True:
+        # set_ring_acc_3D()
         build_sn()
         # Warm up:
         warm_up()
         print("Frame ", frame_counter)
         # last_record_energy = 1000000.0
         for itr in range(solver_max_iteration):
+            # while True:
             local_solve_build_bp_for_all_constraints()
             build_rhs(rhs_np)
 
@@ -773,6 +814,8 @@ if __name__ == "__main__":
 
         # Update velocity and positions
         update_velocity_pos()
+        output_aux_data(frame_counter)
+
         frame_counter += 1
         filename = f'./results/frame_{frame_counter:05d}.png'
         if dim == 2:
@@ -783,6 +826,11 @@ if __name__ == "__main__":
             tina_mesh.set_face_verts(boundary_pos)
             scene.render()
             gui.set_image(scene.img)
+            video_manager.write_frame(gui.get_image())
             gui.show()
 
-# video_manager.make_video(gif=True, mp4=True)
+        # if check_acceleration_status() > 800 and frame_counter > 500:
+        if frame_counter > 500:
+            break
+
+    video_manager.make_video(gif=True, mp4=True)

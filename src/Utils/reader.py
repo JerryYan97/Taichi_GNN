@@ -2,9 +2,10 @@ import pymesh
 import numpy as np
 import sys
 import os
+from numpy import linalg as LA
 
 from .graph_tools import find_boundary
-from .utils_visualization import rotate_matrix_y_axis
+from .utils_visualization import rotate_matrix_y_axis, rotate_general
 
 
 def fixed_bottom_vert_mp():
@@ -96,6 +97,10 @@ def read(testcase):
         case_info['transformation_mat'] = translate([0.0, -1.0, -5.0]) @ rotate_matrix_y_axis(-45.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
+
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
         return case_info
     elif testcase == 1002:
         from tina import translate, scale
@@ -118,6 +123,7 @@ def read(testcase):
         case_info['init_translate'] = [0.0, 0.0, 0.0]
         case_info['init_scale'] = 1.0
         case_info['transformation_mat'] = translate([0.0, 0.0, 0.0]) @ rotate_matrix_y_axis(45.0) @ scale(1.0)
+
         return case_info
     elif testcase == 1003:
         from tina import translate, scale
@@ -151,6 +157,9 @@ def read(testcase):
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
         return case_info
     elif testcase == 1004:
         from tina import translate, scale
@@ -177,6 +186,9 @@ def read(testcase):
         case_info['transformation_mat'] = translate([-0.3, -0.5, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
+
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
 
         return case_info
     elif testcase == 1005:
@@ -209,15 +221,17 @@ def read(testcase):
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
         return case_info
     elif testcase == 1006:
         from tina import translate, scale
         # Dinosaur with bottom fixed
-        mesh = pymesh.load_mesh(
-            os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/dinosaurlow_16767v_68435t.msh")
+        mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/dinosaurlow_16767v_68435t.msh")
         dirichlet_list = []
         for i in range(mesh.num_vertices):
-            if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.01:
+            if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.01 and mesh.vertices[i][0] <= mesh.bbox[0][0] + 0.5:
                 dirichlet_list.append(i)
 
         dirichlet = np.array(dirichlet_list)
@@ -228,6 +242,14 @@ def read(testcase):
         center = (mesh.bbox[0] + mesh.bbox[1]) / 2.0
         tmp = mesh.bbox[1] - mesh.bbox[0]
         min_sphere_radius = np.linalg.norm(np.array([tmp[0], tmp[1], tmp[2]])) / 2.0
+
+        for i in range(mesh.num_vertices):
+            # if LA.norm(center - mesh.vertices[i]) < min_sphere_radius * 0.3 :
+            if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.01 and mesh.vertices[i][0] <= mesh.bbox[0][0] + 0.5:
+                dirichlet_list.append(i)
+        dirichlet = np.array(dirichlet_list)
+        print("tmp: ", tmp)
+        print("min sphere: ", min_sphere_radius)
 
         case_info['case_name'] = "dinosaur"
         case_info['mesh'] = mesh
@@ -241,10 +263,13 @@ def read(testcase):
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
         return case_info
     elif testcase == 1007:
         from tina import translate, scale
-        # Dinosaur with bottom fixed
+        # ARM with bottom fixed
         mesh = pymesh.load_mesh(
             os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/armadillolow_17698v_72161t.msh")
         dirichlet_list = []
@@ -272,6 +297,82 @@ def read(testcase):
         case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
+
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
+        return case_info
+    elif testcase == 1008:
+        from tina import translate, scale
+        # Fox with bottom fixed
+        mesh = pymesh.load_mesh(
+            os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/trans_fox_2036v_7037t.msh")
+        dirichlet_list = []
+        for i in range(mesh.num_vertices):
+            if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.01:
+                dirichlet_list.append(i)
+
+        dirichlet = np.array(dirichlet_list)
+        mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
+        mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
+
+        print("mesh elements:", mesh.elements)
+        center = (mesh.bbox[0] + mesh.bbox[1]) / 2.0
+        tmp = mesh.bbox[1] - mesh.bbox[0]
+        min_sphere_radius = np.linalg.norm(np.array([tmp[0], tmp[1], tmp[2]])) / 2.0
+
+        case_info['case_name'] = "fox"
+        case_info['mesh'] = mesh
+        case_info['dim'] = 3
+        case_info['dirichlet'] = dirichlet
+        case_info['mesh_scale'] = mesh_scale
+        case_info['mesh_offset'] = mesh_offset
+        case_info['boundary'] = find_boundary(mesh.elements)
+        case_info['boundary_tri_num'] = len(case_info['boundary'][2])
+        # case_info['transformation_mat'] = translate([0.0, 0.0, -5.0]) @ rotate_matrix_y_axis(0.0) @ scale(0.1)
+        case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
+        case_info['center'] = center
+        case_info['min_sphere_radius'] = min_sphere_radius
+
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
+        return case_info
+    elif testcase == 1009:
+        from tina import translate, scale
+        # Low low poly ARM Model
+        mesh = pymesh.load_mesh(
+            os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/Arm_low2_4713v_17920t.msh")
+        dirichlet_list = []
+        for i in range(mesh.num_vertices):
+            if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.01:
+                dirichlet_list.append(i)
+
+        dirichlet = np.array(dirichlet_list)
+        mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
+        mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
+
+        print("mesh elements:", mesh.elements)
+        center = (mesh.bbox[0] + mesh.bbox[1]) / 2.0
+        tmp = mesh.bbox[1] - mesh.bbox[0]
+        min_sphere_radius = np.linalg.norm(np.array([tmp[0], tmp[1], tmp[2]])) / 2.0
+
+        case_info['case_name'] = "LowPolyArm"
+        case_info['mesh'] = mesh
+        case_info['dim'] = 3
+        case_info['dirichlet'] = dirichlet
+        case_info['mesh_scale'] = mesh_scale
+        case_info['mesh_offset'] = mesh_offset
+        case_info['boundary'] = find_boundary(mesh.elements)
+        case_info['boundary_tri_num'] = len(case_info['boundary'][2])
+        # case_info['transformation_mat'] = translate([0.0, 0.0, -5.0]) @ rotate_matrix_y_axis(0.0) @ scale(0.1)
+        case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
+        case_info['center'] = center
+        case_info['min_sphere_radius'] = min_sphere_radius
+
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+
         return case_info
     else:
         raise Exception("Invalid testcase selection.")
@@ -303,7 +404,6 @@ def deleteDuplicatedElementFromList(list):
             lastItem = currentItem
     return list
 
-# mesh, _, _, _ = read(1)
 
 def get_edge_list(mesh):
     edge_list = getM(mesh)
@@ -311,6 +411,11 @@ def get_edge_list(mesh):
     edge_list = deleteDuplicatedElementFromList(edge_list)
     print("hgjh")
     return edge_list
+
+
+def read_an_obj(file_name_path):
+    mesh = pymesh.load_mesh(file_name_path)
+    return mesh.vertices
 
 
 # bad_vertex = np.logical_not(np.all(np.isfinite(mesh.vertices), axis=1))
