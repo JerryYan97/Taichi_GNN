@@ -131,9 +131,6 @@ class PNSimulation(SimulatorBase):
             for i in range(self.n_vertices):
                 self.ti_x_n[i] = self.ti_x[i]
                 self.ti_x_tilde[i] = self.ti_x[i] + self.dt * self.ti_vel[i]
-                # self.ti_x_tilde(0)[i] += self.dt * self.dt * (self.ti_ex_acc[i][0] / self.ti_mass[i])
-                # self.ti_x_tilde(1)[i] += self.dt * self.dt * (self.ti_ex_acc[i][1] / self.ti_mass[i])
-                # self.ti_x_tilde(2)[i] += self.dt * self.dt * (self.ti_ex_acc[i][2] / self.ti_mass[i])
                 self.ti_x_tilde(0)[i] += self.dt*self.dt*(self.ti_ex_acc[i][0])-\
                                          self.dt*self.dt*(self.damping_coeff*self.ti_vel[i][0]/self.ti_mass[i])
                 self.ti_x_tilde(1)[i] += self.dt*self.dt*(self.ti_ex_acc[i][1])-\
