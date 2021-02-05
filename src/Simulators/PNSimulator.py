@@ -440,10 +440,9 @@ class PNSimulation(SimulatorBase):
     def output_residual2(self, data_sol: ti.ext_arr()) -> ti.f64:
         residual = 0.0
         for i in range(self.n_vertices):
-            res = 0.0
             for d in ti.static(range(self.dim)):
-                res += data_sol[i * self.dim + d] * data_sol[i * self.dim + d]
-            residual += ti.sqrt(res)
+                residual += data_sol[i * self.dim + d] * data_sol[i * self.dim + d]
+        residual += ti.sqrt(residual)
         return residual
 
     @ti.kernel
@@ -487,14 +486,15 @@ class PNSimulation(SimulatorBase):
 
         # self.update_acc_field()
         self.compute_xn_and_xTilde()
+        Eprev = self.compute_energy()
+        self.save_xPrev()
         while True:
             self.data_mat.fill(0)
             self.data_rhs.fill(0)
             self.data_sol.fill(0)
-            # compute_hessian_grad_t_start = time.time()
+            self.ti_intermediate_field.fill(0)
+            self.ti_M_field.fill(0)
             self.compute_hessian_and_gradient(self.data_mat, self.data_rhs)
-            # compute_hessian_grad_t_end = time.time()
-            # solve_t_start = time.time()
             if self.dim == 2:
                 self.data_sol = solve_linear_system(self.data_mat, self.data_rhs, self.n_vertices * self.dim,
                                                     self.dirichlet, self.zero.to_numpy(),
@@ -503,19 +503,57 @@ class PNSimulation(SimulatorBase):
                 self.data_sol = solve_linear_system3(self.data_mat, self.data_rhs,
                                                      self.n_vertices * self.dim, self.dirichlet,
                                                      self.zero.to_numpy(), False, 0, self.cnt[None])
-            # solve_t_end = time.time()
-            # print("compute mat time:", compute_hessian_grad_t_end - compute_hessian_grad_t_start)
-            # print("solve time:", solve_t_end - solve_t_start)
-            if self.output_residual2(self.data_sol) < 1e-4:
-                break
-            E0 = self.compute_energy()
-            self.save_xPrev()
             alpha = 1.0
-            self.apply_sol(alpha, self.data_sol)
-            E = self.compute_energy()
-            while E > E0:
-                alpha *= 0.5
+            while True:
                 self.apply_sol(alpha, self.data_sol)
+                step_vec = alpha * self.data_sol
+                alpha *= 0.5
                 E = self.compute_energy()
+                if E <= Eprev:
+                    break
+            Eprev = E
+            self.save_xPrev()
+            if self.output_residual2(step_vec) < 1e-4:
+                break
         self.compute_v()
         return self.del_p, self.ti_x, self.ti_vel
+
+    # def data_one_frame(self, input_x, input_v):
+    #     self.copy(input_x, self.ti_x)
+    #     self.copy(input_v, self.ti_vel)
+    #     self.copy(input_v, self.ti_vel_last)
+    #
+    #     # self.update_acc_field()
+    #     self.compute_xn_and_xTilde()
+    #     while True:
+    #         self.data_mat.fill(0)
+    #         self.data_rhs.fill(0)
+    #         self.data_sol.fill(0)
+    #         # compute_hessian_grad_t_start = time.time()
+    #         self.compute_hessian_and_gradient(self.data_mat, self.data_rhs)
+    #         # compute_hessian_grad_t_end = time.time()
+    #         # solve_t_start = time.time()
+    #         if self.dim == 2:
+    #             self.data_sol = solve_linear_system(self.data_mat, self.data_rhs, self.n_vertices * self.dim,
+    #                                                 self.dirichlet, self.zero.to_numpy(),
+    #                                                 False, 0, self.cnt[None])
+    #         else:
+    #             self.data_sol = solve_linear_system3(self.data_mat, self.data_rhs,
+    #                                                  self.n_vertices * self.dim, self.dirichlet,
+    #                                                  self.zero.to_numpy(), False, 0, self.cnt[None])
+    #         # solve_t_end = time.time()
+    #         # print("compute mat time:", compute_hessian_grad_t_end - compute_hessian_grad_t_start)
+    #         # print("solve time:", solve_t_end - solve_t_start)
+    #         if self.output_residual2(self.data_sol) < 1e-4:
+    #             break
+    #         E0 = self.compute_energy()
+    #         self.save_xPrev()
+    #         alpha = 1.0
+    #         self.apply_sol(alpha, self.data_sol)
+    #         E = self.compute_energy()
+    #         while E > E0:
+    #             alpha *= 0.5
+    #             self.apply_sol(alpha, self.data_sol)
+    #             E = self.compute_energy()
+    #     self.compute_v()
+    #     return self.del_p, self.ti_x, self.ti_vel

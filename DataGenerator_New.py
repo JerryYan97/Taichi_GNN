@@ -8,7 +8,7 @@ import numpy as np
 ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 rho = 1e4
 E = 5e4
-nu = 0.1
+nu = 0.4
 dt = 0.01
 test_case = 1003
 
@@ -62,7 +62,7 @@ if __name__ == '__main__':
     pd.set_material(rho, E, nu)
     pn.set_material(rho, E, nu)
 
-    for i in range(10):
+    for i in range(1):
         choose_p = boundary_points[10]
         pd.initial()
         pn.initial()
@@ -75,11 +75,15 @@ if __name__ == '__main__':
             acc_info['exf_mag'] = 6
         else:
             # 3D point acc field setting
-            acc_info['acc_type'] = 'point_by_point'
-            acc_info['point_ind'] = choose_p
-            acc_info['f'] = np.array([-1.0, 0.0, 0.0])
-            acc_info['p_mag'] = 9.8
-            acc_info['p_radius'] = 0.1
+            # acc_info['acc_type'] = 'point_by_point'
+            # acc_info['point_ind'] = choose_p
+            # acc_info['f'] = np.array([-1.0, 0.0, 0.0])
+            # acc_info['p_mag'] = 19.8
+            # acc_info['p_radius'] = 0.5
+            acc_info['acc_type'] = 'dir'
+            acc_info['exf_angle1'] = 90.0
+            acc_info['exf_angle2'] = 90.0
+            acc_info['exf_mag'] = -9.8
 
         pd.set_acc(acc_info)
         pn.set_acc(acc_info)

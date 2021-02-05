@@ -96,7 +96,7 @@ class PDSimulation(SimulatorBase):
         # Material and Parameters
         self.m_weight_positional = 1e20
         self.solver_max_iteration = 10
-        self.solver_stop_residual = 0.1
+        self.solver_stop_residual = 1.0
         self.stop_acceleration = 0.04
 
         self.damping_coeff = 0.0
@@ -1036,7 +1036,7 @@ class PDSimulation(SimulatorBase):
             self.output_aux_data(frame_counter, _pn_pos)
 
             # set stop check
-            if self.check_acceleration_status_times() > 800 and frame_counter > 50:
+            if self.check_acceleration_status_times() > 800 and frame_counter > 200:
                 break
 
 

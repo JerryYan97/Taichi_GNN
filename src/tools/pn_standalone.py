@@ -12,7 +12,7 @@ from Utils.math_tools import svd, my_svd
 from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3d_seq, get_acc_field, get_ring_acc_field, get_point_acc_field_by_point
 
 ##############################################################################
-case_info = read(1009)
+case_info = read(1007)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
@@ -103,7 +103,8 @@ def set_dir_acc_3D():
     else:
         # exf_mag = 0.0002 # 1001: 6   1003 and 1004: 0.06  1005: 0.0002
         for i in range(n_particles):
-            ex_acc[i] = ti.Vector(get_acc_field(2.0, 45.0, 45.0, 3))
+            # ex_acc[i] = ti.Vector(get_acc_field(2.0, 45.0, 45.0, 3))
+            ex_acc[i] = ti.Vector([9.8, 9.8, 9.8])
 
 
 @ti.kernel
@@ -383,11 +384,10 @@ def output_residual(data_sol: ti.ext_arr()) -> real:
 def output_residual2(data_sol: ti.ext_arr()) -> real:
     residual = 0.0
     for i in range(n_particles):
-        res = 0.0
         for d in ti.static(range(dim)):
-            res += data_sol[i * dim + d] * data_sol[i * dim + d]
-        residual += ti.sqrt(res)
-    print("Search Direction Residual : ", residual / dt)
+            residual += data_sol[i * dim + d] * data_sol[i * dim + d]
+    residual = ti.sqrt(residual)
+    print("Search Direction Residual : ", residual)
     return residual
 
 
@@ -432,10 +432,13 @@ if __name__ == "__main__":
     # Before optimization: 73.18037104606628 s
     # After unrolling optimization: 2.7542989253997803 s -  0.002396106719970703 s
     set_dir_acc_3D()
+
+    # New structure to make residual calculation same as PD
     for f_cnt in range(100):
-        # set_ring_acc_3D()
         print("==================== Frame: ", frame_counter, " ====================")
         compute_xn_and_xTilde()
+        Eprev = compute_energy()
+        save_xPrev()
         while True:
             data_rhs.fill(0)
             data_mat.fill(0)
@@ -443,7 +446,6 @@ if __name__ == "__main__":
             ti_intermediate_field.fill(0)
             ti_M_field.fill(0)
             compute_hessian_and_gradient(data_mat, data_rhs)
-
             if dim == 2:
                 data_sol = solve_linear_system(data_mat, data_rhs, n_particles * dim,
                                                np.array(dirichlet), zero.to_numpy(),
@@ -452,19 +454,18 @@ if __name__ == "__main__":
                 data_sol = solve_linear_system3(data_mat, data_rhs, n_particles * dim,
                                                 np.array(dirichlet), zero.to_numpy(),
                                                 False, 0, cnt[None])
-
-            if output_residual(data_sol) < 1e-4:
-                break
-
-            E0 = compute_energy()
-            save_xPrev()
             alpha = 1.0
-            apply_sol(alpha, data_sol)
-            E = compute_energy()
-            while E > E0:
-                alpha *= 0.5
+            while True:
                 apply_sol(alpha, data_sol)
+                step_vec = alpha * data_sol
+                alpha *= 0.5
                 E = compute_energy()
+                if E <= Eprev:
+                    break
+            Eprev = E
+            save_xPrev()
+            if output_residual2(step_vec) < 1e-4:
+                break
 
         compute_v()
         output_aux_data(frame_counter)

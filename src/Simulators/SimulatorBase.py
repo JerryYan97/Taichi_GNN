@@ -129,6 +129,7 @@ class SimulatorBase(ABC):
                 self.exf_angle2 = acc_info['exf_angle2']
                 self.exf_mag = acc_info['exf_mag']
                 dir_acc = ti.Vector(get_acc_field(self.exf_mag, self.exf_angle1, self.exf_angle2, 3))
+                print(dir_acc)
             self.set_dir_acc(dir_acc)
         elif acc_info['acc_type'] == 'ring':
             if acc_info['dim'] == 2:
