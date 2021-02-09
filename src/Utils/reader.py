@@ -194,7 +194,7 @@ def read(testcase):
     elif testcase == 1005:
         from tina import translate, scale
         # Dragon with bottom fixed
-        mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/dragon_res4_10019v_38693t.msh")
+        mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/dragonLowPolyTrans_6001v_32352t.msh")
         dirichlet_list = []
         for i in range(mesh.num_vertices):
             if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.01:
@@ -217,7 +217,7 @@ def read(testcase):
         case_info['mesh_offset'] = mesh_offset
         case_info['boundary'] = find_boundary(mesh.elements)
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
-        case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(6.0)
+        case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
@@ -373,6 +373,41 @@ def read(testcase):
         case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
         case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
 
+        return case_info
+    elif testcase == 1010:
+        from tina import translate, scale
+        # Procedural Cube mesh. It is used to create a random initialization.
+        mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/customCube3D.msh")
+        mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
+        mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
+
+        dirichlet_list = []
+        # for i in range(mesh.num_vertices):
+        #     if mesh.vertices[i][1] <= mesh.bbox[1][1] - 0.01:
+        #         dirichlet_list.append(i)
+
+        dirichlet = np.array(dirichlet_list)
+
+        print("mesh elements:", mesh.elements)
+        center = (mesh.bbox[0] + mesh.bbox[1]) / 2.0
+        tmp = mesh.bbox[1] - mesh.bbox[0]
+        min_sphere_radius = np.linalg.norm(np.array([tmp[0], tmp[1], tmp[2]])) / 2.0
+
+        case_info['case_name'] = "CustomCube"
+        case_info['mesh'] = mesh
+        case_info['dim'] = 3
+        case_info['dirichlet'] = dirichlet
+        case_info['mesh_scale'] = mesh_scale
+        case_info['mesh_offset'] = mesh_offset
+        case_info['boundary'] = find_boundary(mesh.elements)
+        case_info['boundary_tri_num'] = len(case_info['boundary'][2])
+        # case_info['transformation_mat'] = translate([0.0, 0.0, -5.0]) @ rotate_matrix_y_axis(0.0) @ scale(0.1)
+        case_info['transformation_mat'] = translate([0.0, 0.0, 0.0]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
+        case_info['center'] = center
+        case_info['min_sphere_radius'] = min_sphere_radius
+
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
         return case_info
     else:
         raise Exception("Invalid testcase selection.")

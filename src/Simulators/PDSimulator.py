@@ -96,7 +96,7 @@ class PDSimulation(SimulatorBase):
         # Material and Parameters
         self.m_weight_positional = 1e20
         self.solver_max_iteration = 10
-        self.solver_stop_residual = 1.0
+        self.solver_stop_residual = 1e20
         self.stop_acceleration = 0.04
 
         self.damping_coeff = 0.0
@@ -977,6 +977,8 @@ class PDSimulation(SimulatorBase):
                                     self.ti_x.to_numpy())  # this is right
         init_rel_pos = self.mesh.vertices - init_com
         while True:
+            self.animation_control(frame_counter)
+            pn.animation_control(frame_counter)
             print("//////////////////////////////////////Frame ", frame_counter, "/////////////////////////////////")
             # frame_start_t = time.time()
             # self.update_acc_field()
@@ -1036,7 +1038,9 @@ class PDSimulation(SimulatorBase):
             self.output_aux_data(frame_counter, _pn_pos)
 
             # set stop check
-            if self.check_acceleration_status_times() > 800 and frame_counter > 200:
+            if frame_counter > 500:
                 break
+            # if self.check_acceleration_status_times() > 800 and frame_counter > 500:
+            #     break
 
 

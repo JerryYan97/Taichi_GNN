@@ -12,7 +12,7 @@ from Utils.math_tools import svd, my_svd
 from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3d_seq, get_acc_field, get_ring_acc_field, get_point_acc_field_by_point
 
 ##############################################################################
-case_info = read(1007)
+case_info = read(1006)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
@@ -28,11 +28,11 @@ ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 real = ti.f64
 
 dt = 0.01
-E = 5e4
-nu = 0.1
+E = 5e6
+nu = 0.4
 la = E * nu / ((1 + nu) * (1 - 2 * nu))
 mu = E / (2 * (1 + nu))
-density = 1e4
+density = 1e3
 n_particles = mesh.num_vertices
 if dim == 2:
     n_elements = mesh.num_faces
@@ -73,7 +73,6 @@ ti_indMap_field = ti.field(real, (n_elements, dim * (dim + 1)))
 ex_acc = ti.Vector.field(dim, real, n_particles)
 ti_center = ti.Vector([center[0], center[1], center[2]])
 
-damping_coeff = 0.0
 
 def initial():
     x.from_numpy(mesh.vertices.astype(np.float64))
@@ -104,7 +103,8 @@ def set_dir_acc_3D():
         # exf_mag = 0.0002 # 1001: 6   1003 and 1004: 0.06  1005: 0.0002
         for i in range(n_particles):
             # ex_acc[i] = ti.Vector(get_acc_field(2.0, 45.0, 45.0, 3))
-            ex_acc[i] = ti.Vector([9.8, 9.8, 9.8])
+            # ex_acc[i] = ti.Vector([0.0, -12.0, 12.0])
+            ex_acc[i] = ti.Vector([0.0, 0.0, 0.0])
 
 
 @ti.kernel
@@ -155,9 +155,9 @@ def compute_xn_and_xTilde():
         for i in range(n_particles):
             xn[i] = x[i]
             xTilde[i] = x[i] + dt * v[i]
-            xTilde(0)[i] += dt * dt * (ex_acc[i][0]) - dt * dt * (damping_coeff * v[i][0]) / m[i]
-            xTilde(1)[i] += dt * dt * (ex_acc[i][1]) - dt * dt * (damping_coeff * v[i][1]) / m[i]
-            xTilde(2)[i] += dt * dt * (ex_acc[i][2]) - dt * dt * (damping_coeff * v[i][2]) / m[i]
+            xTilde(0)[i] += dt * dt * (ex_acc[i][0])
+            xTilde(1)[i] += dt * dt * (ex_acc[i][1])
+            xTilde(2)[i] += dt * dt * (ex_acc[i][2])
 
 
 @ti.kernel
@@ -168,22 +168,6 @@ def check_acceleration_status() -> ti.f64:
     residual /= (1.0 * n_particles)
     print("acceleration :", residual)
     return residual
-
-
-@ti.kernel
-def compute_rayleigh_damping():
-    total_energy = 0.0
-    # inertia
-    for i in range(n_particles):
-        total_energy += 0.5 * m[i] * (x[i] - xTilde[i]).norm_sqr()
-    # elasticity
-    for e in range(n_elements):
-        F = compute_T(e) @ restT[e].inverse()
-        vol0 = restT[e].determinant() / dim / (dim - 1)
-        U, sig, V = svd(F)
-        # U, sig, V = my_svd(F)
-        total_energy += fixed_corotated_energy(sig, la, mu) * dt * dt * vol0
-    return total_energy
 
 
 @ti.kernel
@@ -393,13 +377,40 @@ def output_residual2(data_sol: ti.ext_arr()) -> real:
 
 def output_aux_data(f):
     if dim == 3:
-        name_pn = "../../SimData/PNAnimSeq/PD_pbpF_" + case_info['case_name'] + "_" + str(0.000001) + \
-                  "_" + str(4.6) + "_" + str((-1.0, 0.0, 0.0)) + \
-                  "_" + str(0.1) + "_" + str(f).zfill(6) + ".obj"
+        name_pn = "./AnimSeq/PNAnimSeq/PN_pbpF_" + case_info['case_name'] + "_" + str(f).zfill(6) + ".obj"
         output_3d_seq(x.to_numpy(), boundary_triangles, name_pn)
 
 
+def animation_control(f):
+    # Set force
+    # if f == 50:
+    #     ex_acc.fill(0)
+    pass
+
+
+@ti.kernel
+def pos_init():
+    for i in range(n_particles):
+        x[i] = ti.Vector([float(ti.random()) * 0.05, float(ti.random()) * 0.05, float(ti.random()) * 0.05])
+
+
+def animation_init():
+    # Init pos
+    pos_init()
+    # Init vec
+
+
 if __name__ == "__main__":
+    os.makedirs("results", exist_ok=True)
+    for root, dirs, files in os.walk("results/"):
+        for name in files:
+            os.remove(os.path.join(root, name))
+    os.makedirs("AnimSeq", exist_ok=True)
+    os.makedirs("./AnimSeq/PNAnimSeq", exist_ok=True)
+    for root, dirs, files in os.walk("./AnimSeq/PNAnimSeq/"):
+        for name in files:
+            os.remove(os.path.join(root, name))
+
     initial()
     compute_restT_and_m()
     stop_acceleration = 0.001
@@ -432,13 +443,15 @@ if __name__ == "__main__":
     # Before optimization: 73.18037104606628 s
     # After unrolling optimization: 2.7542989253997803 s -  0.002396106719970703 s
     set_dir_acc_3D()
-
+    animation_init()
     # New structure to make residual calculation same as PD
-    for f_cnt in range(100):
+    for f_cnt in range(50):
+        animation_control(f_cnt)
         print("==================== Frame: ", frame_counter, " ====================")
         compute_xn_and_xTilde()
         Eprev = compute_energy()
         save_xPrev()
+        itr_cnt = 0
         while True:
             data_rhs.fill(0)
             data_mat.fill(0)
@@ -464,8 +477,9 @@ if __name__ == "__main__":
                     break
             Eprev = E
             save_xPrev()
-            if output_residual2(step_vec) < 1e-4:
+            if output_residual2(step_vec) < 1e-4 or itr_cnt >= 6:
                 break
+            itr_cnt += 1
 
         compute_v()
         output_aux_data(frame_counter)
@@ -483,7 +497,7 @@ if __name__ == "__main__":
             tina_mesh.set_face_verts(boundary_pos)
             scene.render()
             gui.set_image(scene.img)
+            video_manager.write_frame(gui.get_image())
             gui.show()
 
-        # if check_acceleration_status() < stop_acceleration:
-        #     break
+    video_manager.make_video(gif=True, mp4=True)

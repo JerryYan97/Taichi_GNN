@@ -19,6 +19,7 @@ src/tools/backup
 src/tools/modelVisualization
 src/tools/PD_PN_Compare
 src/tools/results
+src/tools/AnimSeq
 SimData/PDAnimSeq/
 SimData/PNAnimSeq/
 SimData/TestingData/
