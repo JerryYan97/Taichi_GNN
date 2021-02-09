@@ -9,6 +9,13 @@ ti.init(ti.gpu)
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.utils_visualization import rotate_matrix_y_axis, update_boundary_pos_np
 
+# Instructions:
+# n: next frame; m: previous frame;
+# SPACE: Rendering from 0 frame to the last frame;
+# r: reset to 0 frame;
+# s: jump to targe frame. You need to input the frame id in console;
+# SceneHelper: you can adjust mesh transformation and mesh input src in this class.
+
 
 def read_mesh(file_path_name):
     mesh = pymesh.load_mesh(file_path_name)
