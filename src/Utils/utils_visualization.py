@@ -138,7 +138,7 @@ def get_acc_field(mag, angle1, angle2=0.0, dim=2):
         radian2 = ts.pi / 180.0 * angle2
         x = mag * ti.sin(radian1) * ti.cos(radian2)
         y = mag * ti.sin(radian1) * ti.sin(radian2)
-        z = mag * ti.cos(radian2)
+        z = mag * ti.cos(radian1)
         return [x, y, z]
     else:
         raise Exception("Acc field dim doesn't correct. Error dim is {}".format(dim))

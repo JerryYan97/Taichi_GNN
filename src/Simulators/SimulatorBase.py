@@ -193,6 +193,11 @@ class SimulatorBase(ABC):
         self.mu = self.E / (2 * (1 + self.nu))
         self.lam = self.E * self.nu / ((1 + self.nu) * (1 - 2 * self.nu))
 
+    def animation_control(self, f):
+        pass
+        # if f == 100:
+        #     self.ti_ex_acc.fill(0)
+
     @abstractmethod
     def initial(self):
         pass

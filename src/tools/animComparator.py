@@ -1,12 +1,85 @@
-import taichi as ti
 import numpy as np
 import sys
 import os
+import pymesh
+import tina
+import taichi as ti
+ti.init(ti.gpu)
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
-# from Simulators.PN import PNSimulation
-# from Simulators.PD import PDSimulation
-from Utils.reader import read, read_an_obj
-from Utils.utils_visualization import rotate_matrix_y_axis, update_boundary_mesh_np
+from Utils.utils_visualization import rotate_matrix_y_axis, update_boundary_pos_np
+
+
+def read_mesh(file_path_name):
+    mesh = pymesh.load_mesh(file_path_name)
+    boundary_pos = np.ndarray(shape=(mesh.num_faces, 3, 3), dtype=np.float)
+    update_boundary_pos_np(mesh.vertices, boundary_pos, mesh.faces, mesh.num_faces)
+    return boundary_pos
+
+
+# NOTE: PD-NN visualization is not tested
+class SceneHelper():
+    def __init__(self):
+        # Init files
+        self._PDNN_files_list, self._PD_files_list, self._PN_files_list = [], [], []
+        # PD-NN
+        # for _, _, files in os.walk("../../SimData/FinalRes/GNNPDAnimSeq"):
+        #     self.PDNN_files_list.extend(files)
+        # self.PDNN_files_list.sort()
+        # print("PD-NN Anim files:\n", self.PDNN_files_list)
+        # PD
+        for _, _, files in os.walk("../../SimData/PDAnimSeq"):
+            self._PD_files_list.extend(files)
+        self._PD_files_list.sort()
+        print("PD Anim files:\n", self._PD_files_list)
+        # PN
+        for _, _, files in os.walk("../../SimData/PNAnimSeq"):
+            self._PN_files_list.extend(files)
+        self._PN_files_list.sort()
+        print("PN Anim files:\n", self._PN_files_list)
+
+        self.frame_num = len(self._PD_files_list)
+
+        self.PD_transform = tina.translate([-1.0, -1.0, -1.0]) @ rotate_matrix_y_axis(-90.0) @ tina.scale(1.0)
+        # self.PDGNN_transform = tina.translate([0.0, -1.0, -1.0]) @ rotate_matrix_y_axis(0.0) @ tina.scale(1.0)
+        self.PN_transform = tina.translate([1.0, -1.0, -1.0]) @ rotate_matrix_y_axis(-90.0) @ tina.scale(1.0)
+
+        self.PD_mesh = tina.SimpleMesh()
+        self.PD_model = tina.MeshTransform(self.PD_mesh)
+        self.PD_mat = tina.Lambert(color=[1.0, 0.5, 0.5])
+
+        # self.PDGNN_mesh = tina.SimpleMesh()
+        # self.PDGNN_model = tina.MeshTransform(PDGNN_mesh)
+        # self.PDGNN_mat = tina.Lambert(color=[0.5, 1.0, 0.5])
+
+        self.PN_mesh = tina.SimpleMesh()
+        self.PN_model = tina.MeshTransform(self.PN_mesh)
+        self.PN_mat = tina.Lambert(color=[0.5, 0.5, 1.0])
+
+        self.scene = tina.Scene(culling=False, clipping=True, res=1024)
+
+        # scene.add_object(self.PDGNN_model, self.PDGNN_mat)
+        self.scene.add_object(self.PD_model, self.PD_mat)
+        self.scene.add_object(self.PN_model, self.PN_mat)
+
+    def set_transform(self):
+        # self.PDGNN_model.set_transform(self.PDGNN_transform)
+        self.PD_model.set_transform(self.PD_transform)
+        self.PN_model.set_transform(self.PN_transform)
+
+    def set_mesh(self, cur_frame_id):
+        # Set Mesh
+        PD_file_path_name = "../../SimData/PDAnimSeq/" + self._PD_files_list[cur_frame_id]
+        PD_boundary_pos = read_mesh(PD_file_path_name)
+        self.PD_mesh.set_face_verts(PD_boundary_pos)
+
+        # PDGNN_file_path_name = "../../SimData/PDGNNAnimSeq/" + self._PDGNN_files_list[cur_frame_id]
+        # PDGNN_boundary_pos = read_mesh(PDGNN_file_path_name)
+        # self.PDGNN_mesh.set_face_verts(PDGNN_boundary_pos)
+
+        PN_file_path_name = "../../SimData/PNAnimSeq/" + self._PN_files_list[cur_frame_id]
+        PN_boundary_pos = read_mesh(PN_file_path_name)
+        self.PN_mesh.set_face_verts(PN_boundary_pos)
 
 
 # NOTE: It only works for 3D now
@@ -16,94 +89,65 @@ if __name__ == '__main__':
         for name in files:
             os.remove(os.path.join(root, name))
 
-    # Read in the animation data from SimData/FinalRes/
-    PDNN_files_list, PD_files_list, PN_files_list = [], [], []
-    # PD-NN
-    for _, _, files in os.walk("../../SimData/FinalRes/GNNPDAnimSeq"):
-        PDNN_files_list.extend(files)
-    PDNN_files_list.sort()
-    print("PD-NN Anim files:\n", PDNN_files_list)
-    # PD
-    for _, _, files in os.walk("../../SimData/FinalRes/ReconstructPDAnimSeq"):
-        PD_files_list.extend(files)
-    PD_files_list.sort()
-    print("PD Anim files:\n", PD_files_list)
-    # PN
-    for _, _, files in os.walk("../../SimData/FinalRes/ReconstructPNAnimSeq"):
-        PN_files_list.extend(files)
-    PN_files_list.sort()
-    print("PN Anim files:\n", PN_files_list)
-
-    # Input and load the test case
-    test_case_id = int(input("Please input the test case ID:"))
-    case_info = read(test_case_id)
-    frame_num = len(PDNN_files_list)
-
-    # Choose whether to use the video manager
-    use_video_manager = int(input("Please choose whether to use the video manager[0--not use/1--use]"))
-
     # Init scene variables and adjust visualization parameters
-    import tina
+    helper = SceneHelper()
+    frame_num = helper.frame_num
 
-    # Please comment out the settings of other test cases and write down a note to tell which test case that your
-    # transformation belongs to.
-    # Test case 1007:
-    PD_transform = tina.translate([-1.0, -1.0, -1.0]) @ rotate_matrix_y_axis(0.0) @ tina.scale(1.0)
-    PDGNN_transform = tina.translate([0.0, -1.0, -1.0]) @ rotate_matrix_y_axis(0.0) @ tina.scale(1.0)
-    PN_transform = tina.translate([1.0, -1.0, -1.0]) @ rotate_matrix_y_axis(0.0) @ tina.scale(1.0)
-
-    PD_mesh_pos = ti.Vector.field(3, ti.f32, case_info['mesh'].num_vertices)
-    PDGNN_mesh_pos = ti.Vector.field(3, ti.f32, case_info['mesh'].num_vertices)
-    PN_mesh_pos = ti.Vector.field(3, ti.f32, case_info['mesh'].num_vertices)
-
-    scene = tina.Scene(culling=False, clipping=True, res=1024)
-
-    PD_mesh = tina.SimpleMesh()
-    PD_model = tina.MeshTransform(PD_mesh)
-
-    PDGNN_mesh = tina.SimpleMesh()
-    PDGNN_model = tina.MeshTransform(PDGNN_mesh)
-
-    PN_mesh = tina.SimpleMesh()
-    PN_model = tina.MeshTransform(PN_mesh)
-
-    scene.add_object(PDGNN_model)
-    scene.add_object(PD_model)
-    scene.add_object(PN_model)
-
-    if use_video_manager == 1:
-        video_manager = ti.VideoManager(output_dir='results/', framerate=12, automatic_build=False)
     gui = ti.GUI('Model Visualizer', res=1024)
+    helper.set_transform()
+    cur_frame_id = 0
 
-    PDGNN_model.set_transform(PDGNN_transform)
-    PD_model.set_transform(PD_transform)
-    PN_model.set_transform(PN_transform)
+    helper.set_mesh(cur_frame_id)
 
-    PD_boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
-    PDGNN_boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
-    PN_boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
+    # It maybe too sensitive to press a key. The inflexibility of event control lets me have no idea to adjust it
+    # in the circumstance of that level. So, I just put a counter here to make key_press less sensitive.
+    key_press_lag = 2
+    press_n_counter = 0
+    press_m_counter = 0
+    press_s_counter = 0
+    while True:
+        helper.scene.input(gui)
+        gui.get_event()
 
-    for frame_id in range(frame_num):
-        # Read files' pos
-        PD_new_pos = np.asarray(read_an_obj("../../SimData/FinalRes/ReconstructPDAnimSeq/" + PD_files_list[frame_id]))
-        PDGNN_new_pos = np.asarray(read_an_obj("../../SimData/FinalRes/GNNPDAnimSeq/" + PDNN_files_list[frame_id]))
-        PN_new_pos = np.asarray(read_an_obj("../../SimData/FinalRes/ReconstructPNAnimSeq/" + PN_files_list[frame_id]))
+        if gui.is_pressed('n'):
+            if press_n_counter == key_press_lag and cur_frame_id < frame_num:
+                cur_frame_id += 1
+                press_n_counter = 0
+                helper.set_mesh(cur_frame_id)
+            else:
+                press_n_counter += 1
+        elif gui.is_pressed('m'):
+            if press_m_counter == key_press_lag and cur_frame_id > 0:
+                cur_frame_id -= 1
+                press_m_counter = 0
+                helper.set_mesh(cur_frame_id)
+            else:
+                press_m_counter += 1
+        elif gui.is_pressed('r'):
+            cur_frame_id = 0
+            helper.set_mesh(cur_frame_id)
+        elif gui.is_pressed('s'):
+            cur_frame_id = int(input("Please input the frame id that you want:"))
+            if cur_frame_id < 0 or cur_frame_id > frame_num:
+                raise Exception("Input frame id is out of range!")
+            helper.set_mesh(cur_frame_id)
+        elif gui.is_pressed(ti.GUI.SPACE):
+            # Rendering to GIF/MP4 from start
+            video_manager = ti.VideoManager(output_dir='results/', framerate=24, automatic_build=False)
+            for cur_frame_id in range(frame_num):
+                helper.set_mesh(cur_frame_id)
 
-        # Update files' pos
-        update_boundary_mesh_np(PD_new_pos, PD_boundary_pos, case_info)
-        update_boundary_mesh_np(PDGNN_new_pos, PDGNN_boundary_pos, case_info)
-        update_boundary_mesh_np(PN_new_pos, PN_boundary_pos, case_info)
-        scene.input(gui)
-        PD_mesh.set_face_verts(PD_boundary_pos)
-        PDGNN_mesh.set_face_verts(PDGNN_boundary_pos)
-        PN_mesh.set_face_verts(PN_boundary_pos)
-        scene.render()
-        gui.set_image(scene.img)
-        if use_video_manager == 1:
-            video_manager.write_frame(gui.get_image())
-            gui.show()
-        else:
-            file_name_path = "results/" + "anim_comp_" + str(frame_id).zfill(6) + ".png"
-            gui.show(file_name_path)
-    if use_video_manager == 1:
-        video_manager.make_video(gif=True, mp4=True)
+                helper.scene.render()
+                gui.set_image(helper.scene.img)
+                video_manager.write_frame(gui.get_image())
+                gui.text("Rendering...", (0.01, 0.99))
+                gui.text(f"Current Frame:{cur_frame_id}. Total Frame:{frame_num - 1}", (0.01, 0.95))
+                gui.show()
+            video_manager.make_video(gif=True, mp4=True)
+            break
+
+        helper.scene.render()
+        gui.set_image(helper.scene.img)
+        gui.text("Not rendering", (0.01, 0.99))
+        gui.text(f"Current Frame:{cur_frame_id}", (0.01, 0.95))
+        gui.show()

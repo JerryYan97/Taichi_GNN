@@ -12,7 +12,7 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1009
+test_case = 1010
 case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -40,19 +40,17 @@ else:
     boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
 
 # Material settings:
-rho = 1e5
-E, nu = 5e4, 0.4  # Young's modulus and Poisson's ratio
+rho = 1e3
+E, nu = 5e6, 0.4  # Young's modulus and Poisson's ratio
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
 
-# add damping
-damping_coeff = 0.0
 
 # Solver settings:
 m_weight_positional = 1e20
 dt = 0.01
 # Backup settings:
 # Bar: 10  Bunny: 50
-solver_max_iteration = 10
+solver_max_iteration = 1
 solver_stop_residual = 0.001
 # external acceleration -- counter-clock wise
 ti_ex_acc = ti.Vector.field(dim, real, n_vertices)
@@ -131,7 +129,8 @@ def set_exacc():
             ti_ex_acc[i] = ti.Vector(get_acc_field(6, -45.0))
     else:
         for i in range(n_vertices):
-            ti_ex_acc[i] = ti.Vector([0.1, 0.1, 0.1])
+            # ti_ex_acc[i] = ti.Vector([0.0, -12.0, 12.0])
+            ti_ex_acc[i] = ti.Vector([0.0, 0.0, 0.0])
 
 
 @ti.kernel
@@ -387,7 +386,6 @@ def precomputation(lhs_mat_row: ti.ext_arr(), lhs_mat_col: ti.ext_arr(), lhs_mat
         local_offset_idx = 0
         for d in range(dim):
             cur_sparse_val = 0.0
-            # cur_sparse_val += (-damping_coeff * vel[i, d] / dt) + (ti_mass[i] / (dt * dt))
             cur_sparse_val += (ti_mass[i] / (dt * dt))
             if ti_boundary_labels[i] == 1:
                 cur_sparse_val += m_weight_positional
@@ -490,11 +488,11 @@ def build_sn():
         Sn_idx2 = v_id*dim+1
         pos_i = ti_pos[v_id]
         vel_i = ti_vel[v_id]
-        ti_Sn[Sn_idx1] = pos_i[0] + dt * vel_i[0]+(dt**2)*(ti_ex_acc[v_id][0]-ti_vel[v_id][0]*damping_coeff/ti_mass[v_id])
-        ti_Sn[Sn_idx2] = pos_i[1] + dt * vel_i[1]+(dt**2)*(ti_ex_acc[v_id][1]-ti_vel[v_id][1]*damping_coeff/ti_mass[v_id])
+        ti_Sn[Sn_idx1] = pos_i[0] + dt * vel_i[0]+(dt**2)*(ti_ex_acc[v_id][0])
+        ti_Sn[Sn_idx2] = pos_i[1] + dt * vel_i[1]+(dt**2)*(ti_ex_acc[v_id][1])
         if ti.static(dim == 3):
             Sn_idx3 = v_id * dim + 2
-            ti_Sn[Sn_idx3] = pos_i[2]+dt*vel_i[2]+(dt**2)*(ti_ex_acc[v_id][2]-ti_vel[v_id][2]*damping_coeff/ti_mass[v_id])
+            ti_Sn[Sn_idx3] = pos_i[2]+dt*vel_i[2]+(dt**2)*(ti_ex_acc[v_id][2])
 
 
 @ti.func
@@ -516,7 +514,7 @@ def build_rhs(rhs: ti.ext_arr()): # dp_pos: ti.ext_arr(), dp_vel: ti.ext_arr()):
     one_over_dt2 = 1.0 / (dt ** 2)
     # Construct the first part of the rhs
     for i in range(n_vertices * dim):
-        rhs[i] = one_over_dt2 * ti_mass[i // dim] * ti_Sn[i]  # + (damping_coeff * dp_vel[i//dim, i%dim] / dt * dp_pos[i//dim, i%dim])
+        rhs[i] = one_over_dt2 * ti_mass[i // dim] * ti_Sn[i]
     # Add strain and volume/area constraints to the rhs
     for t in ti.static(range(2)):
         for ele_idx in range(n_elements):
@@ -723,14 +721,41 @@ def compute_local_step_energy():
 
 def output_aux_data(f):
     if dim == 3:
-        name_pd = "../../SimData/PDAnimSeq/PD_pbpF_" + case_info['case_name'] + "_" + str(solver_stop_residual) + \
-                  "_" + str(4.6) + "_" + str(0.1) + "_" + str(f).zfill(6) + ".obj"
+        name_pd = "./AnimSeq/PDAnimSeq/PD_" + case_info['case_name'] + "_" + str(f).zfill(6) + ".obj"
         output_3d_seq(ti_pos.to_numpy(), boundary_triangles, name_pd)
+
+
+def animation_control(f):
+    pass
+    # Set force
+    # if f == 50:
+    #     ti_ex_acc.fill(0)
+
+
+@ti.kernel
+def pos_init():
+    for i in range(n_vertices):
+        ti_pos[i] = ti.Vector([float(ti.random()) * 0.05, float(ti.random()) * 0.05, float(ti.random()) * 0.05])
+
+
+def animation_init():
+    # Init pos
+    pos_init()
+    # Init vec
 
 
 if __name__ == "__main__":
     os.makedirs("results", exist_ok=True)
     for root, dirs, files in os.walk("results/"):
+        for name in files:
+            os.remove(os.path.join(root, name))
+    os.makedirs("AnimSeq", exist_ok=True)
+    os.makedirs("./AnimSeq/PDAnimSeq", exist_ok=True)
+    for root, dirs, files in os.walk("./AnimSeq/PDAnimSeq/"):
+        for name in files:
+            os.remove(os.path.join(root, name))
+    os.makedirs("./AnimSeq/PNAnimSeq", exist_ok=True)
+    for root, dirs, files in os.walk("./AnimSeq/PNAnimSeq/"):
         for name in files:
             os.remove(os.path.join(root, name))
 
@@ -753,7 +778,7 @@ if __name__ == "__main__":
     pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
     # wait = input("PRESS ENTER TO CONTINUE.")
-
+    animation_init()
     # mag = 16.0
     # set_point_acc_by_point_3D(1, 0.1, mag*-1.0, mag*0.0, mag*0.0)
 
@@ -782,6 +807,7 @@ if __name__ == "__main__":
         warm_up()
         print("Frame ", frame_counter)
         # last_record_energy = 1000000.0
+        animation_control(frame_counter)
         for itr in range(solver_max_iteration):
             # while True:
             local_solve_build_bp_for_all_constraints()
