@@ -23,7 +23,7 @@ min_sphere_radius = case_info['min_sphere_radius']
 ##############################################################################
 _, _, boundary_triangles = case_info['boundary']
 
-ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
+ti.init(arch=ti.cpu, default_fp=ti.f64, debug=False)
 
 real = ti.f64
 
@@ -180,8 +180,8 @@ def compute_energy() -> real:
     for e in range(n_elements):
         F = compute_T(e) @ restT[e].inverse()
         vol0 = restT[e].determinant() / dim / (dim - 1)
-        U, sig, V = svd(F)
-        # U, sig, V = my_svd(F)
+        # U, sig, V = svd(F)
+        U, sig, V = my_svd(F)
         total_energy += fixed_corotated_energy(sig, la, mu) * dt * dt * vol0
     return total_energy
 
@@ -443,7 +443,7 @@ if __name__ == "__main__":
     # Before optimization: 73.18037104606628 s
     # After unrolling optimization: 2.7542989253997803 s -  0.002396106719970703 s
     set_dir_acc_3D()
-    animation_init()
+    # animation_init()
     # New structure to make residual calculation same as PD
     for f_cnt in range(50):
         animation_control(f_cnt)

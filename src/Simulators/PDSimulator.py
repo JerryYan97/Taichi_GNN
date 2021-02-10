@@ -7,6 +7,7 @@ from numpy.linalg import inv
 from scipy.linalg import sqrtm
 from .SimulatorBase import SimulatorBase
 import multiprocessing as mp
+from numpy import linalg as LA
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.math_tools import svd
 from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3d_seq
@@ -98,8 +99,6 @@ class PDSimulation(SimulatorBase):
         self.solver_max_iteration = 10
         self.solver_stop_residual = 1e20
         self.stop_acceleration = 0.04
-
-        self.damping_coeff = 0.0
 
         # Simulator Fields
         self.ti_volume = ti.field(self.real, self.n_elements)
@@ -447,7 +446,6 @@ class PDSimulation(SimulatorBase):
             local_offset_idx = 0
             for d in range(self.dim):
                 cur_sparse_val = 0.0
-                # cur_sparse_val += (-self.damping_coeff/self.dt)+(self.ti_mass[i]/(self.dt*self.dt))
                 cur_sparse_val += (self.ti_mass[i] / (self.dt * self.dt))
                 if self.ti_boundary_labels[i] == 1:
                     cur_sparse_val += self.m_weight_positional
@@ -544,11 +542,11 @@ class PDSimulation(SimulatorBase):
             Sn_idx2 = v_id * self.dim + 1
             pos_i = self.ti_x[v_id]
             vel_i = self.ti_vel[v_id]
-            self.ti_Sn[Sn_idx1] = pos_i[0] + self.dt * vel_i[0] + (self.dt ** 2) * (self.ti_ex_acc[v_id][0] - vel_i[0]*self.damping_coeff/self.ti_mass[v_id])
-            self.ti_Sn[Sn_idx2] = pos_i[1] + self.dt * vel_i[1] + (self.dt ** 2) * (self.ti_ex_acc[v_id][1] - vel_i[1]*self.damping_coeff/self.ti_mass[v_id])
+            self.ti_Sn[Sn_idx1] = pos_i[0] + self.dt * vel_i[0] + (self.dt ** 2) * (self.ti_ex_acc[v_id][0])
+            self.ti_Sn[Sn_idx2] = pos_i[1] + self.dt * vel_i[1] + (self.dt ** 2) * (self.ti_ex_acc[v_id][1])
             if ti.static(self.dim == 3):
                 Sn_idx3 = v_id * self.dim + 2
-                self.ti_Sn[Sn_idx3] = pos_i[2] + self.dt * vel_i[2] + (self.dt ** 2) * (self.ti_ex_acc[v_id][2] - vel_i[2]*self.damping_coeff/self.ti_mass[v_id])
+                self.ti_Sn[Sn_idx3] = pos_i[2] + self.dt * vel_i[2] + (self.dt ** 2) * (self.ti_ex_acc[v_id][2])
 
     @ti.func
     def Build_Bp_i_vec(self, idx):
@@ -569,9 +567,6 @@ class PDSimulation(SimulatorBase):
         # Construct the first part of the rhs
         for i in range(self.n_vertices * self.dim):
             rhs[i] = one_over_dt2 * self.ti_mass[i // self.dim] * self.ti_Sn[i]
-        # for i in ti.static(range(self.n_vertices * self.dim)):
-        #     rhs[i] = one_over_dt2 * self.ti_mass[i // self.dim] * self.ti_Sn[i] - \
-        #              (self.damping_coeff / self.dt * dp_pos[i // self.dim, i % self.dim])
         # Add strain and volume/area constraints to the rhs
         for t in ti.static(range(2)):
             for ele_idx in range(self.n_elements):
@@ -838,6 +833,7 @@ class PDSimulation(SimulatorBase):
 
         self.init_mesh_DmInv(self.dirichlet, len(self.dirichlet))
         self.precomputation(lhs_mat_row, lhs_mat_col, lhs_mat_val)
+
         s_lhs_matrix_np = sparse.csr_matrix((lhs_mat_val, (lhs_mat_row, lhs_mat_col)),
                                             shape=(self.n_vertices * self.dim, self.n_vertices * self.dim),
                                             dtype=np.float64)
@@ -1006,14 +1002,17 @@ class PDSimulation(SimulatorBase):
             # print("pd solve time: ", pd_end_t - pd_start_t)
 
             self.update_velocity_pos()
-            # self.gradE.from_numpy(pn.get_gradE_from_pd(self.ti_x))
             gradE = pn.get_gradE_from_pd(self.ti_x)
             # t_out_start = time.time()
-            if frame_counter % 10 == 0:
-                self.output_network_data(self.ti_x_del.to_numpy(),
-                                         pn_dis.to_numpy(),
-                                         gradE, init_rel_pos,
-                                         frame_counter, is_test)
+            # if frame_counter % 10 == 0:
+            #     self.output_network_data(self.ti_x_del.to_numpy(),
+            #                              pn_dis.to_numpy(),
+            #                              gradE, init_rel_pos,
+            #                              frame_counter, is_test)
+            self.output_network_data(self.ti_x_del.to_numpy(),
+                                     pn_dis.to_numpy(),
+                                     gradE, init_rel_pos,
+                                     frame_counter, is_test)
             # t_out_end = time.time()
             # print("output network data time: ", t_out_end - t_out_start)
 

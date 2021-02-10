@@ -6,15 +6,20 @@ import os, random, time
 import numpy as np
 # ti.init(arch=ti.gpu, default_fp=ti.f64, debug=False)
 ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
-rho = 1e3
+# rho = 1e3
 # E = 1e6
 # nu = 0.4
 # rho = 0.0038
-E = 1e7
-nu = 0.4
+# E = 1e7
+# nu = 0.4
 
 dt = 0.01
-test_case = 1005
+E = 0.01e9
+nu = 0.49
+rho = 1.1e3
+
+# dt = 0.01
+test_case = 1007
 
 # pd->pn
 if __name__ == '__main__':
@@ -91,8 +96,8 @@ if __name__ == '__main__':
             # acc_info['p_radius'] = 0.2
             acc_info['acc_type'] = 'dir'
             acc_info['exf_angle1'] = 90.0
-            acc_info['exf_angle2'] = 0.0
-            acc_info['exf_mag'] = -1000.0
+            acc_info['exf_angle2'] = 90.0
+            acc_info['exf_mag'] = -980.0
 
         pd.set_acc(acc_info)
         pn.set_acc(acc_info)

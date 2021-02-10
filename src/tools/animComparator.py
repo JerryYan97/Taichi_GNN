@@ -47,9 +47,9 @@ class SceneHelper():
 
         self.frame_num = len(self._PD_files_list)
 
-        self.PD_transform = tina.translate([-1.0, -1.0, -1.0]) @ rotate_matrix_y_axis(-90.0) @ tina.scale(1.0)
+        self.PD_transform = tina.translate([-0.8, -1.0, -1.0]) @ rotate_matrix_y_axis(0.0) @ tina.scale(1.0)
         # self.PDGNN_transform = tina.translate([0.0, -1.0, -1.0]) @ rotate_matrix_y_axis(0.0) @ tina.scale(1.0)
-        self.PN_transform = tina.translate([1.0, -1.0, -1.0]) @ rotate_matrix_y_axis(-90.0) @ tina.scale(1.0)
+        self.PN_transform = tina.translate([0.8, -1.0, -1.0]) @ rotate_matrix_y_axis(0.0) @ tina.scale(1.0)
 
         self.PD_mesh = tina.SimpleMesh()
         self.PD_model = tina.MeshTransform(self.PD_mesh)

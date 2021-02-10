@@ -273,8 +273,15 @@ def read(testcase):
         mesh = pymesh.load_mesh(
             os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/armadillolow_17698v_72161t.msh")
         dirichlet_list = []
+        # Fix bottom:
+        # for i in range(mesh.num_vertices):
+        #     if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.01:
+        #         dirichlet_list.append(i)
+
+        # Fix left hand:
+        vert8_pos = mesh.vertices[8]
         for i in range(mesh.num_vertices):
-            if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.01:
+            if LA.norm(vert8_pos - mesh.vertices[i]) < 0.2:
                 dirichlet_list.append(i)
 
         dirichlet = np.array(dirichlet_list)
@@ -347,6 +354,12 @@ def read(testcase):
         for i in range(mesh.num_vertices):
             if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.01:
                 dirichlet_list.append(i)
+
+        # Fix left hand:
+        # vert8_pos = mesh.vertices[8]
+        # for i in range(mesh.num_vertices):
+        #     if LA.norm(vert8_pos - mesh.vertices[i]) < 0.2:
+        #         dirichlet_list.append(i)
 
         dirichlet = np.array(dirichlet_list)
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3

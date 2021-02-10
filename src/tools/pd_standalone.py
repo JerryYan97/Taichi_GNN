@@ -12,7 +12,7 @@ from Utils.math_tools import svd, my_svd
 real = ti.f64
 
 # Mesh load and test case selection:
-test_case = 1010
+test_case = 1007
 case_info = read(test_case)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
@@ -40,8 +40,11 @@ else:
     boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
 
 # Material settings:
-rho = 1e3
-E, nu = 5e6, 0.4  # Young's modulus and Poisson's ratio
+# rho = 1e3
+# E, nu = 5e6, 0.4  # Young's modulus and Poisson's ratio
+E = 0.01e9
+nu = 0.49
+rho = 1.1e3
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
 
 
@@ -51,7 +54,7 @@ dt = 0.01
 # Backup settings:
 # Bar: 10  Bunny: 50
 solver_max_iteration = 1
-solver_stop_residual = 0.001
+solver_stop_residual = 1e20
 # external acceleration -- counter-clock wise
 ti_ex_acc = ti.Vector.field(dim, real, n_vertices)
 
@@ -130,7 +133,7 @@ def set_exacc():
     else:
         for i in range(n_vertices):
             # ti_ex_acc[i] = ti.Vector([0.0, -12.0, 12.0])
-            ti_ex_acc[i] = ti.Vector([0.0, 0.0, 0.0])
+            ti_ex_acc[i] = ti.Vector([0.0, -980.0, 0.0])
 
 
 @ti.kernel
@@ -425,7 +428,7 @@ def compute_volume_constraint(sigma):
         return ti.Matrix.rows([[sigma_star_11_k, 0.0], [0.0, sigma_star_22_k]])
     else:
         tol = 0.00001
-        max_it = 2
+        max_it = 1
         s1, s2, s3 = sigma[0, 0], sigma[1, 1], sigma[2, 2]
         x = 1.0 - s1
         y = 1.0 - s2
@@ -778,7 +781,7 @@ if __name__ == "__main__":
     pre_fact_lhs_solve = factorized(s_lhs_matrix_np)
 
     # wait = input("PRESS ENTER TO CONTINUE.")
-    animation_init()
+    # animation_init()
     # mag = 16.0
     # set_point_acc_by_point_3D(1, 0.1, mag*-1.0, mag*0.0, mag*0.0)
 
@@ -807,9 +810,9 @@ if __name__ == "__main__":
         warm_up()
         print("Frame ", frame_counter)
         # last_record_energy = 1000000.0
-        animation_control(frame_counter)
-        for itr in range(solver_max_iteration):
-            # while True:
+        # animation_control(frame_counter)
+        # for itr in range(solver_max_iteration):
+        while True:
             local_solve_build_bp_for_all_constraints()
             build_rhs(rhs_np)
 
