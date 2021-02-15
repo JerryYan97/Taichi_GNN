@@ -13,9 +13,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
 
 # Owing to the fixed color panel, it now just has only tests clusters num that is 10 and under 10.
-cluster_num = 512
+cluster_num = 256
 # Case 1002 doesn't work because it's particles' num is less than the clusters' num.
-test_case = 1007
+test_case = 1009
 
 def rgb_range01(rgb_np):
     return rgb_np / 255.0

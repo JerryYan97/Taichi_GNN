@@ -46,7 +46,7 @@ def output_3d_results(pn_x, corrected_pd_x, pd_x, f, case_info):
 
 
 if __name__ == "__main__":
-    case_info = read(1008)
+    case_info = read(1009)
     mesh = case_info['mesh']
     dirichlet = case_info['dirichlet']
     mesh_scale = case_info['mesh_scale']

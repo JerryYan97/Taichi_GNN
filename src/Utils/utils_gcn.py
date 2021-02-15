@@ -101,6 +101,9 @@ class SIM_Data_Geo(InMemoryDataset):
             # print("i: ", i, ", get shape: ", len(proc_list[i].get()))
             sample_list.extend(proc_list[i].get())
 
+        pool.close()
+        pool.join()
+
         print("Sample list length:", len(sample_list))
         self.data, self.slices = self.collate(sample_list)
 
