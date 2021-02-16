@@ -184,6 +184,7 @@ def load_data(test_case, cluster_num, path="/Outputs"):
                 edge_index = np.hstack((edge_index, [[i], [k]]))
         edge_index = torch.LongTensor(edge_index)
         cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num, mesh.num_vertices)
+        # Note: boundary labels are not feed into the dataset.
         return SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, cluster, cluster_num, cluster_parent, belongs, 2)
     else:
         import time
@@ -228,7 +229,7 @@ def load_data(test_case, cluster_num, path="/Outputs"):
 
         # Load Section 5
         t5_start = time.time()
-        tmp_data = SIM_Data_Geo(file_dir, edge_index, 24, 3, mesh, cluster, cluster_num, cluster_parent, belongs, 3)
+        tmp_data = SIM_Data_Geo(file_dir, edge_index, 25, 3, mesh, cluster, cluster_num, cluster_parent, belongs, 3)
         t5_end = time.time()
         print("t5:", t5_end - t5_start)
 

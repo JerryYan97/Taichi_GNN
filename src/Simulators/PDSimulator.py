@@ -755,12 +755,12 @@ class PDSimulation(SimulatorBase):
                                str(self.pf_mag) + "_" + str(self.pf_acc) + "_" + str(self.pf_radius) + \
                                "_" + str(self.pf_ind) + "_" + frame + ".csv"
 
-        ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim
+        ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim + 1
         out = np.ones([self.n_vertices, ele_count], dtype=float)
         
         A_finals = get_local_transformation(self.n_vertices, self.mesh, self.ti_x.to_numpy(), init_rel_pos,
                                             self.ti_mass.to_numpy(), self.dim)
-
+        boundary_label_np = self.ti_boundary_labels.to_numpy()
         i = 0
         pos_init_out = self.mesh.vertices
         if self.dim == 2:
@@ -772,6 +772,7 @@ class PDSimulation(SimulatorBase):
                 out[i, 10:12] = ex_acc[i, :]
                 out[i, 12:14] = vel[i, :]
                 out[i, 14:16] = pos_init_out[i, :]
+                # TODO: Add fixed point labels
                 i = i + 1
         else:
             for res in A_finals:
@@ -782,6 +783,7 @@ class PDSimulation(SimulatorBase):
                 out[i, 18:21] = ex_acc[i, :]
                 out[i, 21:24] = vel[i, :]
                 out[i, 24:27] = pos_init_out[i, :]
+                out[i, 27] = boundary_label_np[i]
                 i = i + 1
 
         np.savetxt(out_name, out, delimiter=',')

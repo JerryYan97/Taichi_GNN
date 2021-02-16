@@ -71,7 +71,7 @@ if __name__ == '__main__':
     pd.set_material(rho, E, nu)
     pn.set_material(rho, E, nu)
 
-    for i in range(3):
+    for i in range(1):
         choose_p = boundary_points[10]
         pd.initial()
         pn.initial()
@@ -97,7 +97,7 @@ if __name__ == '__main__':
             acc_info['acc_type'] = 'dir'
             acc_info['exf_angle1'] = 90.0
             acc_info['exf_angle2'] = 90.0
-            acc_info['exf_mag'] = -980.0 + 100.0 * (i+1)
+            acc_info['exf_mag'] = -980.0
 
         pd.set_acc(acc_info)
         pn.set_acc(acc_info)

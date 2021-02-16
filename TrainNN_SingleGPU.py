@@ -34,7 +34,7 @@ writer = SummaryWriter('../runs/GCN_1009_single')  # default `log_dir` is "runs"
 ###################################################
 
 # Training settings
-epoch_num = 2000
+epoch_num = 500
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
