@@ -11,3 +11,4 @@ if __name__ == "__main__":
     os.makedirs("TestingData", exist_ok=True)
     os.makedirs("TmpRenderedImgs", exist_ok=True)
     os.makedirs("TrainingData", exist_ok=True)
+    os.makedirs("PreGenGlobalFeatureVec", exist_ok=True)

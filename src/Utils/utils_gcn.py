@@ -7,6 +7,7 @@ from .Dijkstra import Dijkstra
 import os
 from collections import defaultdict
 from torch_geometric.data import InMemoryDataset, Data
+from torch.utils.data import Dataset
 import scipy as sp
 import random
 from scipy.spatial import KDTree
@@ -40,6 +41,80 @@ def mp_load_data(workload_list, proc_idx, filepath, files, node_num, edge_idx, c
 
     print("proc", proc_idx, "-- start idx:", workload_list[proc_idx][0], " end idx:", workload_list[proc_idx][1])
     return sample_list
+
+
+def mp_load_local_data(workload_list, proc_idx, filepath, files, node_num, transform, dim):
+    sample_list = []
+    for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
+        fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
+        if dim == 2:
+            other = fperframe[:, 4:]
+            pn_dis = fperframe[:, 2:4]
+            pd_dis = fperframe[:, 0:2]  # a[start:stop] items start through stop-1
+        else:
+            other = fperframe[:, 6:]
+            pn_dis = fperframe[:, 3:6]
+            pd_dis = fperframe[:, 0:3]  # a[start:stop] items start through stop-1
+        y_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((node_num, -1)))
+        x_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((node_num, -1)))
+        sample = {'x': x_data, 'y': y_data}
+        if transform:
+            sample = transform(sample)
+        sample_list.append(sample)
+    print("proc", proc_idx, "-- start idx:", workload_list[proc_idx][0], " end idx:", workload_list[proc_idx][1])
+    return sample_list
+
+
+class SIM_Data_Local(Dataset):
+    def __init__(self, filepath, i_features_num, o_features_num, node_num, transform=None):
+        # Read file names
+        self._files = []
+        for _, _, files in os.walk(filepath):
+            self._files.extend(files)
+        self._files.sort()
+        # Set init parameters
+        self._filepath = filepath
+        self._input_features_num = i_features_num
+        self._output_features_num = o_features_num
+        self._node_num = node_num
+        # Read file data
+        pool = mp.Pool()
+        sample_list = []
+        # Divide workloads:
+        cpu_cnt = os.cpu_count()
+        print("cpu core account: ", cpu_cnt)
+        files_cnt = self.__len__()
+        files_per_proc_cnt = files_cnt // cpu_cnt
+        workload_list = []
+        proc_list = []
+        for i in range(cpu_cnt):
+            # [[proc1 first file idx, proc1 last file idx] ... []]
+            cur_proc_workload = [i * files_per_proc_cnt, (i + 1) * files_per_proc_cnt - 1]
+            if i == cpu_cnt - 1:
+                # Last workload may needs to do more than others.
+                cur_proc_workload[1] = files_cnt - 1
+            workload_list.append(cur_proc_workload)
+            # Call multi-processing func:
+        for i in range(cpu_cnt):
+            proc_list.append(pool.apply_async(func=mp_load_data,
+                                              args=(workload_list, i, self._filepath, self._files, self.node_num,
+                                                    self._edge_idx, self._cluster, self.transform, dim,)))
+            # Get multi-processing res:
+        for i in range(cpu_cnt):
+            # print("i: ", i, ", get shape: ", len(proc_list[i].get()))
+            sample_list.extend(proc_list[i].get())
+
+        pool.close()
+        pool.join()
+
+        print("Sample list length:", len(sample_list))
+
+
+    def __len__(self):
+        return len(self._files)
+
+    def __getitem__(self, idx):
+        pass
 
 
 class SIM_Data_Geo(InMemoryDataset):
