@@ -2,6 +2,7 @@ import time
 import os, sys
 import argparse
 import torch.optim as optim
+import torch
 from src.Utils.utils_gcn import *
 from src.NeuralNetworks.GlobalNN.GCN3D_Feb16_PoolingDeepGlobal import *
 from torch_geometric.data import DataLoader
@@ -14,8 +15,7 @@ for root, dirs, files in os.walk("../runs/"):
     for name in files:
         os.remove(os.path.join(root, name))
 
-writer = SummaryWriter('../runs/GCN_Global_1009_single')  # default `log_dir` is "runs" - we'll be more specific here
-###################################################
+writer = SummaryWriter('../runs/GCN_Global_1009_single')
 
 # Training settings
 epoch_num = 500
@@ -75,20 +75,20 @@ def Sim_train():
     for epoch in range(args.epochs):
         epoch_loss = 0.0
         for data in train_loader:  # Iterate in batches over the training dataset.
-            output = model(data.x.float().to(device),
-                           data.edge_index.to(device),
-                           data.num_graphs,
-                           data.batch.to(device),
-                           data.cluster.to(device)).reshape(data.num_graphs * simDataset.node_num, -1)
+            output, _ = model(data.x.float().to(device),
+                              data.edge_index.to(device),
+                              data.num_graphs,
+                              data.batch.to(device),
+                              data.cluster.to(device))
+            output = output.reshape(data.num_graphs * simDataset.node_num, -1)
 
-            loss_train = mse(output, data.y.float().to(device))     # + l1_loss
+            loss_train = mse(output, data.y.float().to(device))
             optimizer.zero_grad()
             loss_train.backward()
             optimizer.step()
             epoch_loss += loss_train.cpu().detach().numpy()
 
         writer.add_scalar('training loss', epoch_loss / simDataset.len(), epoch)
-        writer.close()
         print("Epoch:", epoch + 1,
               "avg frame training loss: ", epoch_loss / simDataset.len(),
               "time: ", time.time() - t, "s")
@@ -106,3 +106,4 @@ if __name__ == '__main__':
     t_total = time.time()
     Sim_train()
     print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
+    writer.close()

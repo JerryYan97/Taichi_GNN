@@ -85,4 +85,4 @@ class GCN3D_Feb16_PoolingDeepGlobal(nn.Module):
         z = self.ELU(self.fc_O1(z))
         idx_mat_output = torch.transpose(batch_cluster.repeat(3, 1), 0, 1)
         output_info = torch.gather(z, 0, idx_mat_output)
-        return output_info
+        return output_info, z

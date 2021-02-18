@@ -6,20 +6,17 @@ import torch
 import torch.optim as optim
 from src.Utils.utils_gcn import *
 from src.NeuralNetworks.LocalNN.VertNN_Feb16_LocalLinear import *
-from torch_geometric.data import DataLoader
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-os.makedirs('TrainedNN/TmpSavedNN', exist_ok=True)
-for root, dirs, files in os.walk("TrainedNN/TmpSavedNN"):
-    for name in files:
-        os.remove(os.path.join(root, name))
+os.makedirs('TrainedNN/LocalNN', exist_ok=True)
 
 for root, dirs, files in os.walk("../runs/"):
     for name in files:
         os.remove(os.path.join(root, name))
 
-writer = SummaryWriter('../runs/GCN_1009_single')  # default `log_dir` is "runs" - we'll be more specific here
+writer = SummaryWriter('../runs/GCN_Local_1009_single')
 ###################################################
 
 # Training settings
@@ -28,7 +25,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
 parser.add_argument('--epochs', type=int, default=epoch_num, help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.002, help='Initial learning rate.')
+parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='Weight decay (L2 loss on parameters).')
 
 # get parameters and check the cuda
@@ -46,39 +43,24 @@ if args.cuda:
 
 
 load_data_t_start = time.time()
-simDataset, case_info, cluster_parent, cluster_belong = load_data(1009, 256, "/SimData/TrainingData")
+simDataset, case_info = load_local_data(1009, 256, "/SimData/TrainingData")
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
 
 dim = case_info['dim']
 
-train_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=True, num_workers=16, pin_memory=False)
+train_loader = DataLoader(dataset=simDataset, batch_size=512, shuffle=True, num_workers=16)
 
-# Hidden layer
-# testcase1007: [56, 441]
-model = GCN3D_Feb14_PoolingDeep(
+model = VertNN_Feb16_LocalLinear(
     nfeat=simDataset.input_features_num,
-    graph_node_num=simDataset.node_num,
-    cluster_num=simDataset.cluster_num,
-    gcn_hid1=128,
-    gcn_out1=256,
-    gcn_hid2=128,
-    gcn_out2=128,
-    fc_hid=16,
-    fc_out=dim,
+    fc_out=simDataset.output_features_num,
     dropout=0,
     device=device
-)
+).to(device)
 
-# model = torch.nn.DataParallel(model)
-model.to(device)
 mse = nn.MSELoss(reduction='sum').to(device)
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=6, verbose=True, eps=1e-20)
-
-model.cuda()
-mse.cuda()
-bs = train_loader.batch_size
 
 
 def Sim_train():
@@ -87,20 +69,15 @@ def Sim_train():
     model.train()
     for epoch in range(args.epochs):
         epoch_loss = 0.0
-        for data in train_loader:  # Iterate in batches over the training dataset.
-            output = model(data.x.float().to(device),
-                           data.edge_index.to(device),
-                           data.num_graphs,
-                           data.batch.to(device),
-                           data.cluster.to(device)).reshape(data.num_graphs * simDataset.node_num, -1)
-
-            loss_train = mse(output, data.y.float().to(device))     # + l1_loss
+        for i_batch, sample_batched in enumerate(train_loader):
             optimizer.zero_grad()
+            output = model(sample_batched['x'].float().to(device))
+            loss_train = mse(output, sample_batched['y'].float().to(device))
             loss_train.backward()
             optimizer.step()
             epoch_loss += loss_train.cpu().detach().numpy()
 
-        writer.add_scalar('training loss', epoch_loss / simDataset.len(), epoch)
+        writer.add_scalar('Local avg frame training loss', epoch_loss / simDataset.len(), epoch)
         writer.close()
         print("Epoch:", epoch + 1,
               "avg frame training loss: ", epoch_loss / simDataset.len(),
@@ -111,7 +88,7 @@ def Sim_train():
         if epoch > epoch_num-80:
             if epoch % 4 == 0:
                 torch.save(model.state_dict(),
-                           "TrainedNN/TestCase" + case_info['case_name'] + str(record_times) + ".pt")
+                           "TrainedNN/LocalNN/LocalNN_" + case_info['case_name'] + str(record_times) + ".pt")
                 record_times = record_times + 1
 
 
