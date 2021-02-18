@@ -79,7 +79,7 @@ def mp_load_local_data(workload_list, proc_idx, filepath, files, boundary_points
 class SIM_Data_Local(Dataset):
     def __init__(self, filepath, i_features_num, o_features_num,
                  cluster_num, boundary_points_id, dim, transform=None):
-        boundary_points_id = np.fromiter(boundary_points_id, int).sort()
+        boundary_points_id = np.sort(np.fromiter(boundary_points_id, int))
         # Read file names
         self._files = []
         for _, _, files in os.walk(filepath):

@@ -49,7 +49,7 @@ print("data load time:", load_data_t_end - load_data_t_start)
 
 dim = case_info['dim']
 
-train_loader = DataLoader(dataset=simDataset, batch_size=512, shuffle=True, num_workers=16)
+train_loader = DataLoader(dataset=simDataset, batch_size=256, shuffle=True, num_workers=16)
 
 model = VertNN_Feb16_LocalLinear(
     nfeat=simDataset.input_features_num,
@@ -60,7 +60,7 @@ model = VertNN_Feb16_LocalLinear(
 
 mse = nn.MSELoss(reduction='sum').to(device)
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=6, verbose=True, eps=1e-20)
+scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=6, verbose=True, eps=1e-20)
 
 
 def Sim_train():
