@@ -10,7 +10,7 @@ import multiprocessing as mp
 from numpy import linalg as LA
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.math_tools import svd
-from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3d_seq
+from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3d_seq, RM2Euler
 
 
 def calcCenterOfMass(vind, dim, mass, pos):
@@ -52,8 +52,10 @@ def get_local_trans_parallel_call(workloads_list, proc_idx, adj_list, pos, initi
         com = calcCenterOfMass(adj_v, dim, mass, pos)
         cur_rel_pos = cur_adj_pos - com[None, :]
         A_pq = calcA_pq(cur_rel_pos, init_rel_adj_pos, dim)
-        A_qq = calcA_qq(init_rel_adj_pos, dim)
-        A_final = np.matmul(A_pq, A_qq).reshape((1, -1))
+        # A_qq = calcA_qq(init_rel_adj_pos, dim)
+        # A_final = np.matmul(A_pq, A_qq).reshape((1, -1))
+        # A_final = np.matmul(A_pq, A_qq.transpose()).reshape((1, -1)) # this is the right formula
+        A_final = A_pq  # this is the right formula
         a_final_list.append(A_final)
     return a_final_list
 
@@ -778,12 +780,15 @@ class PDSimulation(SimulatorBase):
             for res in A_finals:
                 out[i, 0:3] = pd_dis[i, :]  # pd pos
                 out[i, 3:6] = pn_dis[i, :]  # pn pos
-                out[i, 6:15] = res
-                out[i, 15:18] = gradE[i * 3: i * 3 + 3]
-                out[i, 18:21] = ex_acc[i, :]
-                out[i, 21:24] = vel[i, :]
-                out[i, 24:27] = pos_init_out[i, :]
-                out[i, 27] = boundary_label_np[i]
+                # out[i, 6:15] = res
+                R, S = RM2Euler(res)
+                out[i, 6:9] = R
+                out[i, 9:12] = S
+                out[i, 12:15] = gradE[i * 3: i * 3 + 3]
+                out[i, 15:18] = ex_acc[i, :]
+                out[i, 18:21] = vel[i, :]
+                out[i, 21:24] = pos_init_out[i, :]
+                out[i, 24] = boundary_label_np[i]
                 i = i + 1
 
         np.savetxt(out_name, out, delimiter=',')
