@@ -20,12 +20,12 @@ writer = SummaryWriter('../runs/GCN_Local_1009_single')
 ###################################################
 
 # Training settings
-epoch_num = 500
+epoch_num = 800
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
 parser.add_argument('--epochs', type=int, default=epoch_num, help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
+parser.add_argument('--lr', type=float, default=0.002, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='Weight decay (L2 loss on parameters).')
 
 # get parameters and check the cuda
@@ -49,7 +49,7 @@ print("data load time:", load_data_t_end - load_data_t_start)
 
 dim = case_info['dim']
 
-train_loader = DataLoader(dataset=simDataset, batch_size=256, shuffle=True, num_workers=16)
+train_loader = DataLoader(dataset=simDataset, batch_size=4096, shuffle=True, num_workers=16)
 
 model = VertNN_Feb16_LocalLinear(
     nfeat=simDataset.input_features_num,
@@ -60,7 +60,7 @@ model = VertNN_Feb16_LocalLinear(
 
 mse = nn.MSELoss(reduction='sum').to(device)
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=6, verbose=True, eps=1e-20)
+scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10, verbose=True, eps=1e-20)
 
 
 def Sim_train():
