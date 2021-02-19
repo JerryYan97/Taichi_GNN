@@ -780,7 +780,6 @@ class PDSimulation(SimulatorBase):
             for res in A_finals:
                 out[i, 0:3] = pd_dis[i, :]  # pd pos
                 out[i, 3:6] = pn_dis[i, :]  # pn pos
-                # out[i, 6:15] = res
                 R, S = RM2Euler(res)
                 out[i, 6:9] = R
                 out[i, 9:12] = S

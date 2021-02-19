@@ -263,7 +263,7 @@ def load_local_data(test_case, cluster_num, path="/Outputs"):
     file_dir = os.getcwd()
     file_dir = file_dir + path
     case_info = read(test_case)
-    tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 25, 3,
+    tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 22, 3,
                                  cluster_num, case_info['boundary'][0], case_info['dim'])
     return tmp_dataset, case_info
 
@@ -361,7 +361,7 @@ def load_data(test_case, cluster_num, path="/Outputs"):
 
         # Load Section 5
         t5_start = time.time()
-        tmp_data = SIM_Data_Geo(file_dir, edge_index, 25, 3, mesh, cluster, cluster_num, cluster_parent, belongs, 3)
+        tmp_data = SIM_Data_Geo(file_dir, edge_index, 22, 3, mesh, cluster, cluster_num, cluster_parent, belongs, 3)
         t5_end = time.time()
         print("t5:", t5_end - t5_start)
 
