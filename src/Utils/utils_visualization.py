@@ -3,6 +3,8 @@ import taichi as ti
 import taichi_glsl as ts
 import numpy as np
 import math
+from numpy.linalg import inv
+from scipy.linalg import sqrtm
 
 # PN result: Red (Top Layer)
 # PD result: Blue (Bottom Layer)
@@ -256,3 +258,35 @@ def get_point_acc_field_ref(min, max, pos, acc, ti_acc) -> ti.Vector:
         ti_acc = acc
     else:
         ti_acc = ti.Vector([0.0, 0.0, 0.0])
+
+
+@ti.func
+def RM2Euler_ti(R) -> ti.Vector:  # matrix no type hint needed
+    theta_x = ti.atan2(R[2, 1], R[2, 2])
+    theta_y = ti.atan2(-R[2, 0], ti.sqrt(R[2, 1]*R[2, 1]+R[2, 2]*R[2, 2]))
+    theta_z = ti.atan2(R[2, 0], R[0, 0])
+    return ti.Vector([theta_x, theta_y, theta_z])
+
+
+def calcR(A_pq):
+    S = sqrtm(np.dot(np.transpose(A_pq), A_pq))
+    R = np.dot(A_pq, inv(S))
+    return R, S
+
+
+def RM2Euler_radian(A):  # numpy
+    R, S = calcR(A)
+    theta_x = np.arctan2(R[2, 1], R[2, 2])
+    theta_y = np.arctan2(-R[2, 0], np.sqrt(R[2, 1]*R[2, 1]+R[2, 2]*R[2, 2]))
+    theta_z = np.arctan2(R[2, 0], R[0, 0])
+    return np.array([theta_x, theta_y, theta_z]), np.array([S[0, 0], S[1, 1], S[2, 2]])
+
+
+def RM2Euler(A):  # numpy
+    R, S = calcR(A)
+    theta_x = np.arctan2(R[2, 1], R[2, 2]) * 180 / np.pi
+    theta_y = np.arctan2(-R[2, 0], np.sqrt(R[2, 1]*R[2, 1]+R[2, 2]*R[2, 2])) * 180 / np.pi
+    theta_z = np.arctan2(R[2, 0], R[0, 0]) * 180 / np.pi
+    return np.array([theta_x, theta_y, theta_z]), np.array([S[0, 0], S[1, 1], S[2, 2]])
+
+
