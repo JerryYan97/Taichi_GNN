@@ -5,7 +5,7 @@ import os
 from numpy import linalg as LA
 
 from .graph_tools import find_boundary
-from .utils_visualization import rotate_matrix_y_axis, rotate_general
+# from .utils_visualization import rotate_matrix_y_axis, rotate_general
 
 
 def fixed_bottom_vert_mp():
@@ -94,7 +94,7 @@ def read(testcase):
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
         case_info['init_translate'] = [0.0, -1.0, 0.0]
         case_info['init_scale'] = 1.0
-        case_info['transformation_mat'] = translate([0.0, -1.0, -5.0]) @ rotate_matrix_y_axis(-45.0) @ scale(1.0)
+        # case_info['transformation_mat'] = translate([0.0, -1.0, -5.0]) @ rotate_matrix_y_axis(-45.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
@@ -122,7 +122,7 @@ def read(testcase):
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
         case_info['init_translate'] = [0.0, 0.0, 0.0]
         case_info['init_scale'] = 1.0
-        case_info['transformation_mat'] = translate([0.0, 0.0, 0.0]) @ rotate_matrix_y_axis(45.0) @ scale(1.0)
+        # case_info['transformation_mat'] = translate([0.0, 0.0, 0.0]) @ rotate_matrix_y_axis(45.0) @ scale(1.0)
 
         return case_info
     elif testcase == 1003:
@@ -153,7 +153,7 @@ def read(testcase):
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
         case_info['init_translate'] = [-0.2, -0.5, 0.0]
         case_info['init_scale'] = 1.0
-        case_info['transformation_mat'] = translate([-0.3, -0.5, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
+        # case_info['transformation_mat'] = translate([-0.3, -0.5, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
@@ -183,7 +183,7 @@ def read(testcase):
         case_info['mesh_offset'] = mesh_offset
         case_info['boundary'] = find_boundary(mesh.elements)
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
-        case_info['transformation_mat'] = translate([-0.3, -0.5, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
+        # case_info['transformation_mat'] = translate([-0.3, -0.5, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
@@ -217,7 +217,7 @@ def read(testcase):
         case_info['mesh_offset'] = mesh_offset
         case_info['boundary'] = find_boundary(mesh.elements)
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
-        case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
+        # case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
@@ -259,7 +259,7 @@ def read(testcase):
         case_info['mesh_offset'] = mesh_offset
         case_info['boundary'] = find_boundary(mesh.elements)
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
-        case_info['transformation_mat'] = translate([0.0, 0.0, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(2.0)
+        # case_info['transformation_mat'] = translate([0.0, 0.0, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(2.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
@@ -301,7 +301,7 @@ def read(testcase):
         case_info['mesh_offset'] = mesh_offset
         case_info['boundary'] = find_boundary(mesh.elements)
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
-        case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
+        # case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_matrix_y_axis(0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
@@ -337,7 +337,7 @@ def read(testcase):
         case_info['boundary'] = find_boundary(mesh.elements)
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
         # case_info['transformation_mat'] = translate([0.0, 0.0, -5.0]) @ rotate_matrix_y_axis(0.0) @ scale(0.1)
-        case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
+        # case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
@@ -379,7 +379,7 @@ def read(testcase):
         case_info['boundary'] = find_boundary(mesh.elements)
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
         # case_info['transformation_mat'] = translate([0.0, 0.0, -5.0]) @ rotate_matrix_y_axis(0.0) @ scale(0.1)
-        case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
+        # case_info['transformation_mat'] = translate([0.0, -1.0, 0.0]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 
@@ -415,7 +415,7 @@ def read(testcase):
         case_info['boundary'] = find_boundary(mesh.elements)
         case_info['boundary_tri_num'] = len(case_info['boundary'][2])
         # case_info['transformation_mat'] = translate([0.0, 0.0, -5.0]) @ rotate_matrix_y_axis(0.0) @ scale(0.1)
-        case_info['transformation_mat'] = translate([0.0, 0.0, 0.0]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
+        # case_info['transformation_mat'] = translate([0.0, 0.0, 0.0]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
         case_info['center'] = center
         case_info['min_sphere_radius'] = min_sphere_radius
 

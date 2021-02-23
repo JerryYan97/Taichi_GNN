@@ -38,7 +38,7 @@ if __name__ == "__main__":
         scene.add_object(model)
         gui = ti.GUI('Model Visualizer')
 
-        model.set_transform(case_info['transformation_mat'])
+        # model.set_transform(case_info['transformation_mat'])
         mesh_pos.from_numpy(case_info['mesh'].vertices)
         boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
 

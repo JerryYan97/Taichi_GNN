@@ -860,7 +860,7 @@ class PDSimulation(SimulatorBase):
                        self.ti_elements.to_numpy(), self.n_elements)
         else:
             gui = scene_info['gui']
-            scene_info['model'].set_transform(self.case_info['transformation_mat'])
+            # scene_info['model'].set_transform(self.case_info['transformation_mat'])
             update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
             scene_info['scene'].input(gui)
             scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
@@ -965,7 +965,7 @@ class PDSimulation(SimulatorBase):
                        self.ti_elements.to_numpy(), self.n_elements)
         else:
             gui = scene_info['gui']
-            scene_info['model'].set_transform(self.case_info['transformation_mat'])
+            # scene_info['model'].set_transform(self.case_info['transformation_mat'])
             update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
             scene_info['scene'].input(gui)
             scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])

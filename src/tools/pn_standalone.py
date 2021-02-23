@@ -424,7 +424,7 @@ if __name__ == "__main__":
         draw_image(gui, filename, x.to_numpy(), mesh_offset, mesh_scale, vertices.to_numpy(), n_elements)
     else:
         gui = ti.GUI('PN standalone 3D')
-        model.set_transform(case_info['transformation_mat'])
+        # model.set_transform(case_info['transformation_mat'])
         update_boundary_mesh(x, boundary_pos, case_info)
         scene.input(gui)
         tina_mesh.set_face_verts(boundary_pos)
