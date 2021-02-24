@@ -71,7 +71,6 @@ def read(testcase):
         case_info['mesh_offset'] = mesh_offset
         return case_info
     elif testcase == 1001:
-        from tina import translate, scale
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/box3D_v518_t2112.msh")
         dirichlet_list = []
         for i in range(mesh.num_vertices):
@@ -103,7 +102,6 @@ def read(testcase):
 
         return case_info
     elif testcase == 1002:
-        from tina import translate, scale
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/tet.msh")
         dirichlet_list = [0, 1, 2]
         dirichlet = np.array(dirichlet_list)
@@ -126,7 +124,6 @@ def read(testcase):
 
         return case_info
     elif testcase == 1003:
-        from tina import translate, scale
         # Bunny with bottom fixed
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/bunny3K.msh")
         dirichlet_list = []
@@ -162,7 +159,6 @@ def read(testcase):
 
         return case_info
     elif testcase == 1004:
-        from tina import translate, scale
         # Bunny with 4 fixed points
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/bunny3K.msh")
         dirichlet_list = [665, 777, 1928, 1986]
@@ -192,7 +188,6 @@ def read(testcase):
 
         return case_info
     elif testcase == 1005:
-        from tina import translate, scale
         # Dragon with bottom fixed
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/dragonLowPolyTrans_6001v_32352t.msh")
         dirichlet_list = []
@@ -226,7 +221,6 @@ def read(testcase):
 
         return case_info
     elif testcase == 1006:
-        from tina import translate, scale
         # Dinosaur with bottom fixed
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/dinosaurlow_16767v_68435t.msh")
         dirichlet_list = []
@@ -268,7 +262,6 @@ def read(testcase):
 
         return case_info
     elif testcase == 1007:
-        from tina import translate, scale
         # ARM with bottom fixed
         mesh = pymesh.load_mesh(
             os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/armadillolow_17698v_72161t.msh")
@@ -310,7 +303,6 @@ def read(testcase):
 
         return case_info
     elif testcase == 1008:
-        from tina import translate, scale
         # Fox with bottom fixed
         mesh = pymesh.load_mesh(
             os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/trans_fox_2036v_7037t.msh")
@@ -346,7 +338,6 @@ def read(testcase):
 
         return case_info
     elif testcase == 1009:
-        from tina import translate, scale
         # Low low poly ARM Model
         mesh = pymesh.load_mesh(
             os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/Arm_low2_4713v_17920t.msh")
@@ -388,7 +379,6 @@ def read(testcase):
 
         return case_info
     elif testcase == 1010:
-        from tina import translate, scale
         # Procedural Cube mesh. It is used to create a random initialization.
         mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/customCube3D.msh")
         mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
@@ -407,6 +397,39 @@ def read(testcase):
         min_sphere_radius = np.linalg.norm(np.array([tmp[0], tmp[1], tmp[2]])) / 2.0
 
         case_info['case_name'] = "CustomCube"
+        case_info['mesh'] = mesh
+        case_info['dim'] = 3
+        case_info['dirichlet'] = dirichlet
+        case_info['mesh_scale'] = mesh_scale
+        case_info['mesh_offset'] = mesh_offset
+        case_info['boundary'] = find_boundary(mesh.elements)
+        case_info['boundary_tri_num'] = len(case_info['boundary'][2])
+        # case_info['transformation_mat'] = translate([0.0, 0.0, -5.0]) @ rotate_matrix_y_axis(0.0) @ scale(0.1)
+        # case_info['transformation_mat'] = translate([0.0, 0.0, 0.0]) @ rotate_general(0.0, 0.0, 0.0) @ scale(1.0)
+        case_info['center'] = center
+        case_info['min_sphere_radius'] = min_sphere_radius
+
+        case_info['bbox_min'] = mesh.bbox[0] - 0.05 * tmp
+        case_info['bbox_dx'] = (mesh.bbox[1] + 0.05 * tmp - mesh.bbox[0] + 0.05 * tmp) / np.array([6.0, 6.0, 4.0])
+        return case_info
+    elif testcase == 1011:
+        # Irregular beam:
+        mesh = pymesh.load_mesh(os.path.dirname(os.path.abspath(__file__)) + "/../../MeshModels/IRBeam_v2354_t10632.msh")
+        mesh_scale = 1 / (np.amax(mesh.vertices) - np.amin(mesh.vertices)) * 0.3
+        mesh_offset = -(np.amax(mesh.vertices) + np.amin(mesh.vertices)) / 2 + 2.0
+
+        dirichlet_list = []
+        for i in range(mesh.num_vertices):
+            if mesh.vertices[i][0] >= mesh.bbox[1][0] - 0.001:
+                dirichlet_list.append(i)
+        dirichlet = np.array(dirichlet_list)
+
+        print("mesh elements:", mesh.elements)
+        center = (mesh.bbox[0] + mesh.bbox[1]) / 2.0
+        tmp = mesh.bbox[1] - mesh.bbox[0]
+        min_sphere_radius = np.linalg.norm(np.array([tmp[0], tmp[1], tmp[2]])) / 2.0
+
+        case_info['case_name'] = "IrregularBeam"
         case_info['mesh'] = mesh
         case_info['dim'] = 3
         case_info['dirichlet'] = dirichlet
