@@ -11,6 +11,7 @@ from numpy import linalg as LA
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.math_tools import svd
 from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3d_seq, RM2Euler
+from scipy.linalg import polar
 
 
 def calcCenterOfMass(vind, dim, mass, pos):
@@ -23,17 +24,17 @@ def calcCenterOfMass(vind, dim, mass, pos):
     return sum
 
 
-def calcA_qq(q_i, dim):
+def calcA_qq(q_i, mass, dim):
     sum = np.zeros((dim, dim))
     for i in range(q_i.shape[0]):
-        sum += np.outer(q_i[i], np.transpose(q_i[i]))
+        sum += mass[i]*np.outer(q_i[i], np.transpose(q_i[i]))
     return np.linalg.inv(sum)
 
 
-def calcA_pq(p_i, q_i, dim):
+def calcA_pq(p_i, q_i, mass, dim):
     sum = np.zeros((dim, dim))
     for i in range(p_i.shape[0]):
-        sum += np.outer(p_i[i], np.transpose(q_i[i]))
+        sum += mass[i]*np.outer(p_i[i], np.transpose(q_i[i]))
     return sum
 
 
@@ -41,6 +42,11 @@ def calcR(A_pq):
     S = sqrtm(np.dot(np.transpose(A_pq), A_pq))
     R = np.dot(A_pq, inv(S))
     return R
+
+
+def polarR(M):
+    R, S = polar(M)
+    return R, S
 
 
 def get_local_trans_parallel_call(workloads_list, proc_idx, adj_list, pos, initial_rel_pos, mass, dim):
@@ -51,11 +57,11 @@ def get_local_trans_parallel_call(workloads_list, proc_idx, adj_list, pos, initi
         cur_adj_pos = pos[adj_v, :]
         com = calcCenterOfMass(adj_v, dim, mass, pos)
         cur_rel_pos = cur_adj_pos - com[None, :]
-        A_pq = calcA_pq(cur_rel_pos, init_rel_adj_pos, dim)
-        # A_qq = calcA_qq(init_rel_adj_pos, dim)
+        A_pq = calcA_pq(cur_rel_pos, init_rel_adj_pos, mass, dim)
+        A_qq = calcA_qq(init_rel_adj_pos, mass, dim)
         # A_final = np.matmul(A_pq, A_qq).reshape((1, -1))
         # A_final = np.matmul(A_pq, A_qq.transpose()).reshape((1, -1)) # this is the right formula
-        A_final = A_pq  # this is the right formula
+        A_final = np.matmul(A_pq, A_qq)  # this is the right formula
         a_final_list.append(A_final)
     return a_final_list
 

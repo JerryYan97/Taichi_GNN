@@ -5,6 +5,8 @@ import numpy as np
 import math
 from numpy.linalg import inv
 from scipy.linalg import sqrtm
+from scipy.linalg import polar
+
 
 # PN result: Red (Top Layer)
 # PD result: Blue (Bottom Layer)
@@ -274,6 +276,11 @@ def calcR(A_pq):
     return R, S
 
 
+def polarR(M):
+    R, S = polar(M)
+    return R, S
+
+
 def RM2Euler_radian(A):  # numpy
     R, S = calcR(A)
     theta_x = np.arctan2(R[2, 1], R[2, 2])
@@ -283,7 +290,8 @@ def RM2Euler_radian(A):  # numpy
 
 
 def RM2Euler(A):  # numpy
-    R, S = calcR(A)
+    # R, S = calcR(A)
+    R, S = polar(A)
     theta_x = np.arctan2(R[2, 1], R[2, 2]) * 180 / np.pi
     theta_y = np.arctan2(-R[2, 0], np.sqrt(R[2, 1]*R[2, 1]+R[2, 2]*R[2, 2])) * 180 / np.pi
     theta_z = np.arctan2(R[2, 0], R[0, 0]) * 180 / np.pi
