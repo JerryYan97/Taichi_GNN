@@ -47,7 +47,12 @@ print("data load time:", load_data_t_end - load_data_t_start)
 
 dim = case_info['dim']
 
-train_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=True, num_workers=16, pin_memory=False)
+# Used to determine whether we are using a cluster.
+pin_memory_option = False
+if os.cpu_count() > 16:
+    pin_memory_option = True
+
+train_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=True, num_workers=os.cpu_count(), pin_memory=pin_memory_option)
 
 model = GCN3D_Feb16_PoolingDeepGlobal(
     nfeat=simDataset.input_features_num,
