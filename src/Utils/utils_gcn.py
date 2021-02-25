@@ -2,21 +2,16 @@ import numpy as np
 import scipy.sparse as sp
 import torch
 import multiprocessing as mp
-from .reader import *
-from .Dijkstra import Dijkstra
+import pickle
 import os
 from collections import defaultdict
 from torch_geometric.data import InMemoryDataset, Data
 from torch.utils.data import Dataset
 import scipy as sp
-import random
 from scipy.spatial import KDTree
 from collections import Counter
 from numpy import linalg as LA
-from os import system
 from scipy.sparse import lil_matrix
-import time
-
 
 # Each sample in it is in PyG format
 def mp_load_global_data(workload_list, proc_idx, filepath, files, node_num, edge_idx, cluster, transform, dim):
@@ -169,7 +164,7 @@ class SIM_Data_Local(Dataset):
 class SIM_Data_Geo(InMemoryDataset):
     def __init__(self, filepath, mesh_edge_idx,
                  i_features_num, o_features_num,
-                 mesh, cluster, clusters_num, cluster_parent, belongs, dim,
+                 mesh_num_vert, cluster, clusters_num, cluster_parent, belongs, dim,
                  transform=None, pre_transform=None):
         super(SIM_Data_Geo, self).__init__(None, transform, pre_transform)
         import time
@@ -190,7 +185,7 @@ class SIM_Data_Geo(InMemoryDataset):
         self._edge_idx = mesh_edge_idx
         self._filepath = filepath
         self._input_features_num = i_features_num
-        self._node_num = mesh.num_vertices
+        self._node_num = mesh_num_vert
         self._output_features_num = o_features_num
 
         self._cluster = cluster
@@ -262,8 +257,9 @@ class SIM_Data_Geo(InMemoryDataset):
 def load_local_data(test_case, cluster_num, path="/Outputs"):
     file_dir = os.getcwd()
     file_dir = file_dir + path
-    case_info = read(test_case)
-    tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 22, 3,
+    # case_info = read(test_case)
+    case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case) + ".p", "rb"))
+    tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 23, 3,
                                  cluster_num, case_info['boundary'][0], case_info['dim'])
     return tmp_dataset, case_info
 
@@ -293,36 +289,38 @@ def load_cluster(file_dir, test_case, cluster_num, vert_num):
 def load_data(test_case, cluster_num, path="/Outputs"):
     file_dir = os.getcwd()
     file_dir = file_dir + path
-
-    case_info = read(test_case)
-    mesh = case_info['mesh']
+    print(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case))
+    case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case) + ".p", "rb"))
+    # case_info = read(test_case)
+    # mesh = case_info['mesh']
 
     edges = set()
     edge_index = np.zeros(shape=(2, 0), dtype=np.int32)
     if case_info['dim'] == 2:
-        for [i, j, k] in mesh.faces:
-            edges.add((i, j))
-            edges.add((j, k))
-            edges.add((k, i))
-        for [i, j, k] in mesh.faces:
-            if (j, i) not in edges:
-                edge_index = np.hstack((edge_index, [[j], [i]]))
-                edge_index = np.hstack((edge_index, [[i], [j]]))
-            if (k, j) not in edges:
-                edge_index = np.hstack((edge_index, [[j], [k]]))
-                edge_index = np.hstack((edge_index, [[k], [j]]))
-            if (i, k) not in edges:
-                edge_index = np.hstack((edge_index, [[k], [i]]))
-                edge_index = np.hstack((edge_index, [[i], [k]]))
-        edge_index = torch.LongTensor(edge_index)
-        cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num, mesh.num_vertices)
-        # Note: boundary labels are not feed into the dataset.
-        return SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, cluster, cluster_num, cluster_parent, belongs, 2)
+        raise Exception("Doesn't support 2D now.")
+        # for [i, j, k] in mesh.faces:
+        #     edges.add((i, j))
+        #     edges.add((j, k))
+        #     edges.add((k, i))
+        # for [i, j, k] in mesh.faces:
+        #     if (j, i) not in edges:
+        #         edge_index = np.hstack((edge_index, [[j], [i]]))
+        #         edge_index = np.hstack((edge_index, [[i], [j]]))
+        #     if (k, j) not in edges:
+        #         edge_index = np.hstack((edge_index, [[j], [k]]))
+        #         edge_index = np.hstack((edge_index, [[k], [j]]))
+        #     if (i, k) not in edges:
+        #         edge_index = np.hstack((edge_index, [[k], [i]]))
+        #         edge_index = np.hstack((edge_index, [[i], [k]]))
+        # edge_index = torch.LongTensor(edge_index)
+        # cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num, mesh.num_vertices)
+        # # Note: boundary labels are not feed into the dataset.
+        # return SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, cluster, cluster_num, cluster_parent, belongs, 2)
     else:
         import time
         t1_start = time.time()
         # Load Section 1
-        for [i, j, k, m] in mesh.elements:
+        for [i, j, k, m] in case_info['elements']:
             edges.add((i, j))
             edges.add((j, i))
             edges.add((i, k))
@@ -355,13 +353,13 @@ def load_data(test_case, cluster_num, path="/Outputs"):
 
         # Load Section 4
         t4_start = time.time()
-        cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num, mesh.num_vertices)
+        cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num, case_info['mesh_num_vert'])
         t4_end = time.time()
         print("t4:", t4_end - t4_start)
 
         # Load Section 5
         t5_start = time.time()
-        tmp_data = SIM_Data_Geo(file_dir, edge_index, 22, 3, mesh, cluster, cluster_num, cluster_parent, belongs, 3)
+        tmp_data = SIM_Data_Geo(file_dir, edge_index, 23, 3, case_info['mesh_num_vert'], cluster, cluster_num, cluster_parent, belongs, 3)
         t5_end = time.time()
         print("t5:", t5_end - t5_start)
 

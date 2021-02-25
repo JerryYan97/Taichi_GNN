@@ -27,19 +27,19 @@ def read_mesh(file_path_name):
 # NOTE: PD-NN visualization is not tested
 class SceneHelper():
     def __init__(self):
-        self.PDNN_file_path = "../../SimData/FinalRes/GNNPDAnimSeq"
-        self.PD_file_path = "../../SimData/FinalRes/ReconstructPDAnimSeq"
-        self.PN_file_path = "../../SimData/FinalRes/ReconstructPNAnimSeq"
+        # self.PDNN_file_path = "../../SimData/FinalRes/GNNPDAnimSeq"
+        # self.PD_file_path = "../../SimData/FinalRes/ReconstructPDAnimSeq"
+        # self.PN_file_path = "../../SimData/FinalRes/ReconstructPNAnimSeq"
 
-        # self.PD_file_path = "../../SimData/680/PD"
-        # self.PN_file_path = "../../SimData/680/PN"
+        self.PD_file_path = "../../SimData/PDAnimSeq"
+        self.PN_file_path = "../../SimData/PNAnimSeq"
         # Init files
         self._PDNN_files_list, self._PD_files_list, self._PN_files_list = [], [], []
         # PD-NN
-        for _, _, files in os.walk(self.PDNN_file_path):
-            self._PDNN_files_list.extend(files)
-        self._PDNN_files_list.sort()
-        print("PD-NN Anim files:\n", self._PDNN_files_list)
+        # for _, _, files in os.walk(self.PDNN_file_path):
+        #     self._PDNN_files_list.extend(files)
+        # self._PDNN_files_list.sort()
+        # print("PD-NN Anim files:\n", self._PDNN_files_list)
         # PD
         for _, _, files in os.walk(self.PD_file_path):
             self._PD_files_list.extend(files)
@@ -86,9 +86,9 @@ class SceneHelper():
         PD_boundary_pos = read_mesh(PD_file_path_name)
         self.PD_mesh.set_face_verts(PD_boundary_pos)
 
-        PDGNN_file_path_name = self.PDNN_file_path + "/" + self._PDNN_files_list[cur_frame_id]
-        PDGNN_boundary_pos = read_mesh(PDGNN_file_path_name)
-        self.PDGNN_mesh.set_face_verts(PDGNN_boundary_pos)
+        # PDGNN_file_path_name = self.PDNN_file_path + "/" + self._PDNN_files_list[cur_frame_id]
+        # PDGNN_boundary_pos = read_mesh(PDGNN_file_path_name)
+        # self.PDGNN_mesh.set_face_verts(PDGNN_boundary_pos)
 
         PN_file_path_name = self.PN_file_path + "/" + self._PN_files_list[cur_frame_id]
         PN_boundary_pos = read_mesh(PN_file_path_name)

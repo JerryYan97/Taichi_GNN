@@ -19,7 +19,7 @@ writer = SummaryWriter('../runs/GlobalVecPreGen')
 PATH = "TrainedNN/GlobalNN/GlobalNN_LowPolyArm_18.pt"
 
 # Model and optimizer
-simDataset, case_info, cluster_parent, cluster_belong = load_data(1009, 256, "/SimData/TestingData")  # load test data
+simDataset, case_info, cluster_parent, cluster_belong = load_data(1009, 256, "/SimData/TrainingData")  # load test data
 dim = case_info['dim']
 test_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=False)
 

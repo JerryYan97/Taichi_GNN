@@ -49,7 +49,7 @@ print("data load time:", load_data_t_end - load_data_t_start)
 
 dim = case_info['dim']
 
-train_loader = DataLoader(dataset=simDataset, batch_size=4096, shuffle=True, num_workers=16)
+train_loader = DataLoader(dataset=simDataset, batch_size=512, shuffle=True, num_workers=16)
 
 model = VertNN_Feb16_LocalLinear(
     nfeat=simDataset.input_features_num,
