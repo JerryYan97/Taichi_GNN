@@ -9,6 +9,7 @@ from src.NeuralNetworks.LocalNN.VertNN_Feb16_LocalLinear import *
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch import linalg as LA
 
 os.makedirs('TrainedNN/LocalNN', exist_ok=True)
 
@@ -20,12 +21,12 @@ writer = SummaryWriter('../runs/GCN_Local_1009_single')
 ###################################################
 
 # Training settings
-epoch_num = 800
+epoch_num = 300
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
 parser.add_argument('--epochs', type=int, default=epoch_num, help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.002, help='Initial learning rate.')
+parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='Weight decay (L2 loss on parameters).')
 
 # get parameters and check the cuda
@@ -65,7 +66,7 @@ model = VertNN_Feb16_LocalLinear(
 
 mse = nn.MSELoss(reduction='sum').to(device)
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10, verbose=True, eps=1e-20)
+scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5, verbose=True, eps=1e-20)
 
 
 def Sim_train():
@@ -74,6 +75,13 @@ def Sim_train():
     model.train()
     for epoch in range(args.epochs):
         epoch_loss = 0.0
+        # metric1: Per point average of the norm(PDNN - (PN-PD))/norm((PN-PD))
+        # metric2: Max norm(PDNN - (PN-PD))/norm((PN-PD)) in one epcho
+        metric1 = 0.0
+        metric2 = 0.0
+        # zero_cnt = 0
+        small_cnt = 0
+        # top_vec_square_sum = 0.0
         for i_batch, sample_batched in enumerate(train_loader):
             optimizer.zero_grad()
             output = model(sample_batched['x'].float().to(device))
@@ -81,11 +89,38 @@ def Sim_train():
             loss_train.backward()
             optimizer.step()
             epoch_loss += loss_train.cpu().detach().numpy()
+            output_cpu = output.cpu().detach()
+            top_vec = LA.norm(output_cpu - sample_batched['y'], dim=1).numpy()
+            bottom_vec = (LA.norm(sample_batched['y'], dim=1)).numpy()
+            # nonzero_idx = np.where(bottom_vec != 0.0)
+            big_idx = np.where(bottom_vec > 1e-10)
+            top_cull_vec = np.take(top_vec, big_idx)
+            bottom_cull_vec = np.take(bottom_vec, big_idx)
+            # small_idx = np.where(bottom_cull_vec < 0.00001)
+            # small_cnt += len(small_idx[0])
+            tmp = top_cull_vec / bottom_cull_vec
+            if np.isinf(tmp).any():
+                raise Exception('Contain Elements that are inf!')
+            # zero_cnt += (len(top_vec) - len(nonzero_idx[0]))
+            small_cnt += (len(top_vec) - len(big_idx[0]))
+            metric1 += np.sum(tmp)
+            # top_vec_square_sum += np.sum(np.square(top_vec))
+            if metric2 < tmp.max():
+                metric2 = tmp.max()
 
-        writer.add_scalar('Local avg frame training loss', epoch_loss / simDataset.len(), epoch)
+        # print("top vec sum:", top_vec_square_sum, "\n epcho MSE loss:", epoch_loss)
+        metric1 /= (len(simDataset)-small_cnt)
+        epoch_loss /= len(simDataset)
+        writer.add_scalar('Metric1(AVG relative pt displacement)', metric1, epoch)
+        writer.add_scalar('Metric2(MAX relative pt displacement)', metric2, epoch)
+        writer.add_scalar('Avg pt MSELoss', epoch_loss, epoch)
         writer.close()
         print("Epoch:", epoch + 1,
-              "avg frame training loss: ", epoch_loss / simDataset.len(),
+              "metric1: ", metric1,
+              "metric2: ", metric2,
+              "Avg pt MSELoss: ", epoch_loss,
+              "small cnt:", small_cnt,
+              "boundary pt cnt:", simDataset.boundary_node_num,
               "time: ", time.time() - t, "s")
         scheduler.step(epoch_loss)
 

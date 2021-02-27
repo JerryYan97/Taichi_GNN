@@ -16,10 +16,10 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 writer = SummaryWriter('../runs/GlobalVecPreGen')
-PATH = "TrainedNN/GlobalNN/GlobalNN_LowPolyArm_18.pt"
+PATH = "TrainedNN/GlobalNN/GlobalNN_IrregularBeam_18.pt"
 
 # Model and optimizer
-simDataset, case_info, cluster_parent, cluster_belong = load_data(1009, 256, "/SimData/TrainingData")  # load test data
+simDataset, case_info, cluster_parent, cluster_belong = load_data(1011, 8, "/SimData/TrainingData")  # load test data
 dim = case_info['dim']
 test_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=False)
 

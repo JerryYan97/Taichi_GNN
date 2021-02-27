@@ -13,9 +13,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.reader import read
 
 # Owing to the fixed color panel, it now just has only tests clusters num that is 10 and under 10.
-cluster_num = 256
+cluster_num = 8
 # Case 1002 doesn't work because it's particles' num is less than the clusters' num.
-test_case = 1009
+test_case = 1011
 
 def rgb_range01(rgb_np):
     return rgb_np / 255.0
@@ -180,7 +180,7 @@ def K_means_taichi(mesh, k):
         raise Exception("Currently it doesn't support clusters num less than cpu cores num.")
 
     # Two adjustable parameters to control the convergence:
-    max_itr = 3
+    max_itr = 6
     # If the change amount is less than (1 - convergence_rate) * bbox diagonal length, then it should be considered as
     # convergence.
     convergence_rate = 0.9
@@ -265,7 +265,7 @@ if __name__ == "__main__":
 
     gui = ti.GUI('kmeans visualization')
     pars.set_particles(mesh.vertices)
-    pars.set_particle_radii(np.full(mesh.num_vertices, 0.01))
+    pars.set_particle_radii(np.full(mesh.num_vertices, 0.05))
     # Label particles color
     particles_color = np.full((mesh.num_vertices, 3), -1.0, dtype=float)
     for i in range(mesh.num_vertices):

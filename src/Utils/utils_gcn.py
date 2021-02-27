@@ -138,7 +138,8 @@ class SIM_Data_Local(Dataset):
         sample = {'x': x_data,
                   'y': y_data,
                   'filename': self._sample_list[file_idx]['filename'],
-                  'mesh_vert_idx': self._boundary_pts_id[node_idx]}
+                  'mesh_vert_idx': self._boundary_pts_id[node_idx],
+                  'file_idx:': file_idx}
         return sample
 
     @property
