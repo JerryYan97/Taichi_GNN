@@ -94,6 +94,12 @@ class SceneHelper():
         PN_boundary_pos = read_mesh(PN_file_path_name)
         self.PN_mesh.set_face_verts(PN_boundary_pos)
 
+    def start_frame(self):
+        file_name_len = len(self._PD_files_list[0])
+        file_id_str = self._PD_files_list[0][file_name_len - 9:file_name_len - 4]
+        file_id = int(file_id_str)
+        return file_id
+
 
 # NOTE: It only works for 3D now
 if __name__ == '__main__':
@@ -123,7 +129,7 @@ if __name__ == '__main__':
         gui.get_event()
 
         if gui.is_pressed('n'):
-            if press_n_counter == key_press_lag and cur_frame_id < frame_num:
+            if press_n_counter == key_press_lag and cur_frame_id < frame_num-1:
                 cur_frame_id += 1
                 press_n_counter = 0
                 helper.set_mesh(cur_frame_id)
@@ -154,7 +160,8 @@ if __name__ == '__main__':
                 gui.set_image(helper.scene.img)
                 video_manager.write_frame(gui.get_image())
                 gui.text("Rendering...", (0.01, 0.99))
-                gui.text(f"Current Frame:{cur_frame_id}. Total Frame:{frame_num - 1}", (0.01, 0.95))
+                gui.text(f"Current Frame:{cur_frame_id + helper.start_frame()}. Total Frame:{frame_num - 1}",
+                         (0.01, 0.95))
                 gui.show(f'results/frame_{cur_frame_id}.png')
             video_manager.make_video(gif=True, mp4=True)
             break
@@ -162,5 +169,5 @@ if __name__ == '__main__':
         helper.scene.render()
         gui.set_image(helper.scene.img)
         gui.text("Not rendering", (0.01, 0.99))
-        gui.text(f"Current Frame:{cur_frame_id}", (0.01, 0.95))
+        gui.text(f"Current Frame:{cur_frame_id + helper.start_frame()}", (0.01, 0.95))
         gui.show()

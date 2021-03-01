@@ -17,6 +17,7 @@ cluster_num = 8
 # Case 1002 doesn't work because it's particles' num is less than the clusters' num.
 test_case = 1011
 
+
 def rgb_range01(rgb_np):
     return rgb_np / 255.0
 

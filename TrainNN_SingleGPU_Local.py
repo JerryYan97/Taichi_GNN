@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 from src.Utils.utils_gcn import *
-from src.NeuralNetworks.LocalNN.VertNN_Feb16_LocalLinear import *
+from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -26,7 +26,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
 parser.add_argument('--epochs', type=int, default=epoch_num, help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
+parser.add_argument('--lr', type=float, default=0.0001, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='Weight decay (L2 loss on parameters).')
 
 # get parameters and check the cuda
@@ -55,16 +55,21 @@ pin_memory_option = False
 if os.cpu_count() > 16:
     pin_memory_option = True
 
-train_loader = DataLoader(dataset=simDataset, batch_size=512, shuffle=True, num_workers=os.cpu_count(), pin_memory=pin_memory_option)
+train_loader = DataLoader(dataset=simDataset,
+                          batch_size=16,
+                          shuffle=True,
+                          num_workers=os.cpu_count(),
+                          pin_memory=pin_memory_option)
 
-model = VertNN_Feb16_LocalLinear(
+model = VertNN_Feb28_LocalLinear(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,
     device=device
 ).to(device)
 
-mse = nn.MSELoss(reduction='sum').to(device)
+# mse = nn.MSELoss(reduction='sum').to(device)
+mse = nn.MSELoss().to(device)
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5, verbose=True, eps=1e-20)
 
