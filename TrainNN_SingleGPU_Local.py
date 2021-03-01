@@ -26,7 +26,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
 parser.add_argument('--epochs', type=int, default=epoch_num, help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.0001, help='Initial learning rate.')
+parser.add_argument('--lr', type=float, default=0.0005, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='Weight decay (L2 loss on parameters).')
 
 # get parameters and check the cuda
@@ -56,7 +56,7 @@ if os.cpu_count() > 16:
     pin_memory_option = True
 
 train_loader = DataLoader(dataset=simDataset,
-                          batch_size=16,
+                          batch_size=256,
                           shuffle=True,
                           num_workers=os.cpu_count(),
                           pin_memory=pin_memory_option)
