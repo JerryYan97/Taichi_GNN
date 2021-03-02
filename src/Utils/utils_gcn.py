@@ -134,6 +134,7 @@ class SIM_Data_Local(Dataset):
             exit(1)
         gvec_node = self._sample_list[file_idx]['gvec']
         x_data = torch.cat((x_frame_node, gvec_node), dim=0)
+        # x_data = x_frame_node
         y_data = self._sample_list[file_idx]['y_frame'][node_idx]
         sample = {'x': x_data,
                   'y': y_data,
@@ -262,6 +263,8 @@ def load_local_data(test_case, cluster_num, path="/Outputs"):
     case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case) + ".p", "rb"))
     tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 23, 3,
                                  cluster_num, case_info['boundary'][0], case_info['dim'])
+    # tmp_dataset = SIM_Data_Local(file_dir, 23, 3,
+                                 # cluster_num, case_info['boundary'][0], case_info['dim'])
     return tmp_dataset, case_info
 
 

@@ -6,11 +6,16 @@ import torch.nn as nn
 class VertNN_Feb28_LocalLinear(nn.Module):
     def __init__(self, nfeat, fc_out, dropout, device):
         super(VertNN_Feb28_LocalLinear, self).__init__()
-        self.fc1 = nn.Linear(nfeat, 128)  # Hidden layers' width is influenced by your cluster num.
-        self.fc2 = nn.Linear(128, 96)
-        self.fc3 = nn.Linear(96, 32)
-        self.fc4 = nn.Linear(32, 8)
-        self.fc5 = nn.Linear(8, fc_out)
+        # self.fc1 = nn.Linear(nfeat, 128)  # Hidden layers' width is influenced by your cluster num.
+        # self.fc2 = nn.Linear(128, 96)
+        # self.fc3 = nn.Linear(96, 32)
+        # self.fc4 = nn.Linear(32, 8)
+        # self.fc5 = nn.Linear(8, fc_out)
+        self.fc1 = nn.Linear(nfeat, 32)  # Hidden layers' width is influenced by your cluster num.
+        self.fc2 = nn.Linear(32, 64)
+        self.fc3 = nn.Linear(64, 24)
+        self.fc4 = nn.Linear(24, 4)
+        self.fc5 = nn.Linear(4, fc_out)
         self.ELU = nn.ELU()
 
     def forward(self, x):
