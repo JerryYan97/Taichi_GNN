@@ -23,7 +23,7 @@ writer = SummaryWriter('../runs/GCN_Local_1009_single')
 ###################################################
 
 # Training settings
-epoch_num = 300
+epoch_num = 500
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
@@ -47,7 +47,7 @@ if args.cuda:
 
 load_data_t_start = time.time()
 simDataset, case_info = load_local_data(1009, 256, "/SimData/TrainingData")
-simDataset.to_device(device)
+# simDataset.to_device(device)
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
 
@@ -56,9 +56,8 @@ dim = case_info['dim']
 train_loader = DataLoader(dataset=simDataset,
                           batch_size=256,
                           shuffle=True,
-                          num_workers=0,
-                          # num_workers=os.cpu_count(),
-                          pin_memory=False)
+                          num_workers=os.cpu_count(),
+                          pin_memory=True)
 
 # model = VertNN_Feb28_LocalLinear(
 #     nfeat=simDataset.input_features_num,
@@ -97,16 +96,16 @@ def Sim_train():
         # data = data_itr.next()
         for i_batch, sample_batched in enumerate(train_loader):
             optimizer.zero_grad()
-            # output = model(sample_batched['x'].float().to(device))
-            # loss_train = mse(output, sample_batched['y'].float().to(device))
-            output = model(sample_batched['x'])
-            loss_train = mse(output, sample_batched['y'])
+            output = model(sample_batched['x'].float().to(device))
+            loss_train = mse(output, sample_batched['y'].float().to(device))
+            # output = model(sample_batched['x'])
+            # loss_train = mse(output, sample_batched['y'])
             loss_train.backward()
             optimizer.step()
             epoch_loss += loss_train.cpu().detach().numpy()
-            # output_cpu = output.cpu().detach()
-            # top_vec = LA.norm(output_cpu - sample_batched['y'], dim=1).numpy()
-            top_vec = LA.norm(output - sample_batched['y'], dim=1).cpu().detach().numpy()
+            output_cpu = output.cpu().detach()
+            top_vec = LA.norm(output_cpu - sample_batched['y'], dim=1).numpy()
+            # top_vec = LA.norm(output - sample_batched['y'], dim=1).cpu().detach().numpy()
             bottom_vec = (LA.norm(sample_batched['y'], dim=1)).cpu().detach().numpy()
             # nonzero_idx = np.where(bottom_vec != 0.0)
             big_idx = np.where(bottom_vec > 1e-10)
