@@ -6,7 +6,8 @@ import torch
 import torch.optim as optim
 from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
-from src.NeuralNetworks.LocalNN.VertNN_Mar2_Local import *
+# from src.NeuralNetworks.LocalNN.VertNN_Mar2_Local import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar3_Local import *
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -27,7 +28,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
 parser.add_argument('--epochs', type=int, default=epoch_num, help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
+parser.add_argument('--lr', type=float, default=0.005, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='Weight decay (L2 loss on parameters).')
 
 # get parameters and check the cuda
@@ -46,6 +47,7 @@ if args.cuda:
 
 load_data_t_start = time.time()
 simDataset, case_info = load_local_data(1009, 256, "/SimData/TrainingData")
+simDataset.to_device(device)
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
 
@@ -59,7 +61,8 @@ if os.cpu_count() > 16:
 train_loader = DataLoader(dataset=simDataset,
                           batch_size=256,
                           shuffle=True,
-                          num_workers=os.cpu_count(),
+                          num_workers=0,
+                          # num_workers=os.cpu_count(),
                           pin_memory=pin_memory_option)
 
 # model = VertNN_Feb28_LocalLinear(
@@ -69,7 +72,7 @@ train_loader = DataLoader(dataset=simDataset,
 #     device=device
 # ).to(device)
 
-model = VertNN_Mar2_LocalLinear(
+model = VertNN_Mar3_LocalLinear(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,
@@ -95,16 +98,21 @@ def Sim_train():
         # zero_cnt = 0
         small_cnt = 0
         # top_vec_square_sum = 0.0
+        # data_itr = iter(train_loader)
+        # data = data_itr.next()
         for i_batch, sample_batched in enumerate(train_loader):
             optimizer.zero_grad()
-            output = model(sample_batched['x'].float().to(device))
-            loss_train = mse(output, sample_batched['y'].float().to(device))
+            # output = model(sample_batched['x'].float().to(device))
+            # loss_train = mse(output, sample_batched['y'].float().to(device))
+            output = model(sample_batched['x'])
+            loss_train = mse(output, sample_batched['y'])
             loss_train.backward()
             optimizer.step()
             epoch_loss += loss_train.cpu().detach().numpy()
-            output_cpu = output.cpu().detach()
-            top_vec = LA.norm(output_cpu - sample_batched['y'], dim=1).numpy()
-            bottom_vec = (LA.norm(sample_batched['y'], dim=1)).numpy()
+            # output_cpu = output.cpu().detach()
+            # top_vec = LA.norm(output_cpu - sample_batched['y'], dim=1).numpy()
+            top_vec = LA.norm(output - sample_batched['y'], dim=1).cpu().detach().numpy()
+            bottom_vec = (LA.norm(sample_batched['y'], dim=1)).cpu().detach().numpy()
             # nonzero_idx = np.where(bottom_vec != 0.0)
             big_idx = np.where(bottom_vec > 1e-10)
             top_cull_vec = np.take(top_vec, big_idx)
@@ -147,5 +155,7 @@ def Sim_train():
 
 if __name__ == '__main__':
     t_total = time.time()
+    # data_itr = iter(train_loader)
+    # data = data_itr.next()
     Sim_train()
     print("Total time elapsed: {:.4f}s".format(time.time() - t_total))

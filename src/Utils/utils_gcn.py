@@ -162,6 +162,15 @@ class SIM_Data_Local(Dataset):
     def len(self):
         return len(self._files)
 
+    def to_device(self, device):
+        import time
+        to_d_start = time.time()
+        for item in self._sample_list:
+            item['x_frame'] = item['x_frame'].float().to(device)
+            item['y_frame'] = item['y_frame'].float().to(device)
+            item['gvec'] = item['gvec'].float().to(device)
+        print("Dataset to device time:", time.time() - to_d_start)
+
 
 class SIM_Data_Geo(InMemoryDataset):
     def __init__(self, filepath, mesh_edge_idx,

@@ -2,7 +2,8 @@ import time
 import os, sys
 import argparse
 from src.Utils.utils_gcn import *
-from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar2_Local import *
+# from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
 
 import math
 from torch_geometric.data import DataLoader
@@ -26,7 +27,14 @@ simDataset, case_info = load_local_data(1009, 256, "/SimData/TestingData")  # lo
 dim = case_info['dim']
 test_loader = DataLoader(dataset=simDataset, batch_size=simDataset.boundary_node_num, shuffle=False)
 
-model = VertNN_Feb28_LocalLinear(
+# model = VertNN_Feb28_LocalLinear(
+#     nfeat=simDataset.input_features_num,
+#     fc_out=simDataset.output_features_num,
+#     dropout=0,
+#     device=device
+# ).to(device)
+
+model = VertNN_Mar2_LocalLinear(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,
