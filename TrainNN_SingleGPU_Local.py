@@ -53,17 +53,12 @@ print("data load time:", load_data_t_end - load_data_t_start)
 
 dim = case_info['dim']
 
-# Used to determine whether we are using a cluster.
-pin_memory_option = False
-if os.cpu_count() > 16:
-    pin_memory_option = True
-
 train_loader = DataLoader(dataset=simDataset,
                           batch_size=256,
                           shuffle=True,
                           num_workers=0,
                           # num_workers=os.cpu_count(),
-                          pin_memory=pin_memory_option)
+                          pin_memory=False)
 
 # model = VertNN_Feb28_LocalLinear(
 #     nfeat=simDataset.input_features_num,
