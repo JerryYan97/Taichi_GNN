@@ -2,7 +2,7 @@ import time
 import os, sys
 import argparse
 from src.Utils.utils_gcn import *
-from src.NeuralNetworks.LocalNN.VertNN_Mar2_Local import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar3_Local import *
 # from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
 
 import math
@@ -34,7 +34,7 @@ test_loader = DataLoader(dataset=simDataset, batch_size=simDataset.boundary_node
 #     device=device
 # ).to(device)
 
-model = VertNN_Mar2_LocalLinear(
+model = VertNN_Mar3_LocalLinear(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,
