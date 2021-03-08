@@ -175,7 +175,7 @@ class SIM_Data_Local(Dataset):
 class SIM_Data_Geo(InMemoryDataset):
     def __init__(self, filepath, mesh_edge_idx,
                  i_features_num, o_features_num,
-                 mesh_num_vert, cluster, clusters_num, cluster_parent, belongs, dim,
+                 case_info, cluster, clusters_num, cluster_parent, belongs, dim,
                  transform=None, pre_transform=None):
         super(SIM_Data_Geo, self).__init__(None, transform, pre_transform)
         import time
@@ -196,7 +196,8 @@ class SIM_Data_Geo(InMemoryDataset):
         self._edge_idx = mesh_edge_idx
         self._filepath = filepath
         self._input_features_num = i_features_num
-        self._node_num = mesh_num_vert
+        self._node_num = case_info['mesh_num_vert']
+        self._b_pt_idx = torch.from_numpy(np.sort(np.fromiter(case_info['boundary'][0], int)))
         self._output_features_num = o_features_num
 
         self._cluster = cluster
@@ -260,6 +261,10 @@ class SIM_Data_Geo(InMemoryDataset):
     @property
     def node_num(self):
         return self._node_num
+
+    @property
+    def boundary_pt_idx(self):
+        return self._b_pt_idx
 
     def len(self):
         return len(self.raw_file_names)
@@ -372,7 +377,9 @@ def load_data(test_case, cluster_num, path="/Outputs"):
 
         # Load Section 5
         t5_start = time.time()
-        tmp_data = SIM_Data_Geo(file_dir, edge_index, 23, 3, case_info['mesh_num_vert'], cluster, cluster_num, cluster_parent, belongs, 3)
+        tmp_data = SIM_Data_Geo(file_dir, edge_index, 23, 3,
+                                case_info,
+                                cluster, cluster_num, cluster_parent, belongs, 3)
         t5_end = time.time()
         print("t5:", t5_end - t5_start)
 

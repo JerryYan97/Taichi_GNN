@@ -8,6 +8,7 @@ from src.NeuralNetworks.GlobalNN.GCN3D_Feb16_PoolingDeepGlobal import *
 from torch_geometric.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch import linalg as LA
 
 os.makedirs('TrainedNN/GlobalNN', exist_ok=True)
 
@@ -18,7 +19,7 @@ for root, dirs, files in os.walk("../runs/"):
 writer = SummaryWriter('../runs/GCN_Global_1009_single')
 
 # Training settings
-epoch_num = 500
+epoch_num = 25
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
@@ -41,7 +42,7 @@ if args.cuda:
 
 
 load_data_t_start = time.time()
-simDataset, case_info, cluster_parent, cluster_belong = load_data(1009, 256, "/SimData/TrainingData")
+simDataset, case_info, cluster_parent, cluster_belong = load_data(1009, 8, "/SimData/TrainingData")
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
 
@@ -52,7 +53,9 @@ pin_memory_option = False
 if os.cpu_count() > 16:
     pin_memory_option = True
 
-train_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=True, num_workers=os.cpu_count(), pin_memory=pin_memory_option)
+train_loader = DataLoader(dataset=simDataset, batch_size=1,
+                          shuffle=True,
+                          num_workers=os.cpu_count(), pin_memory=pin_memory_option)
 
 model = GCN3D_Feb16_PoolingDeepGlobal(
     nfeat=simDataset.input_features_num,
@@ -79,6 +82,8 @@ def Sim_train():
     model.train()
     for epoch in range(args.epochs):
         epoch_loss = 0.0
+        metric1 = 0.0
+        small_cnt = 0
         for data in train_loader:  # Iterate in batches over the training dataset.
             output, _ = model(data.x.float().to(device),
                               data.edge_index.to(device),
@@ -88,14 +93,34 @@ def Sim_train():
             output = output.reshape(data.num_graphs * simDataset.node_num, -1)
 
             loss_train = mse(output, data.y.float().to(device))
+
+            output_cpu = output.cpu().detach()
+
+            top_vec = LA.norm(output_cpu - data.y, dim=1).numpy()
+            bottom_vec = (LA.norm(data.y, dim=1)).cpu().detach().numpy()
+
+            top_vec_b = np.take(top_vec, simDataset.boundary_pt_idx)
+            bottom_vec_b = np.take(bottom_vec, simDataset.boundary_pt_idx)
+
+            big_idx = np.where(bottom_vec_b > 1e-10)
+            top_cull_vec = np.take(top_vec_b, big_idx)
+            bottom_cull_vec = np.take(bottom_vec_b, big_idx)
+            tmp = top_cull_vec / bottom_cull_vec
+            if np.isinf(tmp).any():
+                raise Exception('Contain Elements that are inf!')
+            small_cnt += (len(top_vec_b) - len(big_idx[0]))
+            metric1 += np.sum(tmp)
+
             optimizer.zero_grad()
             loss_train.backward()
             optimizer.step()
             epoch_loss += loss_train.cpu().detach().numpy()
 
-        writer.add_scalar('training loss', epoch_loss / simDataset.len(), epoch)
+        metric1 /= (len(simDataset.boundary_pt_idx) * len(simDataset.raw_file_names) - small_cnt)
+
+        writer.add_scalar('metric1', metric1, epoch)
         print("Epoch:", epoch + 1,
-              "avg frame training loss: ", epoch_loss / simDataset.len(),
+              "metric1: ", metric1,
               "time: ", time.time() - t, "s")
         scheduler.step(epoch_loss)
 
