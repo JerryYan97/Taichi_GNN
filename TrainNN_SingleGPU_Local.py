@@ -7,7 +7,7 @@ import torch.optim as optim
 from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar2_Local import *
-from src.NeuralNetworks.LocalNN.VertNN_Mar3_Local import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar10_Local import *
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -54,7 +54,7 @@ print("data load time:", load_data_t_end - load_data_t_start)
 dim = case_info['dim']
 
 train_loader = DataLoader(dataset=simDataset,
-                          batch_size=128,
+                          batch_size=256,
                           shuffle=True,
                           num_workers=os.cpu_count(),
                           pin_memory=True)
@@ -66,7 +66,7 @@ train_loader = DataLoader(dataset=simDataset,
 #     device=device
 # ).to(device)
 
-model = VertNN_Mar3_LocalLinear(
+model = VertNN_Mar10_LocalLinear(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,

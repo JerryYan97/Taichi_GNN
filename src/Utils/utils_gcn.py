@@ -58,6 +58,7 @@ def mp_load_local_data(workload_list, proc_idx, filepath, files, boundary_points
             pd_dis = fperframe[boundary_points_id, 0:3]  # a[start:stop] items start through stop-1
         y_frame_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((boundary_pts_num, -1)))
         x_frame_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((boundary_pts_num, -1)))
+        # x_frame_data = torch.from_numpy(pd_dis).reshape((boundary_pts_num, -1))
         gvec = np.genfromtxt(gvec_dir + "gvec_" + files[idx], delimiter=',')
         if gvec.shape[0] != cluster_num:
             raise Exception('Cluster num should be equal to the input GVec length.')
@@ -277,6 +278,8 @@ def load_local_data(test_case, cluster_num, path="/Outputs"):
     case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case) + ".p", "rb"))
     tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 23, 3,
                                  cluster_num, case_info['boundary'][0], case_info['dim'])
+    # tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 3, 3,
+    #                              cluster_num, case_info['boundary'][0], case_info['dim'])
     # tmp_dataset = SIM_Data_Local(file_dir, 23, 3,
                                  # cluster_num, case_info['boundary'][0], case_info['dim'])
     return tmp_dataset, case_info
