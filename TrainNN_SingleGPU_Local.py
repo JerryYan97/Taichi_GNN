@@ -16,11 +16,11 @@ from torch import linalg as LA
 
 os.makedirs('TrainedNN/LocalNN', exist_ok=True)
 
-for root, dirs, files in os.walk("../runs/"):
+for root, dirs, files in os.walk("./runs/"):
     for name in files:
         os.remove(os.path.join(root, name))
 
-writer = SummaryWriter('../runs/GCN_Local_1009_single')
+writer = SummaryWriter('./runs/GCN_Local_1009_single')
 ###################################################
 
 # Training settings
