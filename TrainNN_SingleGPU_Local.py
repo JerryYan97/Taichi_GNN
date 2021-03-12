@@ -8,7 +8,8 @@ from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar2_Local import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_Simple import *
-from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local import *
+# from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_ReduceBN import *
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -67,7 +68,7 @@ train_loader = DataLoader(dataset=simDataset,
 #     device=device
 # ).to(device)
 
-model = VertNN_Mar12_LocalLinear(
+model = VertNN_Mar12_LocalLinear_RBN(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,
