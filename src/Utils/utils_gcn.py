@@ -53,10 +53,10 @@ def mp_load_local_data(workload_list, proc_idx, filepath, files, boundary_points
             pn_dis = fperframe[boundary_points_id, 2:4]
             pd_dis = fperframe[boundary_points_id, 0:2]  # a[start:stop] items start through stop-1
         else:
-            # other = fperframe[boundary_points_id, 6:]
-            other1 = fperframe[boundary_points_id, 15:21]
-            other2 = fperframe[boundary_points_id, 24:26]
-            other = np.hstack((other1, other2))
+            other = fperframe[boundary_points_id, 15:]
+            # other1 = fperframe[boundary_points_id, 15:21]
+            # other2 = fperframe[boundary_points_id, 24:26]
+            # other = np.hstack((other1, other2))
             pn_dis = fperframe[boundary_points_id, 3:6]
             pd_dis = fperframe[boundary_points_id, 0:3]  # a[start:stop] items start through stop-1
         y_frame_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((boundary_pts_num, -1)))
@@ -281,7 +281,7 @@ def load_local_data(test_case, cluster_num, path="/Outputs"):
     case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case) + ".p", "rb"))
     # tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 23, 3,
     #                              cluster_num, case_info['boundary'][0], case_info['dim'])
-    tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 3 + 3 + 3 + 1 + 1, 3,
+    tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 3 + 3 + 3 + 3 + 1 + 1, 3,
                                  cluster_num, case_info['boundary'][0], case_info['dim'])
     # tmp_dataset = SIM_Data_Local(file_dir, 23, 3,
                                  # cluster_num, case_info['boundary'][0], case_info['dim'])
