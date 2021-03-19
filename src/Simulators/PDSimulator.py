@@ -710,15 +710,15 @@ class PDSimulation(SimulatorBase):
     def output_network_data(self, pd_dis, pn_dis, gradE, init_rel_pos, frame, T):
         vel = self.ti_vel.to_numpy()
         ex_acc = self.ti_ex_acc.to_numpy()
-
         frame = str(frame).zfill(5)
+        additional_label = "rdfeat"
         if T == 0:
             if self.dim == 2:
                 out_name = "SimData/TrainingData/Train_2d_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
                            "_" + str(self.exf_mag) + "_" + frame + ".csv"
             else:
                 if self.acc_type == 'dir':
-                    out_name = "SimData/TrainingData/Train_dir_" + self.case_info['case_name'] + "_" + \
+                    out_name = "SimData/TrainingData/Train_dir_" + self.case_info['case_name'] + "_" + additional_label + "_" +\
                                str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + \
                                "_" + frame + ".csv"
                 elif self.acc_type == 'ring':
@@ -743,7 +743,7 @@ class PDSimulation(SimulatorBase):
                             "_" + str(self.exf_mag) + "_" + frame + ".csv"
             else:
                 if self.acc_type == 'dir':
-                    out_name = "SimData/TestingData/Test_dir_" + self.case_info['case_name'] + "_" + \
+                    out_name = "SimData/TestingData/Test_dir_" + self.case_info['case_name'] + "_" + additional_label + "_" + \
                                str(self.exf_angle1) + "_" + str(self.exf_angle2) + "_" + str(self.exf_mag) + \
                                "_" + frame + ".csv"
                 elif self.acc_type == 'ring':
@@ -764,7 +764,7 @@ class PDSimulation(SimulatorBase):
                                "_" + str(self.pf_ind) + "_" + frame + ".csv"
 
         # NOTE: Remember to change ele_count when you add or remove a feature.
-        ele_count = 23
+        ele_count = 24
         out = np.ones([self.n_vertices, ele_count], dtype=float)
         
         A_finals = get_local_transformation(self.n_vertices, self.mesh, self.ti_x.to_numpy(), init_rel_pos,
@@ -794,8 +794,8 @@ class PDSimulation(SimulatorBase):
                 out[i, 15:18] = ex_acc[i, :]
                 out[i, 18:21] = vel[i, :]
                 out[i, 21:24] = pos_init_out[i, :]
-                out[i, 24] = boundary_label_np[i]
-                out[i, 25] = self.dt
+                # out[i, 24] = boundary_label_np[i]
+                # out[i, 25] = self.dt
                 i = i + 1
 
         np.savetxt(out_name, out, delimiter=',')

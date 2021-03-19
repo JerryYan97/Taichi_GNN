@@ -45,7 +45,7 @@ def mp_load_global_data(workload_list, proc_idx, filepath, files, node_num, edge
 def mp_load_local_data(workload_list, proc_idx, filepath, files, boundary_points_id, cluster_num, transform, dim):
     sample_list = []
     boundary_pts_num = boundary_points_id.shape[0]
-    gvec_dir = os.getcwd() + "/SimData/TestPreGenGlobalFeatureVec/"
+    gvec_dir = os.getcwd() + "/SimData/TrainPreGenGlobalFeatureVec/"
     for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
         fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
         if dim == 2:
@@ -53,7 +53,7 @@ def mp_load_local_data(workload_list, proc_idx, filepath, files, boundary_points
             pn_dis = fperframe[boundary_points_id, 2:4]
             pd_dis = fperframe[boundary_points_id, 0:2]  # a[start:stop] items start through stop-1
         else:
-            other = fperframe[boundary_points_id, 15:]
+            other = fperframe[boundary_points_id, 6:]
             # other1 = fperframe[boundary_points_id, 15:21]
             # other2 = fperframe[boundary_points_id, 24:26]
             # other = np.hstack((other1, other2))
@@ -280,10 +280,10 @@ def load_local_data(test_case, cluster_num, path="/Outputs"):
     file_dir = file_dir + path
     # case_info = read(test_case)
     case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case) + ".p", "rb"))
-    # tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 23, 3,
-    #                              cluster_num, case_info['boundary'][0], case_info['dim'])
-    tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 3 + 3 + 3 + 3 + 1 + 1, 3,
+    tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 21, 3,
                                  cluster_num, case_info['boundary'][0], case_info['dim'])
+    # tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 3 + 3 + 3 + 3 + 1 + 1, 3,
+    #                              cluster_num, case_info['boundary'][0], case_info['dim'])
     # tmp_dataset = SIM_Data_Local(file_dir, 23, 3,
                                  # cluster_num, case_info['boundary'][0], case_info['dim'])
     return tmp_dataset, case_info
@@ -384,7 +384,7 @@ def load_data(test_case, cluster_num, path="/Outputs"):
 
         # Load Section 5
         t5_start = time.time()
-        tmp_data = SIM_Data_Geo(file_dir, edge_index, 23, 3,
+        tmp_data = SIM_Data_Geo(file_dir, edge_index, 21, 3,
                                 case_info,
                                 cluster, cluster_num, cluster_parent, belongs, 3)
         t5_end = time.time()
