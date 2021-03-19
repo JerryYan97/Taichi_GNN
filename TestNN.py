@@ -9,21 +9,23 @@ import torch.nn as nn
 from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.GCNCNN_net import *
 # from src.NeuralNetworks.GCN_net_Dec9 import *
-from src.NeuralNetworks.GCN3D_Jan14 import *
+# from src.NeuralNetworks.GCN3D_Jan14 import *
+# from src.NeuralNetworks.GCN3D_Jan14 import *
+# from src.NeuralNetworks.GCN3D_Feb11 import *
+# from src.NeuralNetworks.GCN3D_Feb12 import *
+# from src.NeuralNetworks.GCN3D_Feb13 import *
+# from src.NeuralNetworks.GCN3D_Feb13_twoLayer import *
+# from src.NeuralNetworks.GCN3D_Feb13_threeLinear import *
+# from src.NeuralNetworks.GCN3D_Feb13_FiveLinears import *
+# from src.NeuralNetworks.GCN3D_Feb13_MoreLinears import *
+from src.NeuralNetworks.GCN3D_Feb14_PoolingDeep import *
+
 import math
 from torch_geometric.data import DataLoader
 
 # Training settings
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
-parser.add_argument('--fastmode', action='store_true', default=False, help='Validate during training pass.')
-parser.add_argument('--seed', type=int, default=546, help='Random seed.')
-# parser.add_argument('--epochs', type=int, default=50, help='Number of epochs to train.')
-parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.001, help='Initial learning rate.')
-parser.add_argument('--weight_decay', type=float, default=5e-4, help='Weight decay (L2 loss on parameters).')
-parser.add_argument('--hidden', type=int, default=32, help='Number of hidden units.')
-parser.add_argument('--dropout', type=float, default=0.5, help='Dropout rate (1 - keep probability).')
 
 # get parameters and check the cuda
 args = parser.parse_args()
@@ -33,11 +35,11 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Specify a path
-PATH = "TrainedNN/state_dict_model_zero_loss_1k.pt"
+PATH = "TrainedNN/TestCaseLowPolyArm18.pt"
 # PATH = "TrainedNN/state_dict_model_zero_loss_1k_prune.pt"
 
 # Model and optimizer
-simDataset, case_info = load_data(1008, "/SimData/TestingData")  # load test data
+simDataset, case_info, cluster_parent, cluster_belong = load_data(1009, 256, "/SimData/TestingData")  # load test data
 dim = case_info['dim']
 test_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=False)
 # model = GCN_CNN(nfeat=simDataset.input_features_num,
@@ -47,17 +49,46 @@ test_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=False)
 #                 cnnout=simDataset.node_num * dim,
 #                 dropout=args.dropout).to(device)
 # model = GCN_net_Dec9(
-model = GCN3D_Jan14(
-                nfeat=simDataset.input_features_num,
-                graph_node_num=simDataset.node_num,
-                cluster_num=simDataset.cluster_num,
-                gcn_hid1=32 * 2,
-                gcn_out1=48 * 2,
-                gcn_hid2=98 * 2,
-                gcn_out2=128 * 2,
-                fc_hid=60 * 2,
-                fc_out=dim,
-                dropout=args.dropout).to(device)
+# model = GCN3D_Jan14(
+#                 nfeat=simDataset.input_features_num,
+#                 graph_node_num=simDataset.node_num,
+#                 cluster_num=simDataset.cluster_num,
+#                 gcn_hid1=32 * 2,
+#                 gcn_out1=48 * 2,
+#                 gcn_hid2=98 * 2,
+#                 gcn_out2=128 * 2,
+#                 fc_hid=60 * 2,
+#                 fc_out=dim,
+#                 dropout=args.dropout).to(device)
+# Hidden layer
+# testcase1007: [56, 441]
+# model = GCN3D_Feb13(
+#     nfeat=simDataset.input_features_num,
+#     graph_node_num=simDataset.node_num,
+#     cluster_num=simDataset.cluster_num,
+#     gcn_hid1=128,
+#     gcn_out1=256,
+#     gcn_hid2=128,
+#     gcn_out2=128,
+#     fc_hid=16,
+#     fc_out=dim,
+#     dropout=0,
+#     device=device
+# ).to(device)
+
+model = GCN3D_Feb14_PoolingDeep(
+    nfeat=simDataset.input_features_num,
+    graph_node_num=simDataset.node_num,
+    cluster_num=simDataset.cluster_num,
+    gcn_hid1=128,
+    gcn_out1=256,
+    gcn_hid2=128,
+    gcn_out2=128,
+    fc_hid=16,
+    fc_out=dim,
+    dropout=0,
+    device=device
+).to(device)
 model.load_state_dict(torch.load(PATH))
 mse = nn.MSELoss(reduction='sum').to(device)
 node_num = simDataset.node_num
@@ -77,15 +108,15 @@ def RunNN():
                            data.cluster.to(device)).reshape(data.num_graphs * simDataset.node_num, -1)
             npinputs = data.x.cpu().detach().numpy()
             npouts = output.cpu().detach().numpy()
-            l1_loss = torch.zeros(1).to(device)
-            reg = 1e-4
-            with torch.enable_grad():
-                for name, param in model.named_parameters():
-                    if 'bias' not in name:
-                        if 'GCN' in name:
-                            l1_loss = l1_loss + (reg * torch.sum(torch.abs(param.to(device))))
+            # l1_loss = torch.zeros(1).to(device)
+            # reg = 1e-4
+            # with torch.enable_grad():
+            #     for name, param in model.named_parameters():
+            #         if 'bias' not in name:
+            #             if 'GCN' in name:
+            #                 l1_loss = l1_loss + (reg * torch.sum(torch.abs(param.to(device))))
 
-            loss = mse(output, data.y.float().to(device)) + l1_loss
+            loss = mse(output, data.y.float().to(device))   # + l1_loss
             print("Frame:", i,
                   "loss: ", loss.cpu().detach().numpy())
             # PD displacement, PD-GNN, ???, PN displacement

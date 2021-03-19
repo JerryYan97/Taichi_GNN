@@ -12,7 +12,7 @@ from Utils.math_tools import svd, my_svd
 from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3d_seq, get_acc_field, get_ring_acc_field, get_point_acc_field_by_point
 
 ##############################################################################
-case_info = read(1006)
+case_info = read(1011)
 mesh = case_info['mesh']
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
@@ -104,7 +104,7 @@ def set_dir_acc_3D():
         for i in range(n_particles):
             # ex_acc[i] = ti.Vector(get_acc_field(2.0, 45.0, 45.0, 3))
             # ex_acc[i] = ti.Vector([0.0, -12.0, 12.0])
-            ex_acc[i] = ti.Vector([0.0, 0.0, 0.0])
+            ex_acc[i] = ti.Vector([0.0, -980.0, 0.0])
 
 
 @ti.kernel
@@ -424,7 +424,7 @@ if __name__ == "__main__":
         draw_image(gui, filename, x.to_numpy(), mesh_offset, mesh_scale, vertices.to_numpy(), n_elements)
     else:
         gui = ti.GUI('PN standalone 3D')
-        model.set_transform(case_info['transformation_mat'])
+        # model.set_transform(case_info['transformation_mat'])
         update_boundary_mesh(x, boundary_pos, case_info)
         scene.input(gui)
         tina_mesh.set_face_verts(boundary_pos)
@@ -445,7 +445,7 @@ if __name__ == "__main__":
     set_dir_acc_3D()
     # animation_init()
     # New structure to make residual calculation same as PD
-    for f_cnt in range(50):
+    for f_cnt in range(500):
         animation_control(f_cnt)
         print("==================== Frame: ", frame_counter, " ====================")
         compute_xn_and_xTilde()

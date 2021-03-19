@@ -12,6 +12,7 @@ runs
 TestResult
 Outputs_T
 results
+TrainedNN
 src/Utils/__pycache__
 src/Simulators/__pycache__
 src/NeuralNetworks/__pycache__
@@ -20,6 +21,7 @@ src/tools/modelVisualization
 src/tools/PD_PN_Compare
 src/tools/results
 src/tools/AnimSeq
+src/tools/GlobalFeaVecAnimSeq
 SimData/PDAnimSeq/
 SimData/PNAnimSeq/
 SimData/TestingData/
@@ -27,6 +29,10 @@ SimData/TrainingData/
 SimData/TmpRenderedImgs/
 SimData/RunNNRes/
 SimData/FinalRes/
+SimData/PreGenGlobalFeatureVec/
+SimData/PreGenSpannedGlobalFeatureVec/
+SimData/TestPreGenGlobalFeatureVec/
+SimData/TrainPreGenGlobalFeatureVec/
 Saved_Cluster
 
 # Created by https://www.gitignore.io/api/linux,osx,sublimetext,windows,jetbrains,vim,emacs,cmake,c++,cuda,visualstudio,webstorm,eclipse,xcode

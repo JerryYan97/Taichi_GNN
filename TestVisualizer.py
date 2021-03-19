@@ -46,7 +46,7 @@ def output_3d_results(pn_x, corrected_pd_x, pd_x, f, case_info):
 
 
 if __name__ == "__main__":
-    case_info = read(1008)
+    case_info = read(1009)
     mesh = case_info['mesh']
     dirichlet = case_info['dirichlet']
     mesh_scale = case_info['mesh_scale']
@@ -92,22 +92,37 @@ if __name__ == "__main__":
         scene_info['boundary_pos'] = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
         gui = ti.GUI('Test Visualizer')
 
-
     # Read files
     TestResults_Files = []
     for _, _, files in os.walk(testpath):
         TestResults_Files.extend(files)
+    b_pts_idx_name = "b_pts_idx_" + case_info['case_name'] + ".csv"
+    b_pts_file_idx = TestResults_Files.index(b_pts_idx_name)
+    del TestResults_Files[b_pts_file_idx]
     TestResults_Files.sort()
     print("TestResults_Files:", TestResults_Files)
+    b_pts_idx = np.genfromtxt(testpath + "/" + b_pts_idx_name, delimiter=',', dtype=int)
 
     # Reconstruct pos:
-    pn_pos, corrected_pd_pos, pd_pos = mesh.vertices[:, 0:dim], mesh.vertices[:, 0:dim], mesh.vertices[:, 0:dim]
+    print("You are now selecting the test case " + case_info['case_name'])
+    frame_id = int(input("Please input the frame id that you want to start:"))
+    start_mesh_path = "./SimData/StartFrame/" + case_info['case_name'] + "_frame_" + f'{frame_id:05}' + ".obj"
+    if not os.path.isfile(start_mesh_path):
+        raise Exception("The start mesh path doesn't exist!")
+    start_mesh = pymesh.load_mesh(start_mesh_path)
+
+    # pn_pos = mesh.vertices[b_pts_idx, 0:dim]
+    # corrected_pd_pos = mesh.vertices[b_pts_idx, 0:dim]
+    # pd_pos = mesh.vertices[b_pts_idx, 0:dim]
+    pn_pos = start_mesh.vertices[b_pts_idx, 0:dim]
+    corrected_pd_pos = start_mesh.vertices[b_pts_idx, 0:dim]
+    pd_pos = start_mesh.vertices[b_pts_idx, 0:dim]
     for f in range(len(TestResults_Files)):
         test_file = np.genfromtxt(testpath + "/" + TestResults_Files[f], delimiter=',')
 
         pd_pos_delta = test_file[:, 0:dim]
-        corrected_pd_pos_delta = test_file[:, dim:dim*2] + pd_pos_delta
-        pn_pos_delta = test_file[:, dim*3:dim*4] + pd_pos_delta
+        corrected_pd_pos_delta = test_file[:, dim:dim * 2] + pd_pos_delta
+        pn_pos_delta = test_file[:, dim * 2:dim * 3] + pd_pos_delta
 
         # PN -> PD: pd_pos[n+1] is calculated by pn_pos[n] + pd_dis.
         # corrected_pd_pos = pn_pos + corrected_pd_pos_delta
@@ -119,11 +134,18 @@ if __name__ == "__main__":
         pn_pos = pn_pos_delta + pd_pos
         pd_pos = pd_pos_delta + pd_pos
 
+        whole_corrected_pd_pos = np.zeros((mesh.num_vertices, dim), dtype=float)
+        whole_pd_pos = np.zeros((mesh.num_vertices, dim), dtype=float)
+        whole_pn_pos = np.zeros((mesh.num_vertices, dim), dtype=float)
+        whole_corrected_pd_pos[b_pts_idx, 0:dim] = corrected_pd_pos
+        whole_pd_pos[b_pts_idx, 0:dim] = pd_pos
+        whole_pn_pos[b_pts_idx, 0:dim] = pn_pos
+
         if dim == 2:
-            write_combined_image(pn_pos, corrected_pd_pos, pd_pos)
+            write_combined_image(whole_pn_pos, corrected_pd_pos, pd_pos)
         else:
-            output_3d_results(pn_pos, corrected_pd_pos, pd_pos, f, case_info)
-            update_boundary_mesh_np(corrected_pd_pos, scene_info['boundary_pos'], case_info)
+            output_3d_results(whole_pn_pos, whole_corrected_pd_pos, whole_pd_pos, f + 1 + frame_id, case_info)
+            update_boundary_mesh_np(whole_corrected_pd_pos, scene_info['boundary_pos'], case_info)
             scene_info['scene'].input(gui)
             scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
             scene_info['scene'].render()

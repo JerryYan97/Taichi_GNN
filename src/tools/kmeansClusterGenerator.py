@@ -11,9 +11,9 @@ from Utils.utils_gcn import *
 from Utils.reader import read
 
 # Owing to the fixed color panel, it now just has only tests clusters num that is 10 and under 10.
-cluster_num = 8
+cluster_num = 2
 # Case 1002 doesn't work because it's particles' num is less than the clusters' num.
-test_case = 2
+test_case = 1009
 
 
 def rgb_range01(rgb_np):

@@ -2,22 +2,19 @@ import numpy as np
 import scipy.sparse as sp
 import torch
 import multiprocessing as mp
-from .reader import *
-from .Dijkstra import Dijkstra
+import pickle
 import os
 from collections import defaultdict
 from torch_geometric.data import InMemoryDataset, Data
+from torch.utils.data import Dataset
 import scipy as sp
-import random
 from scipy.spatial import KDTree
 from collections import Counter
 from numpy import linalg as LA
-from os import system
 from scipy.sparse import lil_matrix
-import time
 
-
-def mp_load_data(workload_list, proc_idx, filepath, files, node_num, edge_idx, cluster, transform, dim):
+# Each sample in it is in PyG format
+def mp_load_global_data(workload_list, proc_idx, filepath, files, node_num, edge_idx, cluster, transform, dim):
     sample_list = []
     for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
         fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
@@ -42,10 +39,148 @@ def mp_load_data(workload_list, proc_idx, filepath, files, node_num, edge_idx, c
     return sample_list
 
 
+# Each sample in it is in normal PyTorch format.
+# filepath is used to determine whether read files from training data folder or testing data folder.
+# It won't append global feature vector to each sample, because it will blow up the RAM.
+def mp_load_local_data(workload_list, proc_idx, filepath, files, boundary_points_id, cluster_num, transform, dim):
+    sample_list = []
+    boundary_pts_num = boundary_points_id.shape[0]
+    gvec_dir = os.getcwd() + "/SimData/TestPreGenGlobalFeatureVec/"
+    for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
+        fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
+        if dim == 2:
+            other = fperframe[boundary_points_id, 4:]
+            pn_dis = fperframe[boundary_points_id, 2:4]
+            pd_dis = fperframe[boundary_points_id, 0:2]  # a[start:stop] items start through stop-1
+        else:
+            other = fperframe[boundary_points_id, 15:]
+            # other1 = fperframe[boundary_points_id, 15:21]
+            # other2 = fperframe[boundary_points_id, 24:26]
+            # other = np.hstack((other1, other2))
+            pn_dis = fperframe[boundary_points_id, 3:6]
+            pd_dis = fperframe[boundary_points_id, 0:3]  # a[start:stop] items start through stop-1
+        y_frame_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((boundary_pts_num, -1)))
+        x_frame_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((boundary_pts_num, -1)))
+        # x_frame_data = torch.from_numpy(pd_dis).reshape((boundary_pts_num, -1))
+        gvec = np.genfromtxt(gvec_dir + "gvec_" + files[idx], delimiter=',')
+        # gvec = np.genfromtxt(gvec_dir + "gvec_" + "Train_dir_LowPolyArm_90.0_90.0_-980.0_" + str(idx).zfill(5) + ".csv", delimiter=',')
+        if gvec.shape[0] != cluster_num:
+            raise Exception('Cluster num should be equal to the input GVec length.')
+        sample = {'x_frame': x_frame_data,
+                  'y_frame': y_frame_data,
+                  'gvec': torch.squeeze(torch.from_numpy(gvec.reshape((cluster_num * dim, -1)))),
+                  'filename': files[idx]}
+        sample_list.append(sample)
+
+    print("proc", proc_idx, "-- start idx:", workload_list[proc_idx][0], " end idx:", workload_list[proc_idx][1])
+    return sample_list
+
+
+class SIM_Data_Local(Dataset):
+    def __init__(self, filepath, i_features_num, o_features_num,
+                 cluster_num, boundary_points_id, dim, transform=None):
+        boundary_points_id = np.sort(np.fromiter(boundary_points_id, int))
+        # Read file names
+        self._files = []
+        for _, _, files in os.walk(filepath):
+            self._files.extend(files)
+        self._files.sort()
+        # Set init parameters
+        self._filepath = filepath
+        self._input_features_num = i_features_num
+        self._output_features_num = o_features_num
+        self._boundary_node_num = boundary_points_id.shape[0]
+        self._cluster_num = cluster_num
+        self._boundary_pts_id = torch.from_numpy(boundary_points_id)
+        # Read file data
+        # Divide workloads:
+        cpu_cnt = os.cpu_count()
+        print("cpu core account: ", cpu_cnt)
+        files_cnt = len(self._files)
+        files_per_proc_cnt = files_cnt // cpu_cnt
+        workload_list = []
+        for i in range(cpu_cnt):
+            # [[proc1 first file idx, proc1 last file idx] ... []]
+            cur_proc_workload = [i * files_per_proc_cnt, (i + 1) * files_per_proc_cnt - 1]
+            if i == cpu_cnt - 1:
+                # Last workload may needs to do more than others.
+                cur_proc_workload[1] = files_cnt - 1
+            workload_list.append(cur_proc_workload)
+
+        # Call multi-processing func to load samples:
+        pool = mp.Pool()
+        proc_list = []
+        self._sample_list = []
+        for i in range(cpu_cnt):
+            proc_list.append(pool.apply_async(func=mp_load_local_data,
+                                              args=(workload_list, i, self._filepath, self._files,
+                                                    boundary_points_id, cluster_num, transform, dim,)))
+        # Get multi-processing res:
+        for i in range(cpu_cnt):
+            sub_sample_list = proc_list[i].get()
+            self._sample_list.extend(sub_sample_list)
+        pool.close()
+        pool.join()
+
+        print("Sample list length:", len(self._sample_list))
+
+    def __len__(self):
+        return len(self._files) * self._boundary_node_num
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        file_idx = idx // self._boundary_node_num
+        node_idx = idx - self._boundary_node_num * file_idx
+        try:
+            x_frame_node = self._sample_list[file_idx]['x_frame'][node_idx]
+        except:
+            print("file_idx:", file_idx, " node_idx:", node_idx, " idx:", idx)
+            exit(1)
+        gvec_node = self._sample_list[file_idx]['gvec']
+        x_data = torch.cat((x_frame_node, gvec_node), dim=0)
+        # x_data = x_frame_node
+        y_data = self._sample_list[file_idx]['y_frame'][node_idx]
+        sample = {'x': x_data,
+                  'y': y_data,
+                  'filename': self._sample_list[file_idx]['filename'],
+                  'mesh_vert_idx': self._boundary_pts_id[node_idx],
+                  'file_idx:': file_idx}
+        return sample
+
+    @property
+    def input_features_num(self):
+        return self._input_features_num
+
+    @property
+    def output_features_num(self):
+        return self._output_features_num
+
+    @property
+    def boundary_node_num(self):
+        return self._boundary_node_num
+
+    @property
+    def boundary_node_mesh_idx(self):
+        return self._boundary_pts_id
+
+    def len(self):
+        return len(self._files)
+
+    def to_device(self, device):
+        import time
+        to_d_start = time.time()
+        for item in self._sample_list:
+            item['x_frame'] = item['x_frame'].float().to(device)
+            item['y_frame'] = item['y_frame'].float().to(device)
+            item['gvec'] = item['gvec'].float().to(device)
+        print("Dataset to device time:", time.time() - to_d_start)
+
+
 class SIM_Data_Geo(InMemoryDataset):
     def __init__(self, filepath, mesh_edge_idx,
                  i_features_num, o_features_num,
-                 mesh, cluster, clusters_num, cluster_parent, belongs, dim,
+                 case_info, cluster, clusters_num, cluster_parent, belongs, dim,
                  transform=None, pre_transform=None):
         super(SIM_Data_Geo, self).__init__(None, transform, pre_transform)
         import time
@@ -66,7 +201,8 @@ class SIM_Data_Geo(InMemoryDataset):
         self._edge_idx = mesh_edge_idx
         self._filepath = filepath
         self._input_features_num = i_features_num
-        self._node_num = mesh.num_vertices
+        self._node_num = case_info['mesh_num_vert']
+        self._b_pt_idx = torch.from_numpy(np.sort(np.fromiter(case_info['boundary'][0], int)))
         self._output_features_num = o_features_num
 
         self._cluster = cluster
@@ -93,13 +229,16 @@ class SIM_Data_Geo(InMemoryDataset):
             workload_list.append(cur_proc_workload)
         # Call multi-processing func:
         for i in range(cpu_cnt):
-            proc_list.append(pool.apply_async(func=mp_load_data,
+            proc_list.append(pool.apply_async(func=mp_load_global_data,
                                               args=(workload_list, i, self._filepath, self._files, self.node_num,
                                                     self._edge_idx, self._cluster, self.transform, dim,)))
         # Get multi-processing res:
         for i in range(cpu_cnt):
             # print("i: ", i, ", get shape: ", len(proc_list[i].get()))
             sample_list.extend(proc_list[i].get())
+
+        pool.close()
+        pool.join()
 
         print("Sample list length:", len(sample_list))
         self.data, self.slices = self.collate(sample_list)
@@ -128,8 +267,26 @@ class SIM_Data_Geo(InMemoryDataset):
     def node_num(self):
         return self._node_num
 
+    @property
+    def boundary_pt_idx(self):
+        return self._b_pt_idx
+
     def len(self):
         return len(self.raw_file_names)
+
+
+def load_local_data(test_case, cluster_num, path="/Outputs"):
+    file_dir = os.getcwd()
+    file_dir = file_dir + path
+    # case_info = read(test_case)
+    case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case) + ".p", "rb"))
+    # tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 23, 3,
+    #                              cluster_num, case_info['boundary'][0], case_info['dim'])
+    tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 3 + 3 + 3 + 3 + 1 + 1, 3,
+                                 cluster_num, case_info['boundary'][0], case_info['dim'])
+    # tmp_dataset = SIM_Data_Local(file_dir, 23, 3,
+                                 # cluster_num, case_info['boundary'][0], case_info['dim'])
+    return tmp_dataset, case_info
 
 
 # file_dir: Top folder path.
@@ -154,39 +311,41 @@ def load_cluster(file_dir, test_case, cluster_num, vert_num):
 # Load data record:
 # case 1001 -- 9.8G (Without optimization):
 # t1: 0.003854036331176758  t2: 0.03281879425048828  t3: 0.00013327598571777344  t4: 0.0012357234954833984
-#
 def load_data(test_case, cluster_num, path="/Outputs"):
     file_dir = os.getcwd()
     file_dir = file_dir + path
-
-    case_info = read(test_case)
-    mesh = case_info['mesh']
+    print(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case))
+    case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case) + ".p", "rb"))
+    # case_info = read(test_case)
+    # mesh = case_info['mesh']
 
     edges = set()
     edge_index = np.zeros(shape=(2, 0), dtype=np.int32)
     if case_info['dim'] == 2:
-        for [i, j, k] in mesh.faces:
-            edges.add((i, j))
-            edges.add((j, k))
-            edges.add((k, i))
-        for [i, j, k] in mesh.faces:
-            if (j, i) not in edges:
-                edge_index = np.hstack((edge_index, [[j], [i]]))
-                edge_index = np.hstack((edge_index, [[i], [j]]))
-            if (k, j) not in edges:
-                edge_index = np.hstack((edge_index, [[j], [k]]))
-                edge_index = np.hstack((edge_index, [[k], [j]]))
-            if (i, k) not in edges:
-                edge_index = np.hstack((edge_index, [[k], [i]]))
-                edge_index = np.hstack((edge_index, [[i], [k]]))
-        edge_index = torch.LongTensor(edge_index)
-        cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num, mesh.num_vertices)
-        return SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, cluster, cluster_num, cluster_parent, belongs, 2)
+        raise Exception("Doesn't support 2D now.")
+        # for [i, j, k] in mesh.faces:
+        #     edges.add((i, j))
+        #     edges.add((j, k))
+        #     edges.add((k, i))
+        # for [i, j, k] in mesh.faces:
+        #     if (j, i) not in edges:
+        #         edge_index = np.hstack((edge_index, [[j], [i]]))
+        #         edge_index = np.hstack((edge_index, [[i], [j]]))
+        #     if (k, j) not in edges:
+        #         edge_index = np.hstack((edge_index, [[j], [k]]))
+        #         edge_index = np.hstack((edge_index, [[k], [j]]))
+        #     if (i, k) not in edges:
+        #         edge_index = np.hstack((edge_index, [[k], [i]]))
+        #         edge_index = np.hstack((edge_index, [[i], [k]]))
+        # edge_index = torch.LongTensor(edge_index)
+        # cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num, mesh.num_vertices)
+        # # Note: boundary labels are not feed into the dataset.
+        # return SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, cluster, cluster_num, cluster_parent, belongs, 2)
     else:
         import time
         t1_start = time.time()
         # Load Section 1
-        for [i, j, k, m] in mesh.elements:
+        for [i, j, k, m] in case_info['elements']:
             edges.add((i, j))
             edges.add((j, i))
             edges.add((i, k))
@@ -219,13 +378,15 @@ def load_data(test_case, cluster_num, path="/Outputs"):
 
         # Load Section 4
         t4_start = time.time()
-        cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num, mesh.num_vertices)
+        cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num, case_info['mesh_num_vert'])
         t4_end = time.time()
         print("t4:", t4_end - t4_start)
 
         # Load Section 5
         t5_start = time.time()
-        tmp_data = SIM_Data_Geo(file_dir, edge_index, 24, 3, mesh, cluster, cluster_num, cluster_parent, belongs, 3)
+        tmp_data = SIM_Data_Geo(file_dir, edge_index, 23, 3,
+                                case_info,
+                                cluster, cluster_num, cluster_parent, belongs, 3)
         t5_end = time.time()
         print("t5:", t5_end - t5_start)
 

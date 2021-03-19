@@ -10,7 +10,8 @@ import multiprocessing as mp
 from numpy import linalg as LA
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.math_tools import svd
-from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3d_seq
+from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3d_seq, RM2Euler
+from scipy.linalg import polar
 
 
 def calcCenterOfMass(vind, dim, mass, pos):
@@ -23,17 +24,17 @@ def calcCenterOfMass(vind, dim, mass, pos):
     return sum
 
 
-def calcA_qq(q_i, dim):
+def calcA_qq(q_i, mass, dim):
     sum = np.zeros((dim, dim))
     for i in range(q_i.shape[0]):
-        sum += np.outer(q_i[i], np.transpose(q_i[i]))
+        sum += mass[i]*np.outer(q_i[i], np.transpose(q_i[i]))
     return np.linalg.inv(sum)
 
 
-def calcA_pq(p_i, q_i, dim):
+def calcA_pq(p_i, q_i, mass, dim):
     sum = np.zeros((dim, dim))
     for i in range(p_i.shape[0]):
-        sum += np.outer(p_i[i], np.transpose(q_i[i]))
+        sum += mass[i]*np.outer(p_i[i], np.transpose(q_i[i]))
     return sum
 
 
@@ -41,6 +42,11 @@ def calcR(A_pq):
     S = sqrtm(np.dot(np.transpose(A_pq), A_pq))
     R = np.dot(A_pq, inv(S))
     return R
+
+
+def polarR(M):
+    R, S = polar(M)
+    return R, S
 
 
 def get_local_trans_parallel_call(workloads_list, proc_idx, adj_list, pos, initial_rel_pos, mass, dim):
@@ -51,9 +57,11 @@ def get_local_trans_parallel_call(workloads_list, proc_idx, adj_list, pos, initi
         cur_adj_pos = pos[adj_v, :]
         com = calcCenterOfMass(adj_v, dim, mass, pos)
         cur_rel_pos = cur_adj_pos - com[None, :]
-        A_pq = calcA_pq(cur_rel_pos, init_rel_adj_pos, dim)
-        A_qq = calcA_qq(init_rel_adj_pos, dim)
-        A_final = np.matmul(A_pq, A_qq).reshape((1, -1))
+        A_pq = calcA_pq(cur_rel_pos, init_rel_adj_pos, mass, dim)
+        A_qq = calcA_qq(init_rel_adj_pos, mass, dim)
+        # A_final = np.matmul(A_pq, A_qq).reshape((1, -1))
+        # A_final = np.matmul(A_pq, A_qq.transpose()).reshape((1, -1)) # this is the right formula
+        A_final = np.matmul(A_pq, A_qq)  # this is the right formula
         a_final_list.append(A_final)
     return a_final_list
 
@@ -755,12 +763,13 @@ class PDSimulation(SimulatorBase):
                                str(self.pf_mag) + "_" + str(self.pf_acc) + "_" + str(self.pf_radius) + \
                                "_" + str(self.pf_ind) + "_" + frame + ".csv"
 
-        ele_count = self.dim + self.dim + self.dim * self.dim + self.dim + self.dim + self.dim + self.dim
+        # NOTE: Remember to change ele_count when you add or remove a feature.
+        ele_count = 23
         out = np.ones([self.n_vertices, ele_count], dtype=float)
         
         A_finals = get_local_transformation(self.n_vertices, self.mesh, self.ti_x.to_numpy(), init_rel_pos,
                                             self.ti_mass.to_numpy(), self.dim)
-
+        boundary_label_np = self.ti_boundary_labels.to_numpy()
         i = 0
         pos_init_out = self.mesh.vertices
         if self.dim == 2:
@@ -772,16 +781,21 @@ class PDSimulation(SimulatorBase):
                 out[i, 10:12] = ex_acc[i, :]
                 out[i, 12:14] = vel[i, :]
                 out[i, 14:16] = pos_init_out[i, :]
+                # TODO: Add fixed point labels
                 i = i + 1
         else:
             for res in A_finals:
                 out[i, 0:3] = pd_dis[i, :]  # pd pos
                 out[i, 3:6] = pn_dis[i, :]  # pn pos
-                out[i, 6:15] = res
-                out[i, 15:18] = gradE[i * 3: i * 3 + 3]
-                out[i, 18:21] = ex_acc[i, :]
-                out[i, 21:24] = vel[i, :]
-                out[i, 24:27] = pos_init_out[i, :]
+                R, S = RM2Euler(res)
+                out[i, 6:9] = R
+                out[i, 9:12] = S
+                out[i, 12:15] = gradE[i * 3: i * 3 + 3]
+                out[i, 15:18] = ex_acc[i, :]
+                out[i, 18:21] = vel[i, :]
+                out[i, 21:24] = pos_init_out[i, :]
+                out[i, 24] = boundary_label_np[i]
+                out[i, 25] = self.dt
                 i = i + 1
 
         np.savetxt(out_name, out, delimiter=',')
@@ -854,7 +868,7 @@ class PDSimulation(SimulatorBase):
                        self.ti_elements.to_numpy(), self.n_elements)
         else:
             gui = scene_info['gui']
-            scene_info['model'].set_transform(self.case_info['transformation_mat'])
+            # scene_info['model'].set_transform(self.case_info['transformation_mat'])
             update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
             scene_info['scene'].input(gui)
             scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
@@ -959,7 +973,7 @@ class PDSimulation(SimulatorBase):
                        self.ti_elements.to_numpy(), self.n_elements)
         else:
             gui = scene_info['gui']
-            scene_info['model'].set_transform(self.case_info['transformation_mat'])
+            # scene_info['model'].set_transform(self.case_info['transformation_mat'])
             update_boundary_mesh(self.ti_x, scene_info['boundary_pos'], self.case_info)
             scene_info['scene'].input(gui)
             scene_info['tina_mesh'].set_face_verts(scene_info['boundary_pos'])
