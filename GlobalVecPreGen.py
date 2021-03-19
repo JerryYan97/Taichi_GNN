@@ -19,7 +19,7 @@ writer = SummaryWriter('../runs/GlobalVecPreGen')
 PATH = "TrainedNN/GlobalNN/GlobalNN_LowPolyArm_18.pt"
 
 # Model and optimizer
-simDataset, case_info, cluster_parent, cluster_belong = load_data(1009, 256, "/SimData/TestingData")
+simDataset, case_info, cluster_parent, cluster_belong = load_data(1009, 256, "/SimData/TrainingData")
 dim = case_info['dim']
 test_loader = DataLoader(dataset=simDataset, batch_size=1, shuffle=False)
 
@@ -37,7 +37,7 @@ mse = nn.MSELoss(reduction='sum').to(device)
 node_num = simDataset.node_num
 
 
-def RunNN():
+def RunNN(g_output_path):
     model.eval()
     with torch.no_grad():
         i = 0
@@ -45,7 +45,7 @@ def RunNN():
         total_cnt = 0
         for data in test_loader:
             metric1_frame = 0.0
-            outname = "SimData/PreGenGlobalFeatureVec/gvec_" + simDataset.raw_file_names[i]
+            outname = g_output_path + "gvec_" + simDataset.raw_file_names[i]
             outname2 = "SimData/PreGenSpannedGlobalFeatureVec/gvec_full_" + simDataset.raw_file_names[i]
             output, g_vec = model(data.x.float().to(device),
                                   data.edge_index.to(device),
@@ -88,13 +88,14 @@ if __name__ == '__main__':
     for root, dirs, files in os.walk("../runs/"):
         for name in files:
             os.remove(os.path.join(root, name))
-    os.makedirs('SimData/PreGenGlobalFeatureVec/', exist_ok=True)
-    for root, dirs, files in os.walk("SimData/PreGenGlobalFeatureVec/"):
+    global_feature_output_path = "SimData/TrainPreGenGlobalFeatureVec/"
+    os.makedirs(global_feature_output_path, exist_ok=True)
+    for root, dirs, files in os.walk(global_feature_output_path):
         for name in files:
             os.remove(os.path.join(root, name))
     os.makedirs('SimData/PreGenSpannedGlobalFeatureVec/', exist_ok=True)
     for root, dirs, files in os.walk("SimData/PreGenSpannedGlobalFeatureVec/"):
         for name in files:
             os.remove(os.path.join(root, name))
-    RunNN()
+    RunNN(global_feature_output_path)
     writer.close()

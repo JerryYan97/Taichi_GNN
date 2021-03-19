@@ -134,7 +134,7 @@ if __name__ == '__main__':
     os.makedirs('GlobalFeaVecAnimSeq/GlobalFeaVecAnimSeq/', exist_ok=True)
 
     # Use Testing data and PreGen Global Feature vector to generate animation
-    test_file_path = "../../SimData/TestingData"
+    test_file_path = "../../SimData/TrainingData"
     gfeat_file_path = "../../SimData/PreGenSpannedGlobalFeatureVec"
 
     test_files_name = []

@@ -19,7 +19,7 @@ for root, dirs, files in os.walk("../runs/"):
 writer = SummaryWriter('../runs/GCN_Global_1009_single')
 
 # Training settings
-epoch_num = 25
+epoch_num = 300
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
@@ -42,7 +42,7 @@ if args.cuda:
 
 
 load_data_t_start = time.time()
-simDataset, case_info, cluster_parent, cluster_belong = load_data(1009, 8, "/SimData/TrainingData")
+simDataset, case_info, cluster_parent, cluster_belong = load_data(1009, 256, "/SimData/TrainingData")
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
 

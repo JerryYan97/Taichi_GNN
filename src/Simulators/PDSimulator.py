@@ -764,7 +764,7 @@ class PDSimulation(SimulatorBase):
                                "_" + str(self.pf_ind) + "_" + frame + ".csv"
 
         # NOTE: Remember to change ele_count when you add or remove a feature.
-        ele_count = 26
+        ele_count = 23
         out = np.ones([self.n_vertices, ele_count], dtype=float)
         
         A_finals = get_local_transformation(self.n_vertices, self.mesh, self.ti_x.to_numpy(), init_rel_pos,

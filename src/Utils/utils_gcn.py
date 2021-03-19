@@ -45,7 +45,7 @@ def mp_load_global_data(workload_list, proc_idx, filepath, files, node_num, edge
 def mp_load_local_data(workload_list, proc_idx, filepath, files, boundary_points_id, cluster_num, transform, dim):
     sample_list = []
     boundary_pts_num = boundary_points_id.shape[0]
-    gvec_dir = os.getcwd() + "/SimData/PreGenGlobalFeatureVec/"
+    gvec_dir = os.getcwd() + "/SimData/TestPreGenGlobalFeatureVec/"
     for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
         fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
         if dim == 2:
@@ -63,6 +63,7 @@ def mp_load_local_data(workload_list, proc_idx, filepath, files, boundary_points
         x_frame_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((boundary_pts_num, -1)))
         # x_frame_data = torch.from_numpy(pd_dis).reshape((boundary_pts_num, -1))
         gvec = np.genfromtxt(gvec_dir + "gvec_" + files[idx], delimiter=',')
+        # gvec = np.genfromtxt(gvec_dir + "gvec_" + "Train_dir_LowPolyArm_90.0_90.0_-980.0_" + str(idx).zfill(5) + ".csv", delimiter=',')
         if gvec.shape[0] != cluster_num:
             raise Exception('Cluster num should be equal to the input GVec length.')
         sample = {'x_frame': x_frame_data,

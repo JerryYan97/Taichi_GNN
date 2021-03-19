@@ -346,8 +346,8 @@ def read(testcase):
         #     if mesh.vertices[i][1] <= mesh.bbox[0][1] + 0.01:
         #         dirichlet_list.append(i)
 
-        fixed_center_pos = mesh.vertices[8]  # Left hand
-        # fixed_center_pos = mesh.vertices[1372]  # Right hand
+        fixed_center_pos = mesh.vertices[8]  # Right hand
+        # fixed_center_pos = mesh.vertices[1372]  # Left hand
         for i in range(mesh.num_vertices):
             if LA.norm(fixed_center_pos - mesh.vertices[i]) < 0.2:
                 dirichlet_list.append(i)

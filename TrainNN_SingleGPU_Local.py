@@ -32,7 +32,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
 parser.add_argument('--epochs', type=int, default=epoch_num, help='Number of epochs to train.')
-parser.add_argument('--lr', type=float, default=0.003, help='Initial learning rate.')
+parser.add_argument('--lr', type=float, default=0.002, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=0.0, help='Weight decay (L2 loss on parameters).')
 
 # get parameters and check the cuda
