@@ -764,7 +764,7 @@ class PDSimulation(SimulatorBase):
                                "_" + str(self.pf_ind) + "_" + frame + ".csv"
 
         # NOTE: Remember to change ele_count when you add or remove a feature.
-        ele_count = 24
+        ele_count = 26
         out = np.ones([self.n_vertices, ele_count], dtype=float)
         
         A_finals = get_local_transformation(self.n_vertices, self.mesh, self.ti_x.to_numpy(), init_rel_pos,
@@ -794,8 +794,8 @@ class PDSimulation(SimulatorBase):
                 out[i, 15:18] = ex_acc[i, :]
                 out[i, 18:21] = vel[i, :]
                 out[i, 21:24] = pos_init_out[i, :]
-                # out[i, 24] = boundary_label_np[i]
-                # out[i, 25] = self.dt
+                out[i, 24] = boundary_label_np[i]
+                out[i, 25] = self.dt
                 i = i + 1
 
         np.savetxt(out_name, out, delimiter=',')
