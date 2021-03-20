@@ -280,7 +280,7 @@ def load_local_data(test_case, cluster_num, path="/Outputs"):
     file_dir = file_dir + path
     # case_info = read(test_case)
     case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case) + ".p", "rb"))
-    tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 21, 3,
+    tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 23, 3,
                                  cluster_num, case_info['boundary'][0], case_info['dim'])
     # tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 3 + 3 + 3 + 3 + 1 + 1, 3,
     #                              cluster_num, case_info['boundary'][0], case_info['dim'])
