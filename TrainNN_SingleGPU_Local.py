@@ -7,7 +7,7 @@ import torch.optim as optim
 from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar3_Local import *
-from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local_MoreShallow import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_Simple import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_ReduceBN import *
@@ -70,7 +70,7 @@ train_loader = DataLoader(dataset=simDataset,
 #     device=device
 # ).to(device)
 
-model = VertNN_Mar21_LocalLinear(
+model = VertNN_Mar21_LocalLinear_MoreShallow(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,
