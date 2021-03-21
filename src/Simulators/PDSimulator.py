@@ -14,6 +14,35 @@ from Utils.utils_visualization import draw_image, update_boundary_mesh, output_3
 from scipy.linalg import polar
 
 
+def gen_dist_arr(adj_mat, adj_len, fixed_pt_idx, scale):
+    vert_num = adj_mat.shape[0]
+    max_adj_cnt = adj_mat.shape[1]
+    dist_arr = 100000.0 * np.ones(vert_num, dtype=float)
+    dist_arr[fixed_pt_idx] = 0.0
+    spt_set = np.zeros(vert_num, dtype=int)  # 0 -- false, 1 -- true;
+    # Start BSF algorithm
+    for i in range(vert_num):
+        # Pick a vert u which is not there in sptSet and has minimum distance value.
+        u = -1
+        min_dist = 100000.0
+        for j in range(vert_num):
+            if spt_set[j] == 0 and dist_arr[j] <= min_dist:
+                u = j
+                min_dist = dist_arr[j]
+        # Include u to sptSet.
+        spt_set[u] = 1
+        # Update distance value of all adjacent vertices of u.
+        for j in range(max_adj_cnt):
+            adj_idx = adj_mat[u, j]
+            adj_idx_len = adj_len[u, j]
+            if adj_idx == -1:
+                break
+            sum_dist = dist_arr[u] + adj_idx_len
+            if sum_dist < dist_arr[adj_idx]:
+                dist_arr[adj_idx] = sum_dist
+    return dist_arr/scale
+
+
 def calcCenterOfMass(vind, dim, mass, pos):
     sum = np.zeros(dim)
     summ = 0.0
@@ -764,7 +793,7 @@ class PDSimulation(SimulatorBase):
                                "_" + str(self.pf_ind) + "_" + frame + ".csv"
 
         # NOTE: Remember to change ele_count when you add or remove a feature.
-        ele_count = 26
+        ele_count = 29
         out = np.ones([self.n_vertices, ele_count], dtype=float)
         
         A_finals = get_local_transformation(self.n_vertices, self.mesh, self.ti_x.to_numpy(), init_rel_pos,
@@ -796,6 +825,9 @@ class PDSimulation(SimulatorBase):
                 out[i, 21:24] = pos_init_out[i, :]
                 out[i, 24] = boundary_label_np[i]
                 out[i, 25] = self.dt
+                out[i, 26] = self.geodiesc[i]
+                out[i, 27] = self.potential[i]
+                out[i, 28] = self.digression[i]
                 i = i + 1
 
         np.savetxt(out_name, out, delimiter=',')
@@ -939,7 +971,95 @@ class PDSimulation(SimulatorBase):
 
             self.output_aux_data(frame_counter, _pn_pos)
 
+    # Only consider dir acc for now.
+    @ti.kernel
+    def cal_potential(self, potential: ti.ext_arr()):
+        acc_dir = self.ti_ex_acc[0].normalized()
+        print("acc_dir:", acc_dir)
+        for i in range(self.n_vertices):
+            init_pos = ti.Vector([self.ti_x_init[i][0], self.ti_x_init[i][1], self.ti_x_init[i][2]])
+            potential[i] = acc_dir.dot(init_pos)
+
+    def get_potential(self):
+        self.cal_potential(self.potential)
+        pot_min = self.potential.min()
+        self.potential += np.abs(pot_min)
+        self.potential /= self.potential.max()
+        print("potential max:", self.potential.max(), " potential min:", self.potential.min())
+
+    @ti.kernel
+    def generate_spt_list(self,
+                          spt_list: ti.ext_arr(),
+                          dirichlet: ti.ext_arr(),
+                          fixed_pt_num: ti.i32):
+        # Init tmp variables
+        for i in range(self.n_vertices):
+            for k in range(fixed_pt_num):
+                spt_list[k, i] = 100000.0  # Init a large enough number.
+                self._min_dist_set[k, i] = 0  # 0 -- false, 1 -- true.
+        # BSF algorithm starts
+        for fixed_pt_idx in range(fixed_pt_num):
+            spt_list[fixed_pt_idx, int(dirichlet[fixed_pt_idx])] = 0.0
+            for vert_idx in range(self.n_vertices):
+                # minimum distance vertex that is not processed
+                min_dist = 100000.0
+                u = -1
+                for v in range(self.n_vertices):
+                    if spt_list[fixed_pt_idx, v] < min_dist and self._min_dist_set[fixed_pt_idx, v] == 0:
+                        min_dist = spt_list[fixed_pt_idx, v]
+                        u = v
+                # put minimum distance vertex in shortest tree
+                self._min_dist_set[fixed_pt_idx, u] = 1
+                # Update dist value of the adjacent vertices
+                for v in range(self.n_vertices):
+                    if self.adj_mat(u, v) > 0.0 and self._min_dist_set[fixed_pt_idx, v] == 0 and \
+                            spt_list[fixed_pt_idx, v] > spt_list[fixed_pt_idx, u] + self.adj_mat(u, v):
+                        spt_list[fixed_pt_idx, v] = spt_list[fixed_pt_idx, u] + self.adj_mat(u, v)
+
+    @ti.kernel
+    def cal_digression(self,
+                       spt_list: ti.ext_arr(),
+                       dig_arr: ti.ext_arr(),
+                       dirichlet: ti.ext_arr(),
+                       fixed_pt_num: ti.i32):
+        acc_dir = self.ti_ex_acc[0].normalized()
+        for i in range(self.n_vertices):
+            min_dist = 10000.0
+            min_fixed_pt_idx = -1
+            for fixed_pt_idx in range(fixed_pt_num):
+                if spt_list[fixed_pt_idx, i] < min_dist:
+                    min_dist = spt_list[fixed_pt_idx, i]
+                    min_fixed_pt_idx = fixed_pt_idx
+            near_fixed_vert_idx = dirichlet[min_fixed_pt_idx]
+            if i == near_fixed_vert_idx:
+                dig_arr[i] = -1.0
+            else:
+                vec_left = (self.ti_x_init[i] - self.ti_x_init[ti.cast(near_fixed_vert_idx, ti.i32)]).normalized()
+                dig_arr[i] = ti.acos(vec_left.dot(acc_dir))
+
+    def get_digression(self):
+        spt_list = np.zeros((len(self.dirichlet), self.n_vertices), dtype=np.float)
+        self.generate_spt_list(spt_list, self.dirichlet, len(self.dirichlet))
+        self.cal_digression(spt_list, self.digression, self.dirichlet, len(self.dirichlet))
+
     def run_auto_stop(self, pn, is_test, scene_info):
+        # Features precomputation
+        # Calculate Geodesic
+        fixed_pt_idx = np.array(self.dirichlet)
+        mesh = self.mesh
+        scale = LA.norm(mesh.bbox[0] - mesh.bbox[1])
+        self.geodiesc = gen_dist_arr(self._adj_mat, self._adj_len, fixed_pt_idx, scale)
+        print("Finish cal geodiesc.")
+
+        # Calculate Potential
+        self.get_potential()
+        print("Finisth cal potential")
+
+        # Calculate Digression
+        self.get_digression()
+        print("Finish cal digression")
+
+
         rhs_np = np.zeros(self.n_vertices * self.dim, dtype=np.float64)
         lhs_mat_val = np.zeros(
             shape=(self.n_elements * self.dim ** 2 * (self.dim + 1) ** 2 + self.n_vertices * self.dim,),

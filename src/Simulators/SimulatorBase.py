@@ -2,10 +2,34 @@ from abc import ABC, abstractmethod
 import sys, os
 import taichi as ti
 import numpy as np
+from numpy import linalg as LA
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from Utils.utils_visualization import get_acc_field, get_ring_acc_field, \
     get_ring_circle_acc_field, get_point_acc_field, get_point_acc_field_by_point
 
+# adj_mat: num_vert x max_adj_v_cnt -- Record adj vert idx with the vert with row idx.
+# adj_len: Similarly, it is used to store the length.
+def get_mesh_map(mesh):
+    mesh.enable_connectivity()
+    max_adj_v_cnt = -1
+    adj_v_cnt_sum = 0
+    for p in range(mesh.num_vertices):
+        adj_v = mesh.get_vertex_adjacent_vertices(p)
+        adj_v_cnt_sum += adj_v.shape[0]
+        if adj_v.shape[0] > max_adj_v_cnt:
+            max_adj_v_cnt = adj_v.shape[0]
+    adj_v_cnt_avg = float(adj_v_cnt_sum) / float(mesh.num_vertices)
+    print("avg adj vertex count:", adj_v_cnt_avg)
+    print("max adj vertex count:", max_adj_v_cnt)
+    adj_mat = -np.ones((mesh.num_vertices, max_adj_v_cnt), dtype=np.int)
+    adj_len = -np.ones((mesh.num_vertices, max_adj_v_cnt), dtype=np.float)
+    for p in range(mesh.num_vertices):
+        adj_v = mesh.get_vertex_adjacent_vertices(p)
+        for i in range(adj_v.shape[0]):
+            adj_mat[p, i] = adj_v[i]
+            adj_len[p, i] = LA.norm(mesh.vertices[p] - mesh.vertices[adj_v[i]])
+    print("get_vert_adj_mat finishes.")
+    return adj_mat, adj_len
 
 @ti.data_oriented
 class SimulatorBase(ABC):
@@ -72,6 +96,31 @@ class SimulatorBase(ABC):
             self.pf_radius = 0.0
 
             self.ti_A = ti.Vector([0.0, 0.0, 0.0])
+
+        # Output features
+        self.geodiesc = np.zeros(self.mesh.num_vertices, dtype=float)
+        self.potential = np.zeros(self.mesh.num_vertices, dtype=float)
+        self.digression = np.zeros(self.mesh.num_vertices, dtype=float)
+        self._min_dist_set = ti.field(ti.i64, shape=(len(self.dirichlet), self.n_vertices))
+        self.adj_mat_np, self.adj_len_np = get_mesh_map(self.mesh)
+        self._adj_mat = ti.field(ti.i64, shape=(self.adj_mat_np.shape[0], self.adj_mat_np.shape[1]))
+        self._adj_len = ti.field(ti.f64, shape=(self.adj_mat_np.shape[0], self.adj_mat_np.shape[1]))
+        self._adj_mat_col_num = self.adj_mat_np.shape[1]
+
+    @ti.func
+    def adj_mat(self, u, v) -> ti.f64:
+        uv_len = 0.0
+        # Determine whether u and v are connected
+        for i in range(self._adj_mat_col_num):
+            adj_idx = self._adj_mat[u, i]
+            if adj_idx == -1:
+                # U and V is not adj.
+                break
+            elif adj_idx == v:
+                # Find the length between them.
+                uv_len = self._adj_len[u, i]
+                break
+        return uv_len
 
     @ti.kernel
     def set_dir_acc(self, dir_acc: ti.template()):  # only need to set once
@@ -185,6 +234,12 @@ class SimulatorBase(ABC):
         self.ti_mass.fill(0)
         self.ti_vel.fill(0)
         self.ti_ex_acc.fill(0)
+        self.geodiesc.fill(0.0)
+        self.potential.fill(0.0)
+        self.digression.fill(0.0)
+
+        self._adj_mat.from_numpy(self.adj_mat_np)
+        self._adj_len.from_numpy(self.adj_len_np)
 
     def set_material(self, rho, ym, nu):
         self.rho = rho
