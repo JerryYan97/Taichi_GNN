@@ -7,7 +7,7 @@ import torch.optim as optim
 from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar3_Local import *
-from src.NeuralNetworks.LocalNN.VertNN_Mar10_Local import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_Simple import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_ReduceBN import *
@@ -27,7 +27,7 @@ writer = SummaryWriter('./runs/GCN_Local_1009_single')
 ###################################################
 
 # Training settings
-epoch_num = 500
+epoch_num = 300
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
@@ -70,7 +70,7 @@ train_loader = DataLoader(dataset=simDataset,
 #     device=device
 # ).to(device)
 
-model = VertNN_Mar10_LocalLinear(
+model = VertNN_Mar21_LocalLinear(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,
