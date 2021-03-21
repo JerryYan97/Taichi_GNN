@@ -204,7 +204,10 @@ def K_means_taichi(mesh, k):
 
     for itr in range(max_itr):
         # assignment each point to its nearest center
+        t1 = time.time()
+        print("Start generating SPT")
         kmeans_helper.generate_spt_list(spt_list, parent_list)
+        print("SPT construct time:", time.time() - t1)
         kmeans_helper.generate_belongs(spt_list, belonging, belonging_len)
 
         # recalculate the center for each cluster
