@@ -740,7 +740,7 @@ class PDSimulation(SimulatorBase):
         vel = self.ti_vel.to_numpy()
         ex_acc = self.ti_ex_acc.to_numpy()
         frame = str(frame).zfill(5)
-        additional_label = "rdfeat"
+        additional_label = "nwfeat"
         if T == 0:
             if self.dim == 2:
                 out_name = "SimData/TrainingData/Train_2d_" + self.case_info['case_name'] + "_" + str(self.exf_angle) + \
@@ -1058,7 +1058,6 @@ class PDSimulation(SimulatorBase):
         # Calculate Digression
         self.get_digression()
         print("Finish cal digression")
-
 
         rhs_np = np.zeros(self.n_vertices * self.dim, dtype=np.float64)
         lhs_mat_val = np.zeros(

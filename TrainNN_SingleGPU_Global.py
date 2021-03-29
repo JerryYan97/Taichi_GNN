@@ -4,7 +4,7 @@ import argparse
 import torch.optim as optim
 import torch
 from src.Utils.utils_gcn import *
-from src.NeuralNetworks.GlobalNN.GCN3D_Feb16_PoolingDeepGlobal import *
+from src.NeuralNetworks.GlobalNN.GCN3D_Mar28_PoolingDeepGlobal import *
 from torch_geometric.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -20,6 +20,7 @@ writer = SummaryWriter('../runs/GCN_Global_1009_single')
 
 # Training settings
 epoch_num = 300
+batch_size = 1
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
@@ -53,17 +54,18 @@ pin_memory_option = False
 if os.cpu_count() > 16:
     pin_memory_option = True
 
-train_loader = DataLoader(dataset=simDataset, batch_size=1,
+train_loader = DataLoader(dataset=simDataset, batch_size=batch_size,
                           shuffle=True,
                           num_workers=os.cpu_count(), pin_memory=pin_memory_option)
 
-model = GCN3D_Feb16_PoolingDeepGlobal(
+model = GCN3D_Mar28_PoolingDeepGlobal(
     nfeat=simDataset.input_features_num,
     graph_node_num=simDataset.node_num,
     cluster_num=simDataset.cluster_num,
     fc_out=dim,
     dropout=0,
-    device=device
+    device=device,
+    batch_num=batch_size
 )
 
 model.to(device)
@@ -85,12 +87,11 @@ def Sim_train():
         metric1 = 0.0
         small_cnt = 0
         for data in train_loader:  # Iterate in batches over the training dataset.
-            output, _ = model(data.x.float().to(device),
-                              data.edge_index.to(device),
-                              data.num_graphs,
-                              data.batch.to(device),
-                              data.cluster.to(device))
-            output = output.reshape(data.num_graphs * simDataset.node_num, -1)
+            g_feat, o_feat = model(data.x.float().to(device),
+                                   data.edge_index.to(device),
+                                   data.batch.to(device),
+                                   data.cluster.to(device))
+            output = o_feat.reshape(data.num_graphs * simDataset.node_num, -1)
 
             loss_train = mse(output, data.y.float().to(device))
 

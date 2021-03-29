@@ -50,7 +50,7 @@ if args.cuda:
 
 
 load_data_t_start = time.time()
-simDataset, case_info = load_local_data(1009, 256, "/SimData/TrainingData")
+simDataset, case_info = load_local_data(1009, 256, 0, "/SimData/TrainingData")
 # simDataset.to_device(device)
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)

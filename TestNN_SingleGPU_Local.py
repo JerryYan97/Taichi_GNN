@@ -3,8 +3,10 @@ import os, sys
 import argparse
 from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar3_Local import *
-from src.NeuralNetworks.LocalNN.VertNN_Mar10_Local import *
+# from src.NeuralNetworks.LocalNN.VertNN_Mar10_Local import *
 # from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local import *
+# from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local_MoreShallow import *
 
 import math
 from torch_geometric.data import DataLoader
@@ -24,7 +26,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 PATH = "TrainedNN/LocalNN/LocalNN_LowPolyArm18.pt"
 
 # Model and optimizer
-simDataset, case_info = load_local_data(1009, 256, "/SimData/TestingData")  # load test data
+simDataset, case_info = load_local_data(1009, 256, 1, "/SimData/TestingData")  # load test data
 dim = case_info['dim']
 test_loader = DataLoader(dataset=simDataset, batch_size=simDataset.boundary_node_num, shuffle=False)
 
@@ -35,7 +37,7 @@ test_loader = DataLoader(dataset=simDataset, batch_size=simDataset.boundary_node
 #     device=device
 # ).to(device)
 
-model = VertNN_Mar10_LocalLinear(
+model = VertNN_Mar21_LocalLinear(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,

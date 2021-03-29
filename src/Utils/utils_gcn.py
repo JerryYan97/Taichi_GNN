@@ -13,8 +13,10 @@ from collections import Counter
 from numpy import linalg as LA
 from scipy.sparse import lil_matrix
 
+
 # Each sample in it is in PyG format
-def mp_load_global_data(workload_list, proc_idx, filepath, files, node_num, edge_idx, cluster, transform, dim):
+def mp_load_global_data(workload_list, proc_idx,
+                        filepath, files, node_num, edge_idx, culled_idx, cluster, transform, dim):
     sample_list = []
     for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
         fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
@@ -25,9 +27,12 @@ def mp_load_global_data(workload_list, proc_idx, filepath, files, node_num, edge
             pd_dis = fperframe[:, 0:2]  # a[start:stop] items start through stop-1
         else:
             # print("name: ", files[idx], " shape: ", fperframe.shape)
-            other = fperframe[:, 6:]
-            pn_dis = fperframe[:, 3:6]
-            pd_dis = fperframe[:, 0:3]  # a[start:stop] items start through stop-1
+            # other = fperframe[:, 6:]
+            pn_dis = fperframe[culled_idx, 3:6]
+            pd_dis = fperframe[culled_idx, 0:3]  # a[start:stop] items start through stop-1
+            other_tmp = fperframe[culled_idx, :]
+            feat_idx = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 18, 19, 20, 21, 22, 23])
+            other = np.take(other_tmp, feat_idx, axis=1)
         y_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((node_num, -1)))
         x_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((node_num, -1)))
         sample = Data(x=x_data, edge_index=edge_idx, y=y_data, cluster=cluster)
@@ -42,10 +47,15 @@ def mp_load_global_data(workload_list, proc_idx, filepath, files, node_num, edge
 # Each sample in it is in normal PyTorch format.
 # filepath is used to determine whether read files from training data folder or testing data folder.
 # It won't append global feature vector to each sample, because it will blow up the RAM.
-def mp_load_local_data(workload_list, proc_idx, filepath, files, boundary_points_id, cluster_num, transform, dim):
+def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, boundary_points_id, cluster_num, transform, dim):
     sample_list = []
     boundary_pts_num = boundary_points_id.shape[0]
-    gvec_dir = os.getcwd() + "/SimData/TrainPreGenGlobalFeatureVec/"
+    gvec_dir = os.getcwd()
+    if mode == 0:
+        gvec_dir += "/SimData/TrainPreGenGlobalFeatureVec/"
+    elif mode == 1:
+        gvec_dir += "/SimData/TestPreGenGlobalFeatureVec/"
+
     for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
         fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
         if dim == 2:
@@ -77,7 +87,7 @@ def mp_load_local_data(workload_list, proc_idx, filepath, files, boundary_points
 
 
 class SIM_Data_Local(Dataset):
-    def __init__(self, filepath, i_features_num, o_features_num,
+    def __init__(self, filepath, mode, i_features_num, o_features_num,
                  cluster_num, boundary_points_id, dim, transform=None):
         boundary_points_id = np.sort(np.fromiter(boundary_points_id, int))
         # Read file names
@@ -113,7 +123,7 @@ class SIM_Data_Local(Dataset):
         self._sample_list = []
         for i in range(cpu_cnt):
             proc_list.append(pool.apply_async(func=mp_load_local_data,
-                                              args=(workload_list, i, self._filepath, self._files,
+                                              args=(workload_list, mode, i, self._filepath, self._files,
                                                     boundary_points_id, cluster_num, transform, dim,)))
         # Get multi-processing res:
         for i in range(cpu_cnt):
@@ -180,7 +190,7 @@ class SIM_Data_Local(Dataset):
 class SIM_Data_Geo(InMemoryDataset):
     def __init__(self, filepath, mesh_edge_idx,
                  i_features_num, o_features_num,
-                 case_info, cluster, clusters_num, cluster_parent, belongs, dim,
+                 case_info, cluster, clusters_num, dim,
                  transform=None, pre_transform=None):
         super(SIM_Data_Geo, self).__init__(None, transform, pre_transform)
         import time
@@ -201,14 +211,24 @@ class SIM_Data_Geo(InMemoryDataset):
         self._edge_idx = mesh_edge_idx
         self._filepath = filepath
         self._input_features_num = i_features_num
-        self._node_num = case_info['mesh_num_vert']
-        self._b_pt_idx = torch.from_numpy(np.sort(np.fromiter(case_info['boundary'][0], int)))
+        # self._node_num = case_info['mesh_num_vert']
+        self._node_num = case_info['mesh_num_dyn_vert']
+
+        ori_b_pt_idx = np.sort(np.fromiter(case_info['boundary'][0], int))
+        hash_table = case_info['hash_table']
+        new_b_pt_list = []
+        for i in range(len(ori_b_pt_idx)):
+            if hash_table.get(ori_b_pt_idx[i]) is not None:
+                new_b_pt_list.append(hash_table[ori_b_pt_idx[i]])
+
+        self._b_pt_idx = torch.from_numpy(np.array(new_b_pt_list))
+
+
+
         self._output_features_num = o_features_num
 
         self._cluster = cluster
         self._cluster_num = clusters_num
-        self._cluster_parent = cluster_parent
-        self._cluster_belong = belongs
 
         # Section 5-3 multi-processing
         pool = mp.Pool()
@@ -231,7 +251,8 @@ class SIM_Data_Geo(InMemoryDataset):
         for i in range(cpu_cnt):
             proc_list.append(pool.apply_async(func=mp_load_global_data,
                                               args=(workload_list, i, self._filepath, self._files, self.node_num,
-                                                    self._edge_idx, self._cluster, self.transform, dim,)))
+                                                    self._edge_idx, case_info['culled_idx'], self._cluster,
+                                                    self.transform, dim,)))
         # Get multi-processing res:
         for i in range(cpu_cnt):
             # print("i: ", i, ", get shape: ", len(proc_list[i].get()))
@@ -275,12 +296,13 @@ class SIM_Data_Geo(InMemoryDataset):
         return len(self.raw_file_names)
 
 
-def load_local_data(test_case, cluster_num, path="/Outputs"):
+# 0 -- train, 1 -- test
+def load_local_data(test_case, cluster_num, mode=0, path="/Outputs"):
     file_dir = os.getcwd()
     file_dir = file_dir + path
     # case_info = read(test_case)
     case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case) + ".p", "rb"))
-    tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 21, 3,
+    tmp_dataset = SIM_Data_Local(file_dir, mode, cluster_num * case_info['dim'] + 21, 3,
                                  cluster_num, case_info['boundary'][0], case_info['dim'])
     # tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 3 + 3 + 3 + 3 + 1 + 1, 3,
     #                              cluster_num, case_info['boundary'][0], case_info['dim'])
@@ -344,22 +366,65 @@ def load_data(test_case, cluster_num, path="/Outputs"):
     else:
         import time
         t1_start = time.time()
+
+        # Construct full idx to fixed index cull hashtable:
+        hash_table = {}
+        full_idx = np.arange(case_info['mesh_num_vert'])
+        culled_idx = np.delete(full_idx, case_info['dirichlet'])
+        for i in range(len(culled_idx)):
+            hash_table[culled_idx[i]] = i
+        case_info['culled_idx'] = culled_idx
+        case_info['mesh_num_dyn_vert'] = len(culled_idx)
+        case_info['hash_table'] = hash_table
+
         # Load Section 1
         for [i, j, k, m] in case_info['elements']:
-            edges.add((i, j))
-            edges.add((j, i))
-            edges.add((i, k))
-            edges.add((k, i))
-            edges.add((i, m))
-            edges.add((m, i))
+            if i not in case_info['dirichlet'] and j not in case_info['dirichlet']:
+                # edges.add((i, j))
+                # edges.add((j, i))
+                edges.add((hash_table[i], hash_table[j]))
+                edges.add((hash_table[j], hash_table[i]))
+            if i not in case_info['dirichlet'] and k not in case_info['dirichlet']:
+                # edges.add((i, k))
+                # edges.add((k, i))
+                edges.add((hash_table[i], hash_table[k]))
+                edges.add((hash_table[k], hash_table[i]))
+            if i not in case_info['dirichlet'] and m not in case_info['dirichlet']:
+                # edges.add((i, m))
+                # edges.add((m, i))
+                edges.add((hash_table[i], hash_table[m]))
+                edges.add((hash_table[m], hash_table[i]))
+            if j not in case_info['dirichlet'] and k not in case_info['dirichlet']:
+                # edges.add((j, k))
+                # edges.add((k, j))
+                edges.add((hash_table[j], hash_table[k]))
+                edges.add((hash_table[k], hash_table[j]))
+            if j not in case_info['dirichlet'] and m not in case_info['dirichlet']:
+                # edges.add((j, m))
+                # edges.add((m, j))
+                edges.add((hash_table[j], hash_table[m]))
+                edges.add((hash_table[m], hash_table[j]))
+            if k not in case_info['dirichlet'] and m not in case_info['dirichlet']:
+                # edges.add((k, m))
+                # edges.add((m, k))
+                edges.add((hash_table[k], hash_table[m]))
+                edges.add((hash_table[m], hash_table[k]))
+            # edges.add((i, j))
+            # edges.add((j, i))
+            # edges.add((i, k))
+            # edges.add((k, i))
+            # edges.add((i, m))
+            # edges.add((m, i))
+            #
+            # edges.add((j, k))
+            # edges.add((k, j))
+            # edges.add((j, m))
+            # edges.add((m, j))
+            #
+            # edges.add((k, m))
+            # edges.add((m, k))
 
-            edges.add((j, k))
-            edges.add((k, j))
-            edges.add((j, m))
-            edges.add((m, j))
 
-            edges.add((k, m))
-            edges.add((m, k))
         t1_end = time.time()
 
         t2_start = time.time()
@@ -378,15 +443,22 @@ def load_data(test_case, cluster_num, path="/Outputs"):
 
         # Load Section 4
         t4_start = time.time()
-        cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num, case_info['mesh_num_vert'])
+        cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num,
+                                                                                  case_info['mesh_num_vert'])
         t4_end = time.time()
         print("t4:", t4_end - t4_start)
 
         # Load Section 5
         t5_start = time.time()
-        tmp_data = SIM_Data_Geo(file_dir, edge_index, 21, 3,
+        cluster = cluster[culled_idx]
+        unique_num = len(np.unique(cluster))
+        if unique_num != cluster_num:
+            print("Warning: Culled Cluster Number is smaller than the original Cluster Number.")
+            print("The original cluster number is:", cluster_num)
+            print("The culled cluster number is:", unique_num)
+        tmp_data = SIM_Data_Geo(file_dir, edge_index, 18, 3,
                                 case_info,
-                                cluster, cluster_num, cluster_parent, belongs, 3)
+                                cluster, unique_num, 3)
         t5_end = time.time()
         print("t5:", t5_end - t5_start)
 
