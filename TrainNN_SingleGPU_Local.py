@@ -30,7 +30,7 @@ writer = SummaryWriter('./runs/GCN_Local_1009_single')
 ###################################################
 
 # Training settings
-epoch_num = 300
+epoch_num = 50
 simulator_feature_num = 18
 case_id = 1009
 cluster_num = 256
@@ -73,9 +73,9 @@ global_model = GCN3D_Mar28_PoolingDeepGlobal(
 global_model.load_state_dict(torch.load(GLOBAL_NN_PATH))
 
 load_data_t_start = time.time()
-simDataset, case_info = load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
-                                        simulator_feature_num + global_model.global_feat_num, culled_cluster_num,
-                                        global_model, device, 0, "/SimData/TrainingData")
+simDataset = load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
+                             simulator_feature_num + global_model.global_feat_num, culled_cluster_num,
+                             global_model, device, 0, "/SimData/TrainingData")
 # simDataset.to_device(device)
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
@@ -102,7 +102,7 @@ local_model = VertNN_Mar21_LocalLinear_MoreShallow(
     device=device
 ).to(device)
 
-# mse = nn.MSELoss(reduction='sum').to(device)
+
 mse = nn.MSELoss().to(device)
 optimizer = optim.Adam(local_model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5, verbose=True, eps=1e-20)

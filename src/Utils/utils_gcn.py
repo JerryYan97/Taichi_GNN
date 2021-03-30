@@ -14,6 +14,7 @@ from numpy import linalg as LA
 from scipy.sparse import lil_matrix
 from torch import linalg as torch_LA
 
+
 # Each sample in it is in PyG format
 def mp_load_global_data(workload_list, proc_idx,
                         filepath, files, node_num, edge_idx, culled_idx, cluster, transform, dim):
@@ -47,9 +48,9 @@ def mp_load_global_data(workload_list, proc_idx,
 # Each sample in it is in normal PyTorch format.
 # filepath is used to determine whether read files from training data folder or testing data folder.
 # It won't append global feature vector to each sample, because it will blow up the RAM.
-def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, boundary_points_id, culled_idx, dim):
+def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, culled_bd_idx, culled_idx, dim):
     sample_list = []
-    boundary_pts_num = boundary_points_id.shape[0]
+    culled_bd_pts_num = culled_bd_idx.shape[0]
     culled_pts_num = len(culled_idx)
     gvec_dir = os.getcwd()
     if mode == 0:
@@ -60,17 +61,17 @@ def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, boundary_
     for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
         fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
         if dim == 2:
-            other = fperframe[boundary_points_id, 4:]
-            pn_dis = fperframe[boundary_points_id, 2:4]
-            pd_dis = fperframe[boundary_points_id, 0:2]  # a[start:stop] items start through stop-1
+            other = fperframe[culled_bd_idx, 4:]
+            pn_dis = fperframe[culled_bd_idx, 2:4]
+            pd_dis = fperframe[culled_bd_idx, 0:2]  # a[start:stop] items start through stop-1
         else:
             feat_idx = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 18, 19, 20, 21, 22, 23])
 
             # For the purpose of local training data:
-            other_tmp = fperframe[boundary_points_id, :]
+            other_tmp = fperframe[culled_bd_idx, :]
             other = np.take(other_tmp, feat_idx, axis=1)
-            pn_dis = fperframe[boundary_points_id, 3:6]
-            pd_dis = fperframe[boundary_points_id, 0:3]  # a[start:stop] items start through stop-1
+            pn_dis = fperframe[culled_bd_idx, 3:6]
+            pd_dis = fperframe[culled_bd_idx, 0:3]  # a[start:stop] items start through stop-1
 
             # To produce global feature data:
             other_tmp_full = fperframe[culled_idx, :]
@@ -78,8 +79,8 @@ def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, boundary_
             pn_dis_full = fperframe[culled_idx, 3:6]
             pd_dis_full = fperframe[culled_idx, 0:3]
 
-        y_frame_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((boundary_pts_num, -1)))
-        x_frame_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((boundary_pts_num, -1)))
+        y_frame_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((culled_bd_pts_num, -1)))
+        x_frame_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((culled_bd_pts_num, -1)))
 
         y_frame_full_data = torch.from_numpy(np.subtract(pn_dis_full, pd_dis_full).reshape((culled_pts_num, -1)))
         x_frame_full_data = torch.from_numpy(np.hstack((pd_dis_full, other_full)).reshape((culled_pts_num, -1)))
@@ -97,7 +98,8 @@ def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, boundary_
 
 class SIM_Data_Local(Dataset):
     def __init__(self, filepath, global_nn, mode, i_features_num, o_features_num, device, edge_idx, culled_idx,
-                 culled_cluster, cluster_num, boundary_points_id, dim, transform=None):
+                 culled_cluster, cluster_num,
+                 global_culled_boundary_points_id, local_culled_boundary_points_id, dim, transform=None):
         # Read file names
         self._files = []
         for _, _, files in os.walk(filepath):
@@ -107,9 +109,9 @@ class SIM_Data_Local(Dataset):
         self._filepath = filepath
         self._input_features_num = i_features_num
         self._output_features_num = o_features_num
-        self._boundary_node_num = boundary_points_id.shape[0]
+        self._local_culled_boundary_node_num = len(local_culled_boundary_points_id)
         self._cluster_num = cluster_num
-        self._boundary_pts_id = torch.from_numpy(boundary_points_id)
+        self._local_culled_boundary_pts_id = torch.from_numpy(local_culled_boundary_points_id)
         # Read file data
         # Divide workloads:
         cpu_cnt = os.cpu_count()
@@ -132,7 +134,7 @@ class SIM_Data_Local(Dataset):
         for i in range(cpu_cnt):
             proc_list.append(pool.apply_async(func=mp_load_local_data,
                                               args=(workload_list, mode, i, self._filepath, self._files,
-                                                    boundary_points_id, culled_idx, dim,)))
+                                                    local_culled_boundary_points_id, culled_idx, dim,)))
 
         # Get multi-processing res:
         for i in range(cpu_cnt):
@@ -162,8 +164,8 @@ class SIM_Data_Local(Dataset):
                 output_cpu = output.cpu().detach()
                 top_vec = torch_LA.norm(output_cpu - y_data, dim=1).numpy()
                 bottom_vec = (torch_LA.norm(y_data, dim=1)).cpu().detach().numpy()
-                top_vec_b = np.take(top_vec, boundary_points_id)
-                bottom_vec_b = np.take(bottom_vec, boundary_points_id)
+                top_vec_b = np.take(top_vec, global_culled_boundary_points_id)
+                bottom_vec_b = np.take(bottom_vec, global_culled_boundary_points_id)
                 big_idx = np.where(bottom_vec_b > 1e-10)
                 top_cull_vec = np.take(top_vec_b, big_idx)
                 bottom_cull_vec = np.take(bottom_vec_b, big_idx)
@@ -175,17 +177,17 @@ class SIM_Data_Local(Dataset):
                 # Save data to sample_list:
                 self._sample_list[i]["gvec"] = g_feat.cpu().detach()
 
-        metric1 /= (len(boundary_points_id) * len(self._files) - small_cnt)
+        metric1 /= (len(global_culled_boundary_points_id) * len(self._files) - small_cnt)
         print("Avg metric1:", metric1)
 
     def __len__(self):
-        return len(self._files) * self._boundary_node_num
+        return len(self._files) * self._local_culled_boundary_node_num
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
-        file_idx = idx // self._boundary_node_num
-        node_idx = idx - self._boundary_node_num * file_idx
+        file_idx = idx // self._local_culled_boundary_node_num
+        node_idx = idx - self._local_culled_boundary_node_num * file_idx
         try:
             x_frame_node = self._sample_list[file_idx]['x_frame'][node_idx]
         except:
@@ -198,7 +200,7 @@ class SIM_Data_Local(Dataset):
         sample = {'x': x_data,
                   'y': y_data,
                   'filename': self._sample_list[file_idx]['filename'],
-                  'mesh_vert_idx': self._boundary_pts_id[node_idx],
+                  'mesh_vert_idx': self._local_culled_boundary_pts_id[node_idx],
                   'file_idx:': file_idx}
         return sample
 
@@ -212,11 +214,11 @@ class SIM_Data_Local(Dataset):
 
     @property
     def boundary_node_num(self):
-        return self._boundary_node_num
+        return self._local_culled_boundary_node_num
 
     @property
     def boundary_node_mesh_idx(self):
-        return self._boundary_pts_id
+        return self._local_culled_boundary_pts_id
 
     def len(self):
         return len(self._files)
@@ -345,15 +347,26 @@ def load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
     file_dir = os.getcwd()
     file_dir = file_dir + path
     ori_boundary_pt_idx = case_info['boundary'][0]
-    culled_boundary_pt_list = []
     ori_boundary_pt_idx = np.sort(np.fromiter(ori_boundary_pt_idx, int))
+    # NOTE: The culled boundary index in local is different from the culled boundary index in global.
+    # The boundary index for local should be index for pts in simulator data which excludes fixed pts, because it is
+    # used to read training data.
+    #
+    # The boundary index for global should be index for pts in culled fixed pts data, because it is used to calculate
+    # the metric1 for output of the global NN.
+    global_culled_boundary_pt_list = []
+    local_culled_boundary_pt_list = []
     for i in range(len(ori_boundary_pt_idx)):
         if hash_table.get(ori_boundary_pt_idx[i]) is not None:
-            culled_boundary_pt_list.append(hash_table[ori_boundary_pt_idx[i]])
-    culled_boundary_pt_idx = np.asarray(culled_boundary_pt_list)
+            global_culled_boundary_pt_list.append(hash_table[ori_boundary_pt_idx[i]])
+            local_culled_boundary_pt_list.append(ori_boundary_pt_idx[i])
+    global_culled_boundary_pt_idx = np.asarray(global_culled_boundary_pt_list)
+    local_culled_boundary_pt_idx = np.asarray(local_culled_boundary_pt_list)
+
     tmp_dataset = SIM_Data_Local(file_dir, global_nn, mode, total_feature_num, 3, device, edge_idx, culled_idx,
-                                 culled_cluster, culled_cluster_num, culled_boundary_pt_idx, case_info['dim'])
-    return tmp_dataset, case_info
+                                 culled_cluster, culled_cluster_num,
+                                 global_culled_boundary_pt_idx, local_culled_boundary_pt_idx, case_info['dim'])
+    return tmp_dataset
 
 
 # file_dir: Top folder path.
