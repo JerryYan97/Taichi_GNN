@@ -12,6 +12,4 @@ if __name__ == "__main__":
     os.makedirs("TestingData", exist_ok=True)
     os.makedirs("TmpRenderedImgs", exist_ok=True)
     os.makedirs("TrainingData", exist_ok=True)
-    os.makedirs("TrainPreGenGlobalFeatureVec", exist_ok=True)
-    os.makedirs("TestPreGenGlobalFeatureVec", exist_ok=True)
     os.makedirs("StartFrame", exist_ok=True)

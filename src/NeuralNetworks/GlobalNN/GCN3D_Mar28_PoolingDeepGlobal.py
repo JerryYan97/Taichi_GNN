@@ -15,6 +15,8 @@ class GCN3D_Mar28_PoolingDeepGlobal(nn.Module):
     def __init__(self, graph_node_num, cluster_num, batch_num,  # The num of batch should be 1.
                  nfeat, fc_out, dropout, device):
         super(GCN3D_Mar28_PoolingDeepGlobal, self).__init__()
+        self.global_feat_num = 5 * cluster_num
+
         self.GCN_G1 = GCNConv(nfeat, 64)
         self.fc_G1 = nn.Linear(64, 128)
 
@@ -33,7 +35,7 @@ class GCN3D_Mar28_PoolingDeepGlobal(nn.Module):
         self.fc_M1 = nn.Linear(16, 8)
 
         self.GCN_O1 = GCNConv(8, 5)
-        self.fc_O1 = nn.Linear(5 * cluster_num, 3 * graph_node_num * batch_num, bias=False)
+        self.fc_O1 = nn.Linear(self.global_feat_num, 3 * graph_node_num * batch_num, bias=False)
 
         self.ELU = torch.nn.ELU()
         self.dropout = dropout

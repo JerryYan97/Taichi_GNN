@@ -12,7 +12,7 @@ from scipy.spatial import KDTree
 from collections import Counter
 from numpy import linalg as LA
 from scipy.sparse import lil_matrix
-
+from torch import linalg as torch_LA
 
 # Each sample in it is in PyG format
 def mp_load_global_data(workload_list, proc_idx,
@@ -47,9 +47,10 @@ def mp_load_global_data(workload_list, proc_idx,
 # Each sample in it is in normal PyTorch format.
 # filepath is used to determine whether read files from training data folder or testing data folder.
 # It won't append global feature vector to each sample, because it will blow up the RAM.
-def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, boundary_points_id, cluster_num, transform, dim):
+def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, boundary_points_id, culled_idx, dim):
     sample_list = []
     boundary_pts_num = boundary_points_id.shape[0]
+    culled_pts_num = len(culled_idx)
     gvec_dir = os.getcwd()
     if mode == 0:
         gvec_dir += "/SimData/TrainPreGenGlobalFeatureVec/"
@@ -63,22 +64,30 @@ def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, boundary_
             pn_dis = fperframe[boundary_points_id, 2:4]
             pd_dis = fperframe[boundary_points_id, 0:2]  # a[start:stop] items start through stop-1
         else:
-            other = fperframe[boundary_points_id, 6:]
-            # other1 = fperframe[boundary_points_id, 15:21]
-            # other2 = fperframe[boundary_points_id, 24:26]
-            # other = np.hstack((other1, other2))
+            feat_idx = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 18, 19, 20, 21, 22, 23])
+
+            # For the purpose of local training data:
+            other_tmp = fperframe[boundary_points_id, :]
+            other = np.take(other_tmp, feat_idx, axis=1)
             pn_dis = fperframe[boundary_points_id, 3:6]
             pd_dis = fperframe[boundary_points_id, 0:3]  # a[start:stop] items start through stop-1
+
+            # To produce global feature data:
+            other_tmp_full = fperframe[culled_idx, :]
+            other_full = np.take(other_tmp_full, feat_idx, axis=1)
+            pn_dis_full = fperframe[culled_idx, 3:6]
+            pd_dis_full = fperframe[culled_idx, 0:3]
+
         y_frame_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((boundary_pts_num, -1)))
         x_frame_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((boundary_pts_num, -1)))
-        # x_frame_data = torch.from_numpy(pd_dis).reshape((boundary_pts_num, -1))
-        gvec = np.genfromtxt(gvec_dir + "gvec_" + files[idx], delimiter=',')
-        # gvec = np.genfromtxt(gvec_dir + "gvec_" + "Train_dir_LowPolyArm_90.0_90.0_-980.0_" + str(idx).zfill(5) + ".csv", delimiter=',')
-        if gvec.shape[0] != cluster_num:
-            raise Exception('Cluster num should be equal to the input GVec length.')
+
+        y_frame_full_data = torch.from_numpy(np.subtract(pn_dis_full, pd_dis_full).reshape((culled_pts_num, -1)))
+        x_frame_full_data = torch.from_numpy(np.hstack((pd_dis_full, other_full)).reshape((culled_pts_num, -1)))
+
         sample = {'x_frame': x_frame_data,
                   'y_frame': y_frame_data,
-                  'gvec': torch.squeeze(torch.from_numpy(gvec.reshape((cluster_num * dim, -1)))),
+                  'x_frame_full': x_frame_full_data,
+                  'y_frame_full': y_frame_full_data,
                   'filename': files[idx]}
         sample_list.append(sample)
 
@@ -87,9 +96,8 @@ def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, boundary_
 
 
 class SIM_Data_Local(Dataset):
-    def __init__(self, filepath, mode, i_features_num, o_features_num,
-                 cluster_num, boundary_points_id, dim, transform=None):
-        boundary_points_id = np.sort(np.fromiter(boundary_points_id, int))
+    def __init__(self, filepath, global_nn, mode, i_features_num, o_features_num, device, edge_idx, culled_idx,
+                 culled_cluster, cluster_num, boundary_points_id, dim, transform=None):
         # Read file names
         self._files = []
         for _, _, files in os.walk(filepath):
@@ -124,7 +132,8 @@ class SIM_Data_Local(Dataset):
         for i in range(cpu_cnt):
             proc_list.append(pool.apply_async(func=mp_load_local_data,
                                               args=(workload_list, mode, i, self._filepath, self._files,
-                                                    boundary_points_id, cluster_num, transform, dim,)))
+                                                    boundary_points_id, culled_idx, dim,)))
+
         # Get multi-processing res:
         for i in range(cpu_cnt):
             sub_sample_list = proc_list[i].get()
@@ -133,6 +142,41 @@ class SIM_Data_Local(Dataset):
         pool.join()
 
         print("Sample list length:", len(self._sample_list))
+
+        # Calculate the global vec for each frame:
+        # Put Data into NN:
+        global_nn.eval()
+        culled_node_num = len(culled_idx)
+        batch = torch.zeros(culled_node_num)
+        metric1 = 0.0
+        small_cnt = 0
+        print("Calculating the Global feature...")
+        for i in range(len(self._sample_list)):
+            with torch.no_grad():
+                g_feat, o_feat = global_nn(self._sample_list[i]['x_frame_full'].float().to(device),
+                                           edge_idx.to(device),
+                                           batch.to(device),
+                                           culled_cluster.to(device))
+                y_data = self._sample_list[i]['y_frame_full']
+                output = o_feat.reshape(culled_node_num, -1)
+                output_cpu = output.cpu().detach()
+                top_vec = torch_LA.norm(output_cpu - y_data, dim=1).numpy()
+                bottom_vec = (torch_LA.norm(y_data, dim=1)).cpu().detach().numpy()
+                top_vec_b = np.take(top_vec, boundary_points_id)
+                bottom_vec_b = np.take(bottom_vec, boundary_points_id)
+                big_idx = np.where(bottom_vec_b > 1e-10)
+                top_cull_vec = np.take(top_vec_b, big_idx)
+                bottom_cull_vec = np.take(bottom_vec_b, big_idx)
+                tmp = top_cull_vec / bottom_cull_vec
+                if np.isinf(tmp).any():
+                    raise Exception('Contain Elements that are inf!')
+                small_cnt += (len(top_vec_b) - len(big_idx[0]))
+                metric1 += np.sum(tmp)
+                # Save data to sample_list:
+                self._sample_list[i]["gvec"] = g_feat.cpu().detach()
+
+        metric1 /= (len(boundary_points_id) * len(self._files) - small_cnt)
+        print("Avg metric1:", metric1)
 
     def __len__(self):
         return len(self._files) * self._boundary_node_num
@@ -223,8 +267,6 @@ class SIM_Data_Geo(InMemoryDataset):
 
         self._b_pt_idx = torch.from_numpy(np.array(new_b_pt_list))
 
-
-
         self._output_features_num = o_features_num
 
         self._cluster = cluster
@@ -297,17 +339,20 @@ class SIM_Data_Geo(InMemoryDataset):
 
 
 # 0 -- train, 1 -- test
-def load_local_data(test_case, cluster_num, mode=0, path="/Outputs"):
+def load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
+                    total_feature_num, culled_cluster_num,
+                    global_nn, device, mode=0, path="/Outputs"):
     file_dir = os.getcwd()
     file_dir = file_dir + path
-    # case_info = read(test_case)
-    case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case) + ".p", "rb"))
-    tmp_dataset = SIM_Data_Local(file_dir, mode, cluster_num * case_info['dim'] + 21, 3,
-                                 cluster_num, case_info['boundary'][0], case_info['dim'])
-    # tmp_dataset = SIM_Data_Local(file_dir, cluster_num * case_info['dim'] + 3 + 3 + 3 + 3 + 1 + 1, 3,
-    #                              cluster_num, case_info['boundary'][0], case_info['dim'])
-    # tmp_dataset = SIM_Data_Local(file_dir, 23, 3,
-                                 # cluster_num, case_info['boundary'][0], case_info['dim'])
+    ori_boundary_pt_idx = case_info['boundary'][0]
+    culled_boundary_pt_list = []
+    ori_boundary_pt_idx = np.sort(np.fromiter(ori_boundary_pt_idx, int))
+    for i in range(len(ori_boundary_pt_idx)):
+        if hash_table.get(ori_boundary_pt_idx[i]) is not None:
+            culled_boundary_pt_list.append(hash_table[ori_boundary_pt_idx[i]])
+    culled_boundary_pt_idx = np.asarray(culled_boundary_pt_list)
+    tmp_dataset = SIM_Data_Local(file_dir, global_nn, mode, total_feature_num, 3, device, edge_idx, culled_idx,
+                                 culled_cluster, culled_cluster_num, culled_boundary_pt_idx, case_info['dim'])
     return tmp_dataset, case_info
 
 
@@ -330,10 +375,46 @@ def load_cluster(file_dir, test_case, cluster_num, vert_num):
     return belonging, cluster_num, cluster_parent, cluster_belongs, belonging_len
 
 
+def load_global_info(case_info, case_id, cluster_num):
+    full_idx = np.arange(case_info['mesh_num_vert'])
+    culled_idx = np.delete(full_idx, case_info['dirichlet'])
+    hash_table = {}
+    for i in range(len(culled_idx)):
+        hash_table[culled_idx[i]] = i
+    cluster, _, _, _, _ = load_cluster(os.getcwd(), case_id, cluster_num, case_info['mesh_num_vert'])
+    cluster = cluster[culled_idx]
+    unique_num = len(np.unique(cluster))
+    edges = set()
+    edge_index = np.zeros(shape=(2, 0), dtype=np.int32)
+    for [i, j, k, m] in case_info['elements']:
+        if i not in case_info['dirichlet'] and j not in case_info['dirichlet']:
+            edges.add((hash_table[i], hash_table[j]))
+            edges.add((hash_table[j], hash_table[i]))
+        if i not in case_info['dirichlet'] and k not in case_info['dirichlet']:
+            edges.add((hash_table[i], hash_table[k]))
+            edges.add((hash_table[k], hash_table[i]))
+        if i not in case_info['dirichlet'] and m not in case_info['dirichlet']:
+            edges.add((hash_table[i], hash_table[m]))
+            edges.add((hash_table[m], hash_table[i]))
+        if j not in case_info['dirichlet'] and k not in case_info['dirichlet']:
+            edges.add((hash_table[j], hash_table[k]))
+            edges.add((hash_table[k], hash_table[j]))
+        if j not in case_info['dirichlet'] and m not in case_info['dirichlet']:
+            edges.add((hash_table[j], hash_table[m]))
+            edges.add((hash_table[m], hash_table[j]))
+        if k not in case_info['dirichlet'] and m not in case_info['dirichlet']:
+            edges.add((hash_table[k], hash_table[m]))
+            edges.add((hash_table[m], hash_table[k]))
+    for (i, j) in edges:
+        edge_index = np.hstack((edge_index, [[i], [j]]))
+    edge_index = torch.LongTensor(edge_index)
+    return unique_num, len(culled_idx), edge_index, hash_table, cluster, culled_idx
+
+
 # Load data record:
 # case 1001 -- 9.8G (Without optimization):
 # t1: 0.003854036331176758  t2: 0.03281879425048828  t3: 0.00013327598571777344  t4: 0.0012357234954833984
-def load_data(test_case, cluster_num, path="/Outputs"):
+def load_global_data(test_case, cluster_num, path="/Outputs"):
     file_dir = os.getcwd()
     file_dir = file_dir + path
     print(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case))
@@ -380,50 +461,23 @@ def load_data(test_case, cluster_num, path="/Outputs"):
         # Load Section 1
         for [i, j, k, m] in case_info['elements']:
             if i not in case_info['dirichlet'] and j not in case_info['dirichlet']:
-                # edges.add((i, j))
-                # edges.add((j, i))
                 edges.add((hash_table[i], hash_table[j]))
                 edges.add((hash_table[j], hash_table[i]))
             if i not in case_info['dirichlet'] and k not in case_info['dirichlet']:
-                # edges.add((i, k))
-                # edges.add((k, i))
                 edges.add((hash_table[i], hash_table[k]))
                 edges.add((hash_table[k], hash_table[i]))
             if i not in case_info['dirichlet'] and m not in case_info['dirichlet']:
-                # edges.add((i, m))
-                # edges.add((m, i))
                 edges.add((hash_table[i], hash_table[m]))
                 edges.add((hash_table[m], hash_table[i]))
             if j not in case_info['dirichlet'] and k not in case_info['dirichlet']:
-                # edges.add((j, k))
-                # edges.add((k, j))
                 edges.add((hash_table[j], hash_table[k]))
                 edges.add((hash_table[k], hash_table[j]))
             if j not in case_info['dirichlet'] and m not in case_info['dirichlet']:
-                # edges.add((j, m))
-                # edges.add((m, j))
                 edges.add((hash_table[j], hash_table[m]))
                 edges.add((hash_table[m], hash_table[j]))
             if k not in case_info['dirichlet'] and m not in case_info['dirichlet']:
-                # edges.add((k, m))
-                # edges.add((m, k))
                 edges.add((hash_table[k], hash_table[m]))
                 edges.add((hash_table[m], hash_table[k]))
-            # edges.add((i, j))
-            # edges.add((j, i))
-            # edges.add((i, k))
-            # edges.add((k, i))
-            # edges.add((i, m))
-            # edges.add((m, i))
-            #
-            # edges.add((j, k))
-            # edges.add((k, j))
-            # edges.add((j, m))
-            # edges.add((m, j))
-            #
-            # edges.add((k, m))
-            # edges.add((m, k))
-
 
         t1_end = time.time()
 

@@ -12,8 +12,8 @@ if __name__ == '__main__':
     case_info['mesh_num_vert'] = case_info['mesh'].num_vertices
     case_info.pop('mesh')
     print("case info before save:", case_info)
-    pickle.dump(case_info, open("../../MeshModels/MeshInfo/case_info" + str(case_id) + ".p", "wb"))
+    pickle.dump(case_info, open("../../MeshModels/MeshInfo/case_info" + str(case_id) + "_RHF.p", "wb"))
 
-    case_info = pickle.load(open("../../MeshModels/MeshInfo/case_info" + str(case_id) + ".p", "rb"))
+    case_info = pickle.load(open("../../MeshModels/MeshInfo/case_info" + str(case_id) + "_RHF.p", "rb"))
     print(case_info)
 
