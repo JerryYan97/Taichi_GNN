@@ -11,7 +11,8 @@ from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_Simple import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_ReduceBN import *
-from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
+# from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar31_Local_RBN_Mid import *
 
 from src.NeuralNetworks.GlobalNN.GCN3D_Mar28_PoolingDeepGlobal import *
 
@@ -95,7 +96,7 @@ train_loader = DataLoader(dataset=simDataset,
 #     device=device
 # ).to(device)
 
-local_model = VertNN_Mar12_LocalLinear_RBN_Deep(
+local_model = VertNN_Mar31_LocalLinear_RBN_Mid(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,

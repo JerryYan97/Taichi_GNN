@@ -7,7 +7,7 @@ from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local_MoreShallow import *
-from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local_MoreShallow import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar31_Local_RBN_Mid import *
 import pickle
 
 from src.NeuralNetworks.GlobalNN.GCN3D_Mar28_PoolingDeepGlobal import *
@@ -16,7 +16,6 @@ import math
 from torch_geometric.data import DataLoader
 
 # Training settings
-epoch_num = 50
 simulator_feature_num = 18
 case_id = 1009
 cluster_num = 256
@@ -48,16 +47,16 @@ global_model = GCN3D_Mar28_PoolingDeepGlobal(
 global_model.load_state_dict(torch.load(GLOBAL_NN_PATH))
 
 # Loading local NN:
-LOCAL_NN_PATH = "TrainedNN/LocalNN/LocalNN_LowPolyArm12.pt"
+LOCAL_NN_PATH = "TrainedNN/LocalNN/LocalNN_LowPolyArm18.pt"
 
 # Model and optimizer
 simDataset = load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
-                             simulator_feature_num + global_model.global_feat_num, culled_cluster_num,
-                             global_model, device, 0, "/SimData/TrainingData")
+                             simulator_feature_num, global_model.global_feat_num, culled_cluster_num,
+                             global_model, device, 0, "/SimData/TestingData", True)
 dim = case_info['dim']
 test_loader = DataLoader(dataset=simDataset, batch_size=simDataset.boundary_node_num, shuffle=False)
 
-local_model = VertNN_Mar21_LocalLinear_MoreShallow(
+local_model = VertNN_Mar31_LocalLinear_RBN_Mid(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,
@@ -69,7 +68,6 @@ local_model.load_state_dict(torch.load(LOCAL_NN_PATH))
 
 def RunNN():
     local_model.eval()
-    overall_loss = 0.0
     metric1 = 0.0
     small_cnt = 0
     with torch.no_grad():
