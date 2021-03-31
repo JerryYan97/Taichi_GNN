@@ -7,11 +7,11 @@ import torch.optim as optim
 from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar3_Local import *
-from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local_MoreShallow import *
+# from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local_MoreShallow import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_Simple import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_ReduceBN import *
-# from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
 
 from src.NeuralNetworks.GlobalNN.GCN3D_Mar28_PoolingDeepGlobal import *
 
@@ -75,7 +75,7 @@ global_model.load_state_dict(torch.load(GLOBAL_NN_PATH))
 load_data_t_start = time.time()
 simDataset = load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
                              simulator_feature_num, global_model.global_feat_num, culled_cluster_num,
-                             global_model, device, 0, "/SimData/TrainingData", False)
+                             global_model, device, 0, "/SimData/TrainingData", True)
 # simDataset.to_device(device)
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
@@ -95,7 +95,7 @@ train_loader = DataLoader(dataset=simDataset,
 #     device=device
 # ).to(device)
 
-local_model = VertNN_Mar21_LocalLinear_MoreShallow(
+local_model = VertNN_Mar12_LocalLinear_RBN_Deep(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,
