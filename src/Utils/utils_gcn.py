@@ -99,7 +99,8 @@ def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, culled_bd
 class SIM_Data_Local(Dataset):
     def __init__(self, filepath, global_nn, mode, i_features_num, o_features_num, device, edge_idx, culled_idx,
                  culled_cluster, cluster_num,
-                 global_culled_boundary_points_id, local_culled_boundary_points_id, dim, transform=None):
+                 global_culled_boundary_points_id, local_culled_boundary_points_id, dim,
+                 include_global_vec=True, transform=None):
         # Read file names
         self._files = []
         for _, _, files in os.walk(filepath):
@@ -112,6 +113,7 @@ class SIM_Data_Local(Dataset):
         self._local_culled_boundary_node_num = len(local_culled_boundary_points_id)
         self._cluster_num = cluster_num
         self._local_culled_boundary_pts_id = torch.from_numpy(local_culled_boundary_points_id)
+        self._include_global_vec = include_global_vec
         # Read file data
         # Divide workloads:
         cpu_cnt = os.cpu_count()
@@ -152,33 +154,35 @@ class SIM_Data_Local(Dataset):
         batch = torch.zeros(culled_node_num)
         metric1 = 0.0
         small_cnt = 0
-        print("Calculating the Global feature...")
-        for i in range(len(self._sample_list)):
-            with torch.no_grad():
-                g_feat, o_feat = global_nn(self._sample_list[i]['x_frame_full'].float().to(device),
-                                           edge_idx.to(device),
-                                           batch.to(device),
-                                           culled_cluster.to(device))
-                y_data = self._sample_list[i]['y_frame_full']
-                output = o_feat.reshape(culled_node_num, -1)
-                output_cpu = output.cpu().detach()
-                top_vec = torch_LA.norm(output_cpu - y_data, dim=1).numpy()
-                bottom_vec = (torch_LA.norm(y_data, dim=1)).cpu().detach().numpy()
-                top_vec_b = np.take(top_vec, global_culled_boundary_points_id)
-                bottom_vec_b = np.take(bottom_vec, global_culled_boundary_points_id)
-                big_idx = np.where(bottom_vec_b > 1e-10)
-                top_cull_vec = np.take(top_vec_b, big_idx)
-                bottom_cull_vec = np.take(bottom_vec_b, big_idx)
-                tmp = top_cull_vec / bottom_cull_vec
-                if np.isinf(tmp).any():
-                    raise Exception('Contain Elements that are inf!')
-                small_cnt += (len(top_vec_b) - len(big_idx[0]))
-                metric1 += np.sum(tmp)
-                # Save data to sample_list:
-                self._sample_list[i]["gvec"] = g_feat.cpu().detach()
-
-        metric1 /= (len(global_culled_boundary_points_id) * len(self._files) - small_cnt)
-        print("Avg metric1:", metric1)
+        if include_global_vec:
+            print("Calculating the Global feature...")
+            for i in range(len(self._sample_list)):
+                with torch.no_grad():
+                    g_feat, o_feat = global_nn(self._sample_list[i]['x_frame_full'].float().to(device),
+                                               edge_idx.to(device),
+                                               batch.to(device),
+                                               culled_cluster.to(device))
+                    y_data = self._sample_list[i]['y_frame_full']
+                    output = o_feat.reshape(culled_node_num, -1)
+                    output_cpu = output.cpu().detach()
+                    top_vec = torch_LA.norm(output_cpu - y_data, dim=1).numpy()
+                    bottom_vec = (torch_LA.norm(y_data, dim=1)).cpu().detach().numpy()
+                    top_vec_b = np.take(top_vec, global_culled_boundary_points_id)
+                    bottom_vec_b = np.take(bottom_vec, global_culled_boundary_points_id)
+                    big_idx = np.where(bottom_vec_b > 1e-10)
+                    top_cull_vec = np.take(top_vec_b, big_idx)
+                    bottom_cull_vec = np.take(bottom_vec_b, big_idx)
+                    tmp = top_cull_vec / bottom_cull_vec
+                    if np.isinf(tmp).any():
+                        raise Exception('Contain Elements that are inf!')
+                    small_cnt += (len(top_vec_b) - len(big_idx[0]))
+                    metric1 += np.sum(tmp)
+                    # Save data to sample_list:
+                    self._sample_list[i]["gvec"] = g_feat.cpu().detach()
+            metric1 /= (len(global_culled_boundary_points_id) * len(self._files) - small_cnt)
+            print("Avg metric1:", metric1)
+        else:
+            print("Doesn't include Global feature.")
 
     def __len__(self):
         return len(self._files) * self._local_culled_boundary_node_num
@@ -193,8 +197,11 @@ class SIM_Data_Local(Dataset):
         except:
             print("file_idx:", file_idx, " node_idx:", node_idx, " idx:", idx)
             exit(1)
-        gvec_node = self._sample_list[file_idx]['gvec']
-        x_data = torch.cat((x_frame_node, gvec_node), dim=0)
+        if self._include_global_vec:
+            gvec_node = self._sample_list[file_idx]['gvec']
+            x_data = torch.cat((x_frame_node, gvec_node), dim=0)
+        else:
+            x_data = x_frame_node
         # x_data = x_frame_node
         y_data = self._sample_list[file_idx]['y_frame'][node_idx]
         sample = {'x': x_data,
@@ -342,8 +349,8 @@ class SIM_Data_Geo(InMemoryDataset):
 
 # 0 -- train, 1 -- test
 def load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
-                    total_feature_num, culled_cluster_num,
-                    global_nn, device, mode=0, path="/Outputs"):
+                    simulator_feature_num, global_feature_num, culled_cluster_num,
+                    global_nn, device, mode=0, path="/Outputs", include_global_vec=True):
     file_dir = os.getcwd()
     file_dir = file_dir + path
     ori_boundary_pt_idx = case_info['boundary'][0]
@@ -363,9 +370,14 @@ def load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
     global_culled_boundary_pt_idx = np.asarray(global_culled_boundary_pt_list)
     local_culled_boundary_pt_idx = np.asarray(local_culled_boundary_pt_list)
 
+    total_feature_num = simulator_feature_num
+    if include_global_vec:
+        total_feature_num += global_feature_num
+
     tmp_dataset = SIM_Data_Local(file_dir, global_nn, mode, total_feature_num, 3, device, edge_idx, culled_idx,
                                  culled_cluster, culled_cluster_num,
-                                 global_culled_boundary_pt_idx, local_culled_boundary_pt_idx, case_info['dim'])
+                                 global_culled_boundary_pt_idx,
+                                 local_culled_boundary_pt_idx, case_info['dim'], include_global_vec)
     return tmp_dataset
 
 

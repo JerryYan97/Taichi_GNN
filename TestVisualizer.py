@@ -4,7 +4,7 @@ import numpy as np
 import pymesh
 from src.Utils.reader import *
 from src.Utils.utils_visualization import output_3d_seq, update_boundary_mesh_np
-
+import pickle
 
 # PN result: Red (Top Layer)
 # Corrected PD result: Green (Second Layer)
@@ -46,7 +46,8 @@ def output_3d_results(pn_x, corrected_pd_x, pd_x, f, case_info):
 
 
 if __name__ == "__main__":
-    case_info = read(1009)
+    case_id = 1009
+    case_info = read(case_id)
     mesh = case_info['mesh']
     dirichlet = case_info['dirichlet']
     mesh_scale = case_info['mesh_scale']
@@ -96,13 +97,14 @@ if __name__ == "__main__":
     TestResults_Files = []
     for _, _, files in os.walk(testpath):
         TestResults_Files.extend(files)
-    b_pts_idx_name = "b_pts_idx_" + case_info['case_name'] + ".csv"
+    # b_pts_idx_name = "b_pts_idx_" + case_info['case_name'] + ".csv"
+    b_pts_idx_name = "vis_info_" + str(case_id) + ".p"
     b_pts_file_idx = TestResults_Files.index(b_pts_idx_name)
     del TestResults_Files[b_pts_file_idx]
     TestResults_Files.sort()
     print("TestResults_Files:", TestResults_Files)
-    b_pts_idx = np.genfromtxt(testpath + "/" + b_pts_idx_name, delimiter=',', dtype=int)
-
+    # b_pts_idx = np.genfromtxt(testpath + "/" + b_pts_idx_name, delimiter=',', dtype=int)
+    b_pts_idx = pickle.load(open("SimData/RunNNRes/vis_info_" + str(case_id) + ".p", "rb"))['local_bd_idx']
     # Reconstruct pos:
     print("You are now selecting the test case " + case_info['case_name'])
     frame_id = int(input("Please input the frame id that you want to start:"))
@@ -111,12 +113,12 @@ if __name__ == "__main__":
         raise Exception("The start mesh path doesn't exist!")
     start_mesh = pymesh.load_mesh(start_mesh_path)
 
-    # pn_pos = mesh.vertices[b_pts_idx, 0:dim]
-    # corrected_pd_pos = mesh.vertices[b_pts_idx, 0:dim]
-    # pd_pos = mesh.vertices[b_pts_idx, 0:dim]
-    pn_pos = start_mesh.vertices[b_pts_idx, 0:dim]
-    corrected_pd_pos = start_mesh.vertices[b_pts_idx, 0:dim]
-    pd_pos = start_mesh.vertices[b_pts_idx, 0:dim]
+    ori_boundary_pt_idx = case_info['boundary'][0]
+    ori_boundary_pt_idx = np.sort(np.fromiter(ori_boundary_pt_idx, int))
+
+    pn_pos = np.copy(start_mesh.vertices[b_pts_idx, 0:dim])
+    corrected_pd_pos = np.copy(start_mesh.vertices[b_pts_idx, 0:dim])
+    pd_pos = np.copy(start_mesh.vertices[b_pts_idx, 0:dim])
     for f in range(len(TestResults_Files)):
         test_file = np.genfromtxt(testpath + "/" + TestResults_Files[f], delimiter=',')
 
@@ -137,6 +139,11 @@ if __name__ == "__main__":
         whole_corrected_pd_pos = np.zeros((mesh.num_vertices, dim), dtype=float)
         whole_pd_pos = np.zeros((mesh.num_vertices, dim), dtype=float)
         whole_pn_pos = np.zeros((mesh.num_vertices, dim), dtype=float)
+
+        whole_corrected_pd_pos[ori_boundary_pt_idx, 0:dim] = start_mesh.vertices[ori_boundary_pt_idx, 0:dim]
+        whole_pd_pos[ori_boundary_pt_idx, 0:dim] = start_mesh.vertices[ori_boundary_pt_idx, 0:dim]
+        whole_pn_pos[ori_boundary_pt_idx, 0:dim] = start_mesh.vertices[ori_boundary_pt_idx, 0:dim]
+
         whole_corrected_pd_pos[b_pts_idx, 0:dim] = corrected_pd_pos
         whole_pd_pos[b_pts_idx, 0:dim] = pd_pos
         whole_pn_pos[b_pts_idx, 0:dim] = pn_pos

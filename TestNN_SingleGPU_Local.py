@@ -65,12 +65,13 @@ local_model = VertNN_Mar21_LocalLinear_MoreShallow(
 ).to(device)
 
 local_model.load_state_dict(torch.load(LOCAL_NN_PATH))
-mse = nn.MSELoss().to(device)
 
 
 def RunNN():
     local_model.eval()
     overall_loss = 0.0
+    metric1 = 0.0
+    small_cnt = 0
     with torch.no_grad():
         i = 0
         for data in test_loader:
@@ -80,24 +81,36 @@ def RunNN():
                 raise Exception('A batch should only contain 1 frame.')
             outname = "SimData/RunNNRes/test_res_" + current_file_names[0]
             output = local_model(data['x'].float().to(device))
+            output_cpu = output.cpu().detach()
             npinputs = data['x'].cpu().detach().numpy()
-            npouts = output.cpu().detach().numpy()
-            loss = mse(output, data['y'].float().to(device))
-            overall_loss += loss
+            npouts = output_cpu.numpy()
+
+            # Calculate metric1
+            top_vec = torch_LA.norm(output_cpu - data['y'], dim=1).numpy()
+            bottom_vec = (torch_LA.norm(data['y'], dim=1)).cpu().detach().numpy()
+
+            big_idx = np.where(bottom_vec > 1e-10)
+            top_cull_vec = np.take(top_vec, big_idx)
+            bottom_cull_vec = np.take(bottom_vec, big_idx)
+            tmp = top_cull_vec / bottom_cull_vec
+            if np.isinf(tmp).any():
+                raise Exception('Contain Elements that are inf!')
+            small_cnt += (len(top_vec) - len(big_idx[0]))
+            metric1 += np.sum(tmp)
 
             file_name_len = len(current_file_names[0])
             file_id_str = current_file_names[0][file_name_len - 9:file_name_len - 4]
             file_id = int(file_id_str)
 
-            print("File id:", file_id,
-                  "Frame MSE loss: ", loss.cpu().detach().numpy())
+            print("File id:", file_id)
             # PD displacement, PD-GNN, PN displacement
             dis = npinputs[:, 0:dim]
             outfinal = np.hstack((dis, npouts))
             outfinal = np.hstack((outfinal, data['y']))
             np.savetxt(outname, outfinal, delimiter=',')
             i += 1
-        print("overall_avg_loss:", overall_loss / float(i))
+        metric1 /= (len(simDataset)-small_cnt)
+        print("metric1:", metric1)
 
 
 if __name__ == '__main__':
@@ -106,10 +119,6 @@ if __name__ == '__main__':
         for name in files:
             os.remove(os.path.join(root, name))
     # Save a boundary pts idx file (Boundary pts idx is for the culled data)
-    # TODO: Store b_pts and hash_map(new idx -> old idx) in pickle.
-    no_hash_table = {}
-    for i in range(len(simDataset.boundary_node_num)):
-        no_hash_table[i] = simDataset.boundary_node_mesh_idx[i]
-    vis_info = {"no_hash_map": no_hash_table}
-    pickle.dump(case_info, open("SimData/RunNNRes/vis_info_" + str(case_id) + ".p", "wb"))
+    vis_info = {"local_bd_idx": simDataset.boundary_node_mesh_idx.numpy()}
+    pickle.dump(vis_info, open("SimData/RunNNRes/vis_info_" + str(case_id) + ".p", "wb"))
     RunNN()
