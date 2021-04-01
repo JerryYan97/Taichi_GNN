@@ -13,13 +13,13 @@ ti.init(arch=ti.cpu, default_fp=ti.f64, debug=True)
 # E = 1e7
 # nu = 0.4
 
-dt = 0.01
+dt = 1.0 / 24.0
 E = 0.01e9
 nu = 0.49
 rho = 1.1e3
 
 # dt = 0.01
-test_case = 1009
+test_case = 1011
 
 # pd->pn
 if __name__ == '__main__':
@@ -97,7 +97,7 @@ if __name__ == '__main__':
             acc_info['acc_type'] = 'dir'
             acc_info['exf_angle1'] = 90.0
             acc_info['exf_angle2'] = 90.0
-            acc_info['exf_mag'] = -200.0
+            acc_info['exf_mag'] = -980.0
 
         pd.set_acc(acc_info)
         pn.set_acc(acc_info)

@@ -119,15 +119,28 @@ class SIM_Data_Local(Dataset):
         cpu_cnt = os.cpu_count()
         print("cpu core account: ", cpu_cnt)
         files_cnt = len(self._files)
-        files_per_proc_cnt = files_cnt // cpu_cnt
+        min_files_per_proc_cnt = files_cnt // cpu_cnt
+        max_files_per_proc_cnt = min_files_per_proc_cnt + 1
         workload_list = []
+        procced_files_cnt = 0
         for i in range(cpu_cnt):
             # [[proc1 first file idx, proc1 last file idx] ... []]
-            cur_proc_workload = [i * files_per_proc_cnt, (i + 1) * files_per_proc_cnt - 1]
-            if i == cpu_cnt - 1:
-                # Last workload may needs to do more than others.
-                cur_proc_workload[1] = files_cnt - 1
+            files_per_proc_cnt = max_files_per_proc_cnt
+            if min_files_per_proc_cnt * (cpu_cnt - i) == (files_cnt - procced_files_cnt):
+                files_per_proc_cnt = min_files_per_proc_cnt
+            cur_proc_workload = [procced_files_cnt, procced_files_cnt + files_per_proc_cnt - 1]
+            procced_files_cnt += files_per_proc_cnt
             workload_list.append(cur_proc_workload)
+
+        # files_per_proc_cnt = files_cnt // cpu_cnt
+        # workload_list = []
+        # for i in range(cpu_cnt):
+        #     # [[proc1 first file idx, proc1 last file idx] ... []]
+        #     cur_proc_workload = [i * files_per_proc_cnt, (i + 1) * files_per_proc_cnt - 1]
+        #     if i == cpu_cnt - 1:
+        #         # Last workload may needs to do more than others.
+        #         cur_proc_workload[1] = files_cnt - 1
+        #     workload_list.append(cur_proc_workload)
 
         # Call multi-processing func to load samples:
         pool = mp.Pool()
@@ -287,17 +300,33 @@ class SIM_Data_Geo(InMemoryDataset):
         # Divide workloads:
         cpu_cnt = os.cpu_count()
         print("cpu core account: ", cpu_cnt)
+
         files_cnt = self.len()
-        files_per_proc_cnt = files_cnt // cpu_cnt
+        min_files_per_proc_cnt = files_cnt // cpu_cnt
+        max_files_per_proc_cnt = min_files_per_proc_cnt + 1
         workload_list = []
         proc_list = []
+        procced_files_cnt = 0
         for i in range(cpu_cnt):
             # [[proc1 first file idx, proc1 last file idx] ... []]
-            cur_proc_workload = [i * files_per_proc_cnt, (i + 1) * files_per_proc_cnt - 1]
-            if i == cpu_cnt - 1:
-                # Last workload may needs to do more than others.
-                cur_proc_workload[1] = files_cnt - 1
+            files_per_proc_cnt = max_files_per_proc_cnt
+            if min_files_per_proc_cnt * (cpu_cnt - i) == (files_cnt - procced_files_cnt):
+                files_per_proc_cnt = min_files_per_proc_cnt
+            cur_proc_workload = [procced_files_cnt, procced_files_cnt + files_per_proc_cnt - 1]
+            procced_files_cnt += files_per_proc_cnt
             workload_list.append(cur_proc_workload)
+
+        # files_cnt = self.len()
+        # files_per_proc_cnt = files_cnt // cpu_cnt
+        # workload_list = []
+        # proc_list = []
+        # for i in range(cpu_cnt):
+        #     # [[proc1 first file idx, proc1 last file idx] ... []]
+        #     cur_proc_workload = [i * files_per_proc_cnt, (i + 1) * files_per_proc_cnt - 1]
+        #     if i == cpu_cnt - 1:
+        #         # Last workload may needs to do more than others.
+        #         cur_proc_workload[1] = files_cnt - 1
+        #     workload_list.append(cur_proc_workload)
         # Call multi-processing func:
         for i in range(cpu_cnt):
             proc_list.append(pool.apply_async(func=mp_load_global_data,
