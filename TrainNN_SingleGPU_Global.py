@@ -12,11 +12,14 @@ from torch import linalg as LA
 
 os.makedirs('TrainedNN/GlobalNN', exist_ok=True)
 
+case_id = 1011
+cluster_num = 128
+
 for root, dirs, files in os.walk("../runs/"):
     for name in files:
         os.remove(os.path.join(root, name))
 
-writer = SummaryWriter('../runs/GCN_Global_1009_single')
+writer = SummaryWriter('../runs/GCN_Global_' + str(case_id) + '_single')
 
 # Training settings
 epoch_num = 300
@@ -43,7 +46,7 @@ if args.cuda:
 
 
 load_data_t_start = time.time()
-simDataset, case_info, cluster_parent, cluster_belong = load_global_data(1009, 256, "/SimData/TrainingData")
+simDataset, case_info, cluster_parent, cluster_belong = load_global_data(case_id, cluster_num, "/SimData/TrainingData")
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
 

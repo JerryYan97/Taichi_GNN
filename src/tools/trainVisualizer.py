@@ -12,7 +12,7 @@ def output_3d_results(pd_x, f, case_info):
 
 
 if __name__ == "__main__":
-    case_info = read(1009)
+    case_info = read(1011)
     mesh = case_info['mesh']
     dim = case_info['dim']
     n_particles = mesh.num_vertices

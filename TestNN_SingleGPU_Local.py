@@ -7,8 +7,8 @@ from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local_MoreShallow import *
-# from src.NeuralNetworks.LocalNN.VertNN_Mar31_Local_RBN_Mid import *
-from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar31_Local_RBN_Mid import *
+# from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
 import pickle
 
 from src.NeuralNetworks.GlobalNN.GCN3D_Mar28_PoolingDeepGlobal import *
@@ -53,11 +53,11 @@ LOCAL_NN_PATH = "TrainedNN/LocalNN/LocalNN_LowPolyArm18.pt"
 # Model and optimizer
 simDataset = load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
                              simulator_feature_num, global_model.global_feat_num, culled_cluster_num,
-                             global_model, device, 0, "/SimData/TestingData", False)
+                             global_model, device, 0, "/SimData/TestingData", True)
 dim = case_info['dim']
 test_loader = DataLoader(dataset=simDataset, batch_size=simDataset.boundary_node_num, shuffle=False)
 
-local_model = VertNN_Mar12_LocalLinear_RBN_Deep(
+local_model = VertNN_Mar31_LocalLinear_RBN_Mid(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,

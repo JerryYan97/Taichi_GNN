@@ -9,7 +9,7 @@ import os
 # 1. File i represents the displacement between i and i+1. E.g. File 0 stores info that can make
 # animation goes from frame 0 to the frame 1.
 if __name__ == '__main__':
-    case_id = 1009
+    case_id = 1011
     ti.init(arch=ti.gpu, default_fp=ti.f64)
     if not os.path.isdir("./WholeTrainingSet"):
         raise Exception("Cannot find the whole training set!")

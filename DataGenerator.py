@@ -95,9 +95,9 @@ if __name__ == '__main__':
             # acc_info['p_mag'] = 5.8
             # acc_info['p_radius'] = 0.2
             acc_info['acc_type'] = 'dir'
-            acc_info['exf_angle1'] = 90.0
-            acc_info['exf_angle2'] = 90.0
-            acc_info['exf_mag'] = -980.0
+            acc_info['exf_angle1'] = 135.0
+            acc_info['exf_angle2'] = 225.0
+            acc_info['exf_mag'] = 980.0
 
         pd.set_acc(acc_info)
         pn.set_acc(acc_info)

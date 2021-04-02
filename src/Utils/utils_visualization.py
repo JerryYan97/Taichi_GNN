@@ -126,7 +126,8 @@ def output_3d_seq(pos, boundary_tri, file_path):
 # For 2D: Angle is counter-clock wise and it uses [1, 0] direction as its start direction.
 # For 3D: It uses Spherical coordinate system with its origin at the [0, 0, 0].
 #         Angle1 will be used to determine the angle between y axis and the final direction.
-#         Angle2 will be used to determine the direction along the x-z plane with a start direction at [1, 0, 0].
+#         Angle2 will be used to determine the direction along the x-z plane with a start direction at [0, 0, 1].
+#         Angle2 has a positive angle from axis z to axis x on the x-z plane.
 #         Angle1(Theta) should be a scalar in [0, pi). Angle2(Phi) should be a scalar in the range of [0, 2 * pi].
 def get_acc_field(mag, angle1, angle2=0.0, dim=2):
     if dim == 2:
@@ -140,9 +141,12 @@ def get_acc_field(mag, angle1, angle2=0.0, dim=2):
             raise Exception("Angle2 is incorrect. Incorrect Angle2 is {}".format(angle2))
         radian1 = ts.pi / 180.0 * angle1
         radian2 = ts.pi / 180.0 * angle2
-        x = mag * ti.sin(radian1) * ti.cos(radian2)
-        y = mag * ti.sin(radian1) * ti.sin(radian2)
-        z = mag * ti.cos(radian1)
+        # x = mag * ti.sin(radian1) * ti.cos(radian2)
+        # y = mag * ti.sin(radian1) * ti.sin(radian2)
+        # z = mag * ti.cos(radian1)
+        z = mag * ti.sin(radian1) * ti.cos(radian2)
+        x = mag * ti.sin(radian1) * ti.sin(radian2)
+        y = mag * ti.cos(radian1)
         return [x, y, z]
     else:
         raise Exception("Acc field dim doesn't correct. Error dim is {}".format(dim))

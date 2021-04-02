@@ -133,7 +133,8 @@ def set_exacc():
     else:
         for i in range(n_vertices):
             # ti_ex_acc[i] = ti.Vector([0.0, -12.0, 12.0])
-            ti_ex_acc[i] = ti.Vector([0.0, -980.0, 0.0])
+            # ti_ex_acc[i] = ti.Vector([0.0, -980.0, 0.0])
+            ti_ex_acc[i] = ti.Vector(get_acc_field(980, 135, 315, 3))
 
 
 @ti.kernel
