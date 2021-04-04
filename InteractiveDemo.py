@@ -2,7 +2,6 @@ import os
 import sys
 import numpy as np
 import taichi as ti
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + "/../")
 from src.Utils.reader import read
 from src.Utils.utils_visualization import draw_image, get_acc_field, output_3d_seq, update_boundary_mesh, get_ring_acc_field, get_ring_circle_acc_field, get_point_acc_field, get_point_acc_field_by_point
 from scipy import sparse
@@ -132,8 +131,7 @@ def set_exacc():
             ti_ex_acc[i] = ti.Vector(get_acc_field(6, -45.0))
     else:
         for i in range(n_vertices):
-            # ti_ex_acc[i] = ti.Vector([0.0, -12.0, 12.0])
-            ti_ex_acc[i] = ti.Vector([0.0, -980.0, 0.0])
+            ti_ex_acc[i] = ti.Vector([0.0, 0.0, 0.0])
 
 
 @ti.kernel
@@ -513,7 +511,7 @@ def Build_Bp_i_vec(idx):
 
 
 @ti.kernel
-def build_rhs(rhs: ti.ext_arr()): # dp_pos: ti.ext_arr(), dp_vel: ti.ext_arr()):
+def build_rhs(rhs: ti.ext_arr()):  # dp_pos: ti.ext_arr(), dp_vel: ti.ext_arr()):
     one_over_dt2 = 1.0 / (dt ** 2)
     # Construct the first part of the rhs
     for i in range(n_vertices * dim):
@@ -597,8 +595,6 @@ def update_velocity_pos():
     for i in range(n_vertices):
         ti_vel[i] = (ti_pos_new[i] - ti_pos[i]) / dt    # vel
         ti_vel_del[i] = ti_vel[i] - ti_vel_last[i]
-        # if i % 400 == 0:
-        #     print("ti.vel_del: ", ti_vel_del[i], "ti.vel: ", ti_vel[i], "ti.last vel: ", ti_vel_last[i])
         ti_pos[i] = ti_pos_new[i]   # pos
 
 
@@ -636,96 +632,12 @@ def check_residual() -> ti.f32:
 
 @ti.kernel
 def check_acceleration_status() -> ti.i32:
-    # residual = 0.0
     times = 0
     for i in range(n_vertices):
-        # residual += (ti_vel_del[i]/dt).norm()
         if (ti_vel_del[i]/dt).norm() < 0.001:
             times = times + 1
         ti_vel_last[i] = ti_vel[i]
-    # residual /= (1.0 * n_vertices)
-    # print("acceleration : ", residual, ", times: ",  times)
     return times
-
-
-@ti.kernel
-def compute_T1_energy() -> real:
-    T1 = 0.0
-    for i in range(n_vertices):
-        sn_idx1, sn_idx2 = i * 2, i * 2 + 1
-        sn_i = ti.Vector([ti_Sn[sn_idx1], ti_Sn[sn_idx2]])
-        temp_diff = (ti_pos_new[i] - sn_i) * ti.sqrt(ti_mass[i])
-        T1 += (temp_diff[0]**2 + temp_diff[1]**2)
-    return T1 / (2.0 * dt**2)
-
-
-@ti.kernel
-def global_compute_T2_energy() -> real:
-    T2_global_energy = ti.cast(0.0, real)
-    # Calculate the energy contributed by strain and volume/area constraints
-    for i in range(n_elements):
-        # Construct Current F_i
-        ia, ib, ic = ti_elements[i]
-        a, b, c = ti_pos_new[ia], ti_pos_new[ib], ti_pos_new[ic]
-        D_i = ti.Matrix.cols([b - a, c - a])
-        F_i = ti.cast(D_i @ ti_Dm_inv[i], real)
-        # Get current Bp
-        Bp_i_strain = ti_Bp[i]
-        Bp_i_volume = ti_Bp[n_elements + i]
-        energy1 = ti_weight_strain[i] * ((F_i - Bp_i_strain).norm() ** 2) / ti.cast(2.0, real)
-        energy2 = ti_weight_volume[i] * ((F_i - Bp_i_volume).norm() ** 2) / ti.cast(2.0, real)
-        T2_global_energy += (energy1 + energy2)
-    # Calculate the energy contributed by positional constraints
-    for i in range(n_vertices):
-        if ti_boundary_labels[i] == 1:
-            pos_init_i = ti_pos_init[i]
-            pos_curr_i = ti_pos_new[i]
-            energy3 = m_weight_positional * ((pos_curr_i - pos_init_i).norm() ** 2) / ti.cast(2.0, real)
-            T2_global_energy += energy3
-    return T2_global_energy
-
-
-@ti.kernel
-def local_compute_T2_energy() -> real:
-    # Calculate T2 energy
-    local_T2_energy = ti.cast(0.0, real)
-    # Calculate the energy contributed by strain and volume/area constraints
-    for e_it in range(n_elements):
-        Bp_i_strain = ti_Bp[e_it]
-        Bp_i_volume = ti_Bp[e_it + n_elements]
-        F_i = ti_F[e_it]
-        energy1 = ti_weight_strain[e_it] * ((F_i - Bp_i_strain).norm() ** 2) / ti.cast(2.0, real)
-        energy2 = ti_weight_volume[e_it] * ((F_i - Bp_i_volume).norm() ** 2) / ti.cast(2.0, real)
-        local_T2_energy += (energy1 + energy2)
-    # Calculate the energy contributed by positional constraints
-    for i in range(n_vertices):
-        if ti_boundary_labels[i] == 1:
-            pos_init_i = ti_pos_init[i]
-            pos_curr_i = ti_pos_new[i]
-            energy3 = m_weight_positional * ((pos_curr_i - pos_init_i).norm() ** 2) / ti.cast(2.0, real)
-            local_T2_energy += energy3
-    return local_T2_energy
-
-
-def compute_global_step_energy():
-    # Calculate global T2 energy
-    global_T2_energy = global_compute_T2_energy()
-    # Calculate global T1 energy
-    global_T1_energy = compute_T1_energy()
-    return (global_T1_energy + global_T2_energy)
-
-
-def compute_local_step_energy():
-    local_T2_energy = local_compute_T2_energy()
-    # Calculate T1 energy
-    local_T1_energy = compute_T1_energy()
-    return (local_T1_energy + local_T2_energy)
-
-
-def output_aux_data(f):
-    if dim == 3:
-        name_pd = "./AnimSeq/PDAnimSeq/PD_" + case_info['case_name'] + "_" + str(f).zfill(6) + ".obj"
-        output_3d_seq(ti_pos.to_numpy(), boundary_triangles, name_pd)
 
 
 def animation_control(f):
@@ -749,20 +661,11 @@ def animation_init():
 
 if __name__ == "__main__":
     os.makedirs("results", exist_ok=True)
-    for root, dirs, files in os.walk("results/"):
-        for name in files:
-            os.remove(os.path.join(root, name))
-    os.makedirs("AnimSeq", exist_ok=True)
-    os.makedirs("./AnimSeq/PDAnimSeq", exist_ok=True)
-    for root, dirs, files in os.walk("./AnimSeq/PDAnimSeq/"):
-        for name in files:
-            os.remove(os.path.join(root, name))
-    os.makedirs("./AnimSeq/PNAnimSeq", exist_ok=True)
-    for root, dirs, files in os.walk("./AnimSeq/PNAnimSeq/"):
+    for root, dirs, files in os.walk("../results/"):
         for name in files:
             os.remove(os.path.join(root, name))
 
-    video_manager = ti.VideoManager(output_dir=os.getcwd() + '/results/', framerate=24, automatic_build=False)
+    video_manager = ti.VideoManager(output_dir=os.getcwd() + '../results/', framerate=24, automatic_build=False)
     frame_counter = 0
     rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
     lhs_mat_val = np.zeros(shape=(n_elements * dim ** 2 * (dim+1) ** 2 + n_vertices * dim,), dtype=np.float64)
@@ -816,7 +719,6 @@ if __name__ == "__main__":
 
         # Update velocity and positions
         update_velocity_pos()
-        output_aux_data(frame_counter)
 
         frame_counter += 1
         filename = f'./results/frame_{frame_counter:05d}.png'  # NOTE: It needs to be moved to another place.
@@ -832,7 +734,7 @@ if __name__ == "__main__":
             gui.show()
 
         # if check_acceleration_status() > 800 and frame_counter > 500:
-        if frame_counter > 500:
+        if frame_counter > 1000:
             break
 
     video_manager.make_video(gif=True, mp4=True)

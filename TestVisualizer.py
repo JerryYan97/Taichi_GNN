@@ -6,6 +6,7 @@ from src.Utils.reader import *
 from src.Utils.utils_visualization import output_3d_seq, update_boundary_mesh_np
 import pickle
 
+
 # PN result: Red (Top Layer)
 # Corrected PD result: Green (Second Layer)
 # PD result: Blue (Bottom Layer)
@@ -46,7 +47,7 @@ def output_3d_results(pn_x, corrected_pd_x, pd_x, f, case_info):
 
 
 if __name__ == "__main__":
-    case_id = 1009
+    case_id = 1011
     case_info = read(case_id)
     mesh = case_info['mesh']
     dirichlet = case_info['dirichlet']

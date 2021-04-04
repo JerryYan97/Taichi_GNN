@@ -7,8 +7,8 @@ from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local_MoreShallow import *
-from src.NeuralNetworks.LocalNN.VertNN_Mar31_Local_RBN_Mid import *
-# from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
+# from src.NeuralNetworks.LocalNN.VertNN_Mar31_Local_RBN_Mid import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
 import pickle
 
 from src.NeuralNetworks.GlobalNN.GCN3D_Mar28_PoolingDeepGlobal import *
@@ -18,8 +18,8 @@ from torch_geometric.data import DataLoader
 
 # Training settings
 simulator_feature_num = 18
-case_id = 1009
-cluster_num = 256
+case_id = 1011
+cluster_num = 128
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 
@@ -29,12 +29,12 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Read case_info (We cannot use PyMesh on the cluster)
-case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(case_id) + "_RHF.p", "rb"))
+case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(case_id) + ".p", "rb"))
 
 # Loading global NN:
 # on_hash_table: old index (Not culled) -> New index (Culled);
 # no_hash_table: New index (Culled) -> Old index (Not culled);
-GLOBAL_NN_PATH = "TrainedNN/GlobalNN/GlobalNN_LowPolyArm_18.pt"
+GLOBAL_NN_PATH = "TrainedNN/GlobalNN/GlobalNN_IrregularBeam_18.pt"
 culled_cluster_num, graph_node_num, edge_idx, hash_table, culled_cluster, culled_idx = load_global_info(case_info, case_id, cluster_num)
 global_model = GCN3D_Mar28_PoolingDeepGlobal(
     nfeat=simulator_feature_num,
@@ -48,16 +48,16 @@ global_model = GCN3D_Mar28_PoolingDeepGlobal(
 global_model.load_state_dict(torch.load(GLOBAL_NN_PATH))
 
 # Loading local NN:
-LOCAL_NN_PATH = "TrainedNN/LocalNN/LocalNN_LowPolyArm18.pt"
+LOCAL_NN_PATH = "TrainedNN/LocalNN/LocalNN_IrregularBeam18.pt"
 
 # Model and optimizer
 simDataset = load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
                              simulator_feature_num, global_model.global_feat_num, culled_cluster_num,
-                             global_model, device, 0, "/SimData/TestingData", True)
+                             global_model, device, 0, "/SimData/TestingData", False)
 dim = case_info['dim']
 test_loader = DataLoader(dataset=simDataset, batch_size=simDataset.boundary_node_num, shuffle=False)
 
-local_model = VertNN_Mar31_LocalLinear_RBN_Mid(
+local_model = VertNN_Mar12_LocalLinear_RBN_Deep(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,
