@@ -7,6 +7,7 @@ from src.Utils.utils_visualization import draw_image, get_acc_field, output_3d_s
 from scipy import sparse
 from scipy.sparse.linalg import factorized
 from src.Utils.math_tools import svd, my_svd
+from numpy import linalg as LA
 
 real = ti.f64
 
@@ -37,6 +38,11 @@ else:
     model = tina.MeshTransform(tina_mesh)
     scene.add_object(model)
     boundary_pos = np.ndarray(shape=(case_info['boundary_tri_num'], 3, 3), dtype=np.float)
+
+    pars = tina.SimpleParticles()
+    material = tina.BlinnPhong()
+    scene.add_object(pars, material)
+
 
 # Material settings:
 # rho = 1e3
@@ -640,23 +646,29 @@ def check_acceleration_status() -> ti.i32:
     return times
 
 
-def animation_control(f):
-    pass
-    # Set force
-    # if f == 50:
-    #     ti_ex_acc.fill(0)
-
-
 @ti.kernel
 def pos_init():
     for i in range(n_vertices):
         ti_pos[i] = ti.Vector([float(ti.random()) * 0.05, float(ti.random()) * 0.05, float(ti.random()) * 0.05])
 
 
-def animation_init():
-    # Init pos
-    pos_init()
-    # Init vec
+@ti.kernel
+def raySphereIntersect(ray_dir: ti.ext_arr(), ray_origin: ti.ext_arr(),
+                       s_center: ti.ext_arr(), dist_array: ti.ext_arr(), vert_num: ti.i32):
+    radius = 0.1
+    for i in range(vert_num):
+        ray_dir_ti = ti.Vector([ray_dir[0], ray_dir[1], ray_dir[2]])
+        ray_center_ti = ti.Vector([ray_origin[0], ray_origin[1], ray_origin[2]])
+        s_center_ti = ti.Vector([s_center[i, 0], s_center[i, 1], s_center[i, 2]])
+        l1 = s_center_ti - ray_center_ti
+        l1_len = l1.norm()
+        l2_len = l1.dot(ray_dir_ti)
+        if l2_len > 0.0:
+            # Same direction
+            l3_len = ti.sqrt(l1_len ** 2 - l2_len ** 2)
+            if l3_len <= radius:
+                # Hit
+                dist_array[i] = l2_len
 
 
 if __name__ == "__main__":
@@ -705,7 +717,7 @@ if __name__ == "__main__":
         build_sn()
         # Warm up:
         warm_up()
-        print("Frame ", frame_counter)
+        # print("Frame ", frame_counter)
         while True:
             local_solve_build_bp_for_all_constraints()
             build_rhs(rhs_np)
@@ -732,6 +744,39 @@ if __name__ == "__main__":
             gui.set_image(scene.img)
             video_manager.write_frame(gui.get_image())
             gui.show()
+
+            cam_pos = scene.control.center + scene.control.back
+            if gui.is_pressed(ti.GUI.LMB):
+                # Select
+                mouse_x, mouse_y = gui.get_cursor_pos()
+                relative_x = mouse_x - 0.5
+                relative_y = mouse_y - 0.5
+                sp_x = mouse_x * 2.0 - 1.0
+                sp_y = mouse_y * 2.0 - 1.0
+                sp_pos = np.array([sp_x, sp_y, 0.0, 1.0])
+                V2W_np = scene.engine.V2W.to_numpy()
+                wp_pos = V2W_np @ (sp_pos * 0.2)
+                ray_dir = wp_pos[0:3] - cam_pos
+                ray_dir /= LA.norm(ray_dir)
+                dist_arr = np.ones(mesh.num_vertices, dtype=float) * 100000.0
+
+                pos_np = ti_pos.to_numpy()
+
+                raySphereIntersect(ray_dir, cam_pos, pos_np, dist_arr, mesh.num_vertices)
+                min_idx = np.argmin(dist_arr)
+                min_val = np.amin(dist_arr)
+
+                if min_val != 100000.0:
+                    selected_vert = np.zeros((1, 3), dtype=float)
+                    selected_vert[0, 0] = pos_np[min_idx, 0]
+                    selected_vert[0, 1] = pos_np[min_idx, 1]
+                    selected_vert[0, 2] = pos_np[min_idx, 2]
+                    pars.set_particles(selected_vert)
+
+                    particles_color = np.full((1, 3), 1.0, dtype=float)
+                    particles_color[0, 1] -= 1.0
+                    particles_color[0, 2] -= 1.0
+                    pars.set_particle_colors(particles_color)
 
         # if check_acceleration_status() > 800 and frame_counter > 500:
         if frame_counter > 1000:

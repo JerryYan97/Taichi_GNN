@@ -39,7 +39,6 @@ if __name__ == "__main__":
     pars.set_particles(mesh.vertices)
     pars.set_particle_radii(np.full(mesh.num_vertices, 0.05))
     particles_color_base = np.full((mesh.num_vertices, 3), 1.0, dtype=float)
-    lock_gui_flag = True
 
     while gui.running:
         scene.input(gui)
@@ -49,7 +48,6 @@ if __name__ == "__main__":
         if gui.is_pressed(ti.GUI.LMB):
             # Select
             mouse_x, mouse_y = gui.get_cursor_pos()
-            # print("mouse x:", mouse_x, " mouse y:", mouse_y)
             relative_x = mouse_x - 0.5
             relative_y = mouse_y - 0.5
             sp_x = mouse_x * 2.0 - 1.0
@@ -57,15 +55,12 @@ if __name__ == "__main__":
             sp_pos = np.array([sp_x, sp_y, 0.0, 1.0])
             V2W_np = scene.engine.V2W.to_numpy()
             wp_pos = V2W_np @ (sp_pos * 0.2)
-            # print("wp_pos:", wp_pos)
             ray_dir = wp_pos[0:3] - cam_pos
             ray_dir /= LA.norm(ray_dir)
             dist_arr = np.ones(mesh.num_vertices, dtype=float) * 100000.0
             raySphereIntersect(ray_dir, cam_pos, mesh.vertices, dist_arr, mesh.num_vertices)
             min_idx = np.argmin(dist_arr)
             min_val = np.amin(dist_arr)
-            # print("min idx:", min_idx)
-            # print("min val:", min_val)
 
             if min_val != 100000.0:
                 particles_color_offset[min_idx, 1] = -1.0

@@ -1,7 +1,7 @@
 import sys, os, time
 
 # datapath = "TrainingData"
-datapath = "PreGenGlobalFeatureVec"
+datapath = "./tmpFullData"
 
 if __name__ == "__main__":
     # Read files
