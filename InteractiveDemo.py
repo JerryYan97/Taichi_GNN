@@ -47,7 +47,7 @@ else:
 # Material settings:
 # rho = 1e3
 # E, nu = 5e6, 0.4  # Young's modulus and Poisson's ratio
-E = 0.01e9
+E = 1e9
 nu = 0.49
 rho = 1.1e3
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
@@ -59,7 +59,7 @@ dt = 1.0 / 24.0
 # Backup settings:
 # Bar: 10  Bunny: 50
 solver_max_iteration = 1
-solver_stop_residual = 1e20
+solver_stop_residual = 0.1
 # external acceleration -- counter-clock wise
 ti_ex_acc = ti.Vector.field(dim, real, n_vertices)
 
@@ -671,6 +671,13 @@ def raySphereIntersect(ray_dir: ti.ext_arr(), ray_origin: ti.ext_arr(),
                 dist_array[i] = l2_len
 
 
+@ti.kernel
+def setAcc(idx: ti.i32, acc_val: ti.ext_arr()):
+    ti_ex_acc[idx][0] = acc_val[0]
+    ti_ex_acc[idx][1] = acc_val[1]
+    ti_ex_acc[idx][2] = acc_val[2]
+
+
 if __name__ == "__main__":
     os.makedirs("results", exist_ok=True)
     for root, dirs, files in os.walk("../results/"):
@@ -687,7 +694,8 @@ if __name__ == "__main__":
     init()
 
     # One direction acc field
-    set_exacc()
+    # set_exacc()
+    ti_ex_acc.fill(0.0)
     init_mesh_DmInv(dirichlet, len(dirichlet))
     precomputation(lhs_mat_row, lhs_mat_col, lhs_mat_val)
     s_lhs_matrix_np = sparse.csr_matrix((lhs_mat_val, (lhs_mat_row, lhs_mat_col)),
@@ -712,6 +720,7 @@ if __name__ == "__main__":
     frame_counter = 0
     sim_t = 0.0
     plot_array = []
+    selected_vert_idx = -1
 
     while True:
         build_sn()
@@ -737,6 +746,18 @@ if __name__ == "__main__":
         if dim == 2:
             draw_image(gui, filename, ti_pos.to_numpy(), mesh_offset, mesh_scale, ti_elements.to_numpy(), n_elements)
         else:
+            if selected_vert_idx != -1:
+                pos_np = ti_pos.to_numpy()
+                selected_vert = np.zeros((1, 3), dtype=float)
+                selected_vert[0, 0] = pos_np[selected_vert_idx, 0]
+                selected_vert[0, 1] = pos_np[selected_vert_idx, 1]
+                selected_vert[0, 2] = pos_np[selected_vert_idx, 2]
+                pars.set_particles(selected_vert)
+                particles_color = np.full((1, 3), 1.0, dtype=float)
+                particles_color[0, 1] -= 1.0
+                particles_color[0, 2] -= 1.0
+                pars.set_particle_colors(particles_color)
+
             update_boundary_mesh(ti_pos, boundary_pos, case_info)
             scene.input(gui)
             tina_mesh.set_face_verts(boundary_pos)
@@ -746,6 +767,12 @@ if __name__ == "__main__":
             gui.show()
 
             cam_pos = scene.control.center + scene.control.back
+            cam_up = scene.control.up / LA.norm(scene.control.up)
+            cam_front = -scene.control.back / LA.norm(scene.control.back)
+            cam_right = np.cross(cam_front, cam_up)
+            cam_right /= LA.norm(cam_right)
+
+            ti_ex_acc.fill(0.0)
             if gui.is_pressed(ti.GUI.LMB):
                 # Select
                 mouse_x, mouse_y = gui.get_cursor_pos()
@@ -777,9 +804,21 @@ if __name__ == "__main__":
                     particles_color[0, 1] -= 1.0
                     particles_color[0, 2] -= 1.0
                     pars.set_particle_colors(particles_color)
+                    selected_vert_idx = min_idx
+                else:
+                    selected_vert_idx = -1
+            elif gui.is_pressed(ti.GUI.RMB):
+                if selected_vert_idx != -1:
+                    mouse_x, mouse_y = gui.get_cursor_pos()
+                    relative_x = mouse_x - 0.5
+                    relative_y = mouse_y - 0.5
+                    acc1 = relative_x * cam_right
+                    acc2 = relative_y * cam_up
+                    acc_val = (acc1 + acc2) * 10.0
+                    setAcc(selected_vert_idx.item(), acc_val)
 
         # if check_acceleration_status() > 800 and frame_counter > 500:
-        if frame_counter > 1000:
+        if frame_counter > 2000:
             break
 
     video_manager.make_video(gif=True, mp4=True)
