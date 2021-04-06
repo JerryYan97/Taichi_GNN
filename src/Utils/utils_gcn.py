@@ -142,6 +142,7 @@ class SIM_Data_Local(Dataset):
         #         cur_proc_workload[1] = files_cnt - 1
         #     workload_list.append(cur_proc_workload)
 
+        print("After determining the workload.")
         # Call multi-processing func to load samples:
         pool = mp.Pool()
         proc_list = []
@@ -150,6 +151,8 @@ class SIM_Data_Local(Dataset):
             proc_list.append(pool.apply_async(func=mp_load_local_data,
                                               args=(workload_list, mode, i, self._filepath, self._files,
                                                     local_culled_boundary_points_id, culled_idx, dim,)))
+
+        print("After assigning the workload.")
 
         # Get multi-processing res:
         for i in range(cpu_cnt):
