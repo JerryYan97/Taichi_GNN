@@ -48,12 +48,12 @@ global_model = GCN3D_Mar28_PoolingDeepGlobal(
 global_model.load_state_dict(torch.load(GLOBAL_NN_PATH))
 
 # Loading local NN:
-LOCAL_NN_PATH = "TrainedNN/LocalNN/LocalNN_IrregularBeam18.pt"
+LOCAL_NN_PATH = "TrainedNN/LocalNN/LocalNN_IrregularBeam7.pt"
 
 # Model and optimizer
 simDataset = load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
                              simulator_feature_num, global_model.global_feat_num, culled_cluster_num,
-                             global_model, device, 0, "/SimData/TestingData", False)
+                             global_model, device, 0, "/SimData/TestingData", True)
 dim = case_info['dim']
 test_loader = DataLoader(dataset=simDataset, batch_size=simDataset.boundary_node_num, shuffle=False)
 

@@ -3,11 +3,20 @@ import sys
 import numpy as np
 import taichi as ti
 from src.Utils.reader import read
-from src.Utils.utils_visualization import draw_image, get_acc_field, output_3d_seq, update_boundary_mesh, get_ring_acc_field, get_ring_circle_acc_field, get_point_acc_field, get_point_acc_field_by_point
+from src.Utils.utils_visualization import draw_image, get_acc_field, update_boundary_mesh, RM2Euler_ti
 from scipy import sparse
 from scipy.sparse.linalg import factorized
 from src.Utils.math_tools import svd, my_svd
 from numpy import linalg as LA
+from numpy.linalg import inv
+from scipy.linalg import sqrtm
+from src.Utils.neo_hookean import fixed_corotated_first_piola_kirchoff_stress
+
+from src.NeuralNetworks.GlobalNN.GCN3D_Mar28_PoolingDeepGlobal import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
+from torch_geometric.data import DataLoader
+from src.Utils.utils_gcn import *
+from scipy.linalg import polar
 
 real = ti.f64
 
@@ -15,6 +24,7 @@ real = ti.f64
 test_case = 1011
 case_info = read(test_case)
 mesh = case_info['mesh']
+mesh.enable_connectivity()
 dirichlet = case_info['dirichlet']
 mesh_scale = case_info['mesh_scale']
 mesh_offset = case_info['mesh_offset']
@@ -47,7 +57,7 @@ else:
 # Material settings:
 # rho = 1e3
 # E, nu = 5e6, 0.4  # Young's modulus and Poisson's ratio
-E = 1e9
+E = 0.01e9
 nu = 0.49
 rho = 1.1e3
 mu, lam = E / (2*(1+nu)), E * nu / ((1+nu)*(1-2*nu))  # Lame parameters
@@ -59,7 +69,7 @@ dt = 1.0 / 24.0
 # Backup settings:
 # Bar: 10  Bunny: 50
 solver_max_iteration = 1
-solver_stop_residual = 0.1
+solver_stop_residual = 1e20
 # external acceleration -- counter-clock wise
 ti_ex_acc = ti.Vector.field(dim, real, n_vertices)
 
@@ -67,8 +77,12 @@ ti_ex_acc = ti.Vector.field(dim, real, n_vertices)
 ti_mass = ti.field(real, n_vertices)
 ti_volume = ti.field(real, n_elements)
 ti_pos = ti.Vector.field(dim, real, n_vertices)
+ti_pos_last = ti.Vector.field(dim, real, n_vertices)
+ti_pos_delta = ti.Vector.field(dim, real, n_vertices)
 ti_pos_new = ti.Vector.field(dim, real, n_vertices)
 ti_pos_init = ti.Vector.field(dim, real, n_vertices)
+ti_pos_tilde = ti.Vector.field(dim, real, n_vertices)
+ti_pos_nn = ti.Vector.field(dim, real, n_vertices)
 ti_last_pos_new = ti.Vector.field(dim, real, n_vertices)
 ti_boundary_labels = ti.field(int, n_vertices)
 
@@ -78,6 +92,7 @@ ti_vel_del = ti.Vector.field(dim, real, n_vertices)
 
 ti_elements = ti.Vector.field(dim + 1, int, n_elements)  # ids of three vertices of each face
 ti_Dm_inv = ti.Matrix.field(dim, dim, real, n_elements)  # The inverse of the init elements -- Dm
+ti_Dm = ti.Matrix.field(dim, dim, real, n_elements)
 ti_F = ti.Matrix.field(dim, dim, real, n_elements)
 ti_A = ti.field(real, (n_elements * 2, dim * dim, dim * (dim + 1)))
 ti_A_i = ti.field(real, shape=(dim * dim, dim * (dim + 1)))
@@ -122,11 +137,8 @@ def init():
     ti_weight_volume.fill(0)
     ti_ex_acc.fill(0)
 
-
-@ti.kernel
-def set_point_acc_by_point_3D(pf_ind: ti.i32, pf_radius: ti.f64, x: ti.f32, y: ti.f32, z: ti.f32):   # set only one time
-    for i in range(n_vertices):  # t_pos, pos, radius, acc
-        ti_ex_acc[i] = get_point_acc_field_by_point(ti_pos_init[pf_ind], ti_pos_init[i], pf_radius, ti.Vector([x,y,z]))
+    ti_pos_delta.fill(0)
+    ti_Dm.fill(0)
 
 
 # Backup Settings:
@@ -138,12 +150,6 @@ def set_exacc():
     else:
         for i in range(n_vertices):
             ti_ex_acc[i] = ti.Vector([0.0, 0.0, 0.0])
-
-
-@ti.kernel
-def set_ring_acc_3D():
-    for i in range(n_vertices):
-        ti_ex_acc[i] = get_ring_acc_field(0.04, 10.0, ti_center, ti_pos[i], 0.0, 3)
 
 
 @ti.func
@@ -223,6 +229,7 @@ def init_mesh_DmInv(input_dirichlet: ti.ext_arr(), input_dirichlet_num: int):
     for i in range(n_elements):
         # Compute Dm:
         Dm_i = compute_Dm(i)
+        ti_Dm[i] = Dm_i
         ti_Dm_inv[i] = Dm_i.inverse()
         ti_volume[i] = ti.abs(Dm_i.determinant()) * 0.5
         ti_weight_strain[i] = mu * 2 * ti_volume[i]
@@ -601,6 +608,8 @@ def update_velocity_pos():
     for i in range(n_vertices):
         ti_vel[i] = (ti_pos_new[i] - ti_pos[i]) / dt    # vel
         ti_vel_del[i] = ti_vel[i] - ti_vel_last[i]
+        ti_pos_delta[i] = ti_pos_new[i] - ti_pos[i]
+        ti_pos_last[i] = ti_pos[i]
         ti_pos[i] = ti_pos_new[i]   # pos
 
 
@@ -678,12 +687,199 @@ def setAcc(idx: ti.i32, acc_val: ti.ext_arr()):
     ti_ex_acc[idx][2] = acc_val[2]
 
 
+def calcCenterOfMass(vind, dim, mass, pos):
+    sum = np.zeros(dim)
+    summ = 0.0
+    for i in vind:
+        sum += mass[i] * pos[i]
+        summ += mass[i]
+    sum /= summ
+    return sum
+
+
+def calcA_qq(q_i, mass, dim):
+    sum = np.zeros((dim, dim))
+    for i in range(q_i.shape[0]):
+        sum += mass[i]*np.outer(q_i[i], np.transpose(q_i[i]))
+    return np.linalg.inv(sum)
+
+
+def calcA_pq(p_i, q_i, mass, dim):
+    sum = np.zeros((dim, dim))
+    for i in range(p_i.shape[0]):
+        sum += mass[i]*np.outer(p_i[i], np.transpose(q_i[i]))
+    return sum
+
+
+def calcR(A_pq):
+    S = sqrtm(np.dot(np.transpose(A_pq), A_pq))
+    R = np.dot(A_pq, inv(S))
+    return R
+
+
+def polarR(M):
+    R, S = polar(M)
+    return R, S
+
+
+def get_local_trans_parallel_call(workloads_list, proc_idx, adj_list, pos, initial_rel_pos, mass, dim):
+    a_final_list = []
+    for vert_idx in range(workloads_list[proc_idx][0], workloads_list[proc_idx][1] + 1):
+        adj_v = adj_list[vert_idx]
+        init_rel_adj_pos = initial_rel_pos[adj_v, :]
+        cur_adj_pos = pos[adj_v, :]
+        com = calcCenterOfMass(adj_v, dim, mass, pos)
+        cur_rel_pos = cur_adj_pos - com[None, :]
+        A_pq = calcA_pq(cur_rel_pos, init_rel_adj_pos, mass, dim)
+        A_qq = calcA_qq(init_rel_adj_pos, mass, dim)
+        # A_final = np.matmul(A_pq, A_qq).reshape((1, -1))
+        # A_final = np.matmul(A_pq, A_qq.transpose()).reshape((1, -1)) # this is the right formula
+        A_final = np.matmul(A_pq, A_qq)  # this is the right formula
+        a_final_list.append(A_final)
+    return a_final_list
+
+
+def get_local_transformation(n_vertices, mesh, pos, init_pos, mass, dim):
+    pool = mp.Pool()
+    # Divide workloads
+    cpu_cnt = mp.cpu_count()
+    works_per_proc_cnt = n_vertices // cpu_cnt
+    workloads_list = []
+    proc_list = []
+    for i in range(cpu_cnt):
+        cur_proc_workload = [i * works_per_proc_cnt, (i + 1) * works_per_proc_cnt - 1]
+        if i == cpu_cnt - 1:
+            cur_proc_workload[1] = n_vertices - 1
+        workloads_list.append(cur_proc_workload)
+
+    adj_list = []
+    for i in range(n_vertices):
+        adj_list.append(np.append(mesh.get_vertex_adjacent_vertices(i), i))
+
+    # Parallel call
+    for t in range(cpu_cnt):
+        proc_list.append(pool.apply_async(func=get_local_trans_parallel_call,
+                                          args=(workloads_list, t, adj_list, pos, init_pos, mass, dim,)))
+
+    # Get results
+    a_finals_list = []
+    for t in range(cpu_cnt):
+        a_finals_list.extend(proc_list[t].get())
+    pool.close()
+    pool.join()
+    return a_finals_list
+
+
+@ti.func
+def compute_T_grad(i, grad_x):
+    ab = grad_x[ti_elements[i][1]] - grad_x[ti_elements[i][0]]
+    ac = grad_x[ti_elements[i][2]] - grad_x[ti_elements[i][0]]
+    ad = grad_x[ti_elements[i][3]] - grad_x[ti_elements[i][0]]
+    return ti.Matrix([[ab[0], ac[0], ad[0]], [ab[1], ac[1], ad[1]], [ab[2], ac[2], ad[2]]])
+
+
+@ti.kernel
+def compute_pd_gradient(data_rhs_np: ti.ext_arr(), grad_x: ti.template()):
+    for i in range(n_vertices):
+        for d in ti.static(range(dim)):
+            data_rhs_np[i * dim + d] -= ti_mass[i] * (grad_x(d)[i] - ti_pos_tilde(d)[i])
+        for e in range(n_elements):
+            # F = compute_T_grad(e, grad_x) @ ti_restT[e].inverse()
+            F = compute_T_grad(e, grad_x) @ ti_Dm_inv[e]
+            # IB = ti_restT[e].inverse()
+            IB = ti_Dm_inv[e]
+            # vol0 = ti_restT[e].determinant() / 3 / (3 - 1)
+            vol0 = ti_Dm[e].determinant() / 3 / (3 - 1)
+            P = fixed_corotated_first_piola_kirchoff_stress(F, lam, mu) * dt * dt * vol0
+            R10 = IB[0, 0] * P[0, 0] + IB[0, 1] * P[0, 1] + IB[0, 2] * P[0, 2]
+            R11 = IB[0, 0] * P[1, 0] + IB[0, 1] * P[1, 1] + IB[0, 2] * P[1, 2]
+            R12 = IB[0, 0] * P[2, 0] + IB[0, 1] * P[2, 1] + IB[0, 2] * P[2, 2]
+            R20 = IB[1, 0] * P[0, 0] + IB[1, 1] * P[0, 1] + IB[1, 2] * P[0, 2]
+            R21 = IB[1, 0] * P[1, 0] + IB[1, 1] * P[1, 1] + IB[1, 2] * P[1, 2]
+            R22 = IB[1, 0] * P[2, 0] + IB[1, 1] * P[2, 1] + IB[1, 2] * P[2, 2]
+            R30 = IB[2, 0] * P[0, 0] + IB[2, 1] * P[0, 1] + IB[2, 2] * P[0, 2]
+            R31 = IB[2, 0] * P[1, 0] + IB[2, 1] * P[1, 1] + IB[2, 2] * P[1, 2]
+            R32 = IB[2, 0] * P[2, 0] + IB[2, 1] * P[2, 1] + IB[2, 2] * P[2, 2]
+            data_rhs_np[ti_elements[e][1] * 3 + 0] -= R10
+            data_rhs_np[ti_elements[e][1] * 3 + 1] -= R11
+            data_rhs_np[ti_elements[e][1] * 3 + 2] -= R12
+            data_rhs_np[ti_elements[e][2] * 3 + 0] -= R20
+            data_rhs_np[ti_elements[e][2] * 3 + 1] -= R21
+            data_rhs_np[ti_elements[e][2] * 3 + 2] -= R22
+            data_rhs_np[ti_elements[e][3] * 3 + 0] -= R30
+            data_rhs_np[ti_elements[e][3] * 3 + 1] -= R31
+            data_rhs_np[ti_elements[e][3] * 3 + 2] -= R32
+            data_rhs_np[ti_elements[e][0] * 3 + 0] -= -R10 - R20 - R30
+            data_rhs_np[ti_elements[e][0] * 3 + 1] -= -R11 - R21 - R31
+            data_rhs_np[ti_elements[e][0] * 3 + 2] -= -R12 - R22 - R32
+
+
+@ti.kernel
+def compute_xTilde():
+    for i in range(n_vertices):
+        ti_pos_tilde[i] = ti_pos[i] + dt * ti_vel[i]
+        ti_pos_tilde(0)[i] += dt * dt * (ti_ex_acc[i][0]) - dt * dt * (ti_vel[i][0] / ti_mass[i])
+        ti_pos_tilde(1)[i] += dt * dt * (ti_ex_acc[i][1]) - dt * dt * (ti_vel[i][1] / ti_mass[i])
+        ti_pos_tilde(2)[i] += dt * dt * (ti_ex_acc[i][2]) - dt * dt * (ti_vel[i][2] / ti_mass[i])
+
+
+# R, S, E, vel, init
 if __name__ == "__main__":
     os.makedirs("results", exist_ok=True)
     for root, dirs, files in os.walk("../results/"):
         for name in files:
             os.remove(os.path.join(root, name))
 
+    # Load the NN:
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    GLOBAL_NN_PATH = "TrainedNN/GlobalNN/GlobalNN_IrregularBeam_18.pt"
+    simulator_feature_num = 18
+    cluster_num = 128
+    case_info['mesh_num_vert'] = mesh.num_vertices
+    case_info['elements'] = case_info['mesh'].elements
+    # The input data of global NN is a set of points that exclude fixed points
+    culled_cluster_num, graph_node_num, edge_idx, hash_table, culled_cluster, culled_idx = load_global_info(case_info,
+                                                                                                            test_case,
+                                                                                                            cluster_num)
+    culled_node_num = len(culled_idx)
+    batch = torch.zeros(culled_node_num)
+    ori_boundary_pt_idx = case_info['boundary'][0]
+    ori_boundary_pt_idx = np.sort(np.fromiter(ori_boundary_pt_idx, int))
+    local_culled_boundary_pt_list = []
+    for i in range(len(ori_boundary_pt_idx)):
+        if hash_table.get(ori_boundary_pt_idx[i]) is not None:
+            local_culled_boundary_pt_list.append(ori_boundary_pt_idx[i])
+    local_culled_boundary_pt_idx = np.asarray(local_culled_boundary_pt_list)
+
+    # Loading global NN:
+    global_model = GCN3D_Mar28_PoolingDeepGlobal(
+        nfeat=simulator_feature_num,
+        graph_node_num=graph_node_num,
+        cluster_num=culled_cluster_num,
+        fc_out=3,
+        dropout=0,
+        device=device,
+        batch_num=1  # Global Batch size should always be 1.
+    ).to(device)
+    global_model.load_state_dict(torch.load(GLOBAL_NN_PATH))
+
+    input_features_num = simulator_feature_num + global_model.global_feat_num
+    output_features_num = 3
+
+    # Loading local NN:
+    LOCAL_NN_PATH = "TrainedNN/LocalNN/LocalNN_IrregularBeam7.pt"
+    local_model = VertNN_Mar12_LocalLinear_RBN_Deep(
+        nfeat=input_features_num,
+        fc_out=output_features_num,
+        dropout=0,
+        device=device
+    ).to(device)
+    local_model.load_state_dict(torch.load(LOCAL_NN_PATH))
+
+    global_model.eval()
+    local_model.eval()
+
+    # Other init settings:
     video_manager = ti.VideoManager(output_dir=os.getcwd() + '../results/', framerate=24, automatic_build=False)
     frame_counter = 0
     rhs_np = np.zeros(n_vertices * dim, dtype=np.float64)
@@ -693,8 +889,6 @@ if __name__ == "__main__":
 
     init()
 
-    # One direction acc field
-    # set_exacc()
     ti_ex_acc.fill(0.0)
     init_mesh_DmInv(dirichlet, len(dirichlet))
     precomputation(lhs_mat_row, lhs_mat_col, lhs_mat_val)
@@ -717,16 +911,27 @@ if __name__ == "__main__":
         gui.set_image(scene.img)
         gui.show()
 
+    # NN feature settings:
+    init_com = calcCenterOfMass(np.arange(n_vertices),
+                                3, ti_mass.to_numpy(),
+                                mesh.vertices)
+    init_rel_pos = mesh.vertices - init_com
+
     frame_counter = 0
     sim_t = 0.0
     plot_array = []
     selected_vert_idx = -1
+    pd_mode = False
 
     while True:
+        # Compute features:
+        compute_xTilde()
+
+        # Main solver logic:
         build_sn()
+
         # Warm up:
         warm_up()
-        # print("Frame ", frame_counter)
         while True:
             local_solve_build_bp_for_all_constraints()
             build_rhs(rhs_np)
@@ -758,12 +963,62 @@ if __name__ == "__main__":
                 particles_color[0, 2] -= 1.0
                 pars.set_particle_colors(particles_color)
 
-            update_boundary_mesh(ti_pos, boundary_pos, case_info)
-            scene.input(gui)
+            if pd_mode:
+                update_boundary_mesh(ti_pos, boundary_pos, case_info)
+            else:
+                # Put data into NN
+                # Put overall data without fixed points index into global NN
+                A_finals = get_local_transformation(n_vertices, mesh, ti_pos.to_numpy(), init_rel_pos,
+                                                    ti_mass.to_numpy(), 3)
+                A_finals_np = np.asarray(A_finals)
+                R_array = np.zeros((n_vertices, 3), dtype=np.float)
+                S_array = np.zeros((n_vertices, 3), dtype=np.float)
+                gradE_array = np.zeros(3 * n_vertices, dtype=np.float)
+                # Arrange global data
+                RM2Euler_ti(A_finals_np, R_array, S_array, n_vertices)
+                compute_pd_gradient(gradE_array, ti_pos)
+                gradE_array = np.reshape(gradE_array, (n_vertices, 3))
+                # ti_pos_delta.from_numpy(mesh.vertices)  # Remember to delete
+                pos_delta_np = ti_pos_delta.to_numpy()
+                # ti_vel.from_numpy(mesh.vertices)  # Remember to delete
+                ti_vel_np = ti_vel.to_numpy()
+                # Stack data
+                full_data = np.hstack((pos_delta_np, R_array))
+                full_data = np.hstack((full_data, S_array))
+                full_data = np.hstack((full_data, gradE_array))
+                full_data = np.hstack((full_data, ti_vel_np))
+                full_data = np.hstack((full_data, mesh.vertices))
+                global_culled_full_data = full_data[culled_idx]
+                with torch.no_grad():
+                    g_feat, o_feat = global_model(torch.from_numpy(global_culled_full_data).float().to(device),
+                                                  edge_idx.to(device),
+                                                  batch.to(device),
+                                                  culled_cluster.to(device))
+                    # Put non-fixed point boundary data into local NN
+                    # Arrange local data
+                    local_culled_full_data = full_data[local_culled_boundary_pt_idx]
+                    g_feat_repeat = np.expand_dims(g_feat.cpu().detach().numpy(), axis=0)
+                    g_feat_repeat = np.repeat(g_feat_repeat, len(local_culled_boundary_pt_idx), axis=0)
+                    local_culled_full_data = np.hstack((local_culled_full_data, g_feat_repeat))
+                    local_output = local_model(torch.from_numpy(local_culled_full_data).float().to(device))
+                    local_output_cpu = local_output.cpu().detach()
+                    local_output_np = local_output_cpu.numpy()
+                    pos_nn = ti_pos.to_numpy()
+                    pos_nn[local_culled_boundary_pt_idx, 0:3] += local_output_np
+                    ti_pos_nn.from_numpy(pos_nn)
+                # Rearrange output data to boundary_pos
+                update_boundary_mesh(ti_pos_nn, boundary_pos, case_info)
+
             tina_mesh.set_face_verts(boundary_pos)
+            scene.input(gui)
             scene.render()
             gui.set_image(scene.img)
             video_manager.write_frame(gui.get_image())
+            if pd_mode:
+                gui.text("PD mode", (0.01, 0.99))
+            else:
+                gui.text("NN mode", (0.01, 0.99))
+            gui.text(f"Frame ID:{frame_counter}", (0.01, 0.95))
             gui.show()
 
             cam_pos = scene.control.center + scene.control.back
@@ -816,6 +1071,11 @@ if __name__ == "__main__":
                     acc2 = relative_y * cam_up
                     acc_val = (acc1 + acc2) * 10.0
                     setAcc(selected_vert_idx.item(), acc_val)
+            elif gui.is_pressed('m'):
+                if pd_mode:
+                    pd_mode = False
+                else:
+                    pd_mode = True
 
         # if check_acceleration_status() > 800 and frame_counter > 500:
         if frame_counter > 2000:

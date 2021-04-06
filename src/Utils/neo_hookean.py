@@ -75,8 +75,8 @@ def elasticity_hessian(sig: ti.template(), la, mu):
 def fixed_corotated_first_piola_kirchoff_stress(F, la, mu):
     J = F.determinant()
     JFinvT = cofactor(F)
-    U, sig, V = svd(F)
-    # U, sig, V = my_svd(F)
+    # U, sig, V = svd(F)
+    U, sig, V = my_svd(F)
     R = U @ V.transpose()
     return 2 * mu * (F - R) + la * (J - 1) * JFinvT
 

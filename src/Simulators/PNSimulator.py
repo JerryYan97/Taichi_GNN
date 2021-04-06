@@ -115,6 +115,7 @@ class PNSimulation(SimulatorBase):
                 data_rhs_np[self.ti_elements[e][0] * 3 + 1] -= -R11 - R21 - R31
                 data_rhs_np[self.ti_elements[e][0] * 3 + 2] -= -R12 - R22 - R32
 
+    # TODO: Move it back to PDSimulator
     def get_gradE_from_pd(self, pd_pos):
         self.compute_pd_gradient(self.data_rhs, pd_pos)
         return self.data_rhs

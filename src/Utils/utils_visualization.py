@@ -266,12 +266,12 @@ def get_point_acc_field_ref(min, max, pos, acc, ti_acc) -> ti.Vector:
         ti_acc = ti.Vector([0.0, 0.0, 0.0])
 
 
-@ti.func
-def RM2Euler_ti(R) -> ti.Vector:  # matrix no type hint needed
-    theta_x = ti.atan2(R[2, 1], R[2, 2])
-    theta_y = ti.atan2(-R[2, 0], ti.sqrt(R[2, 1]*R[2, 1]+R[2, 2]*R[2, 2]))
-    theta_z = ti.atan2(R[2, 0], R[0, 0])
-    return ti.Vector([theta_x, theta_y, theta_z])
+# @ti.func
+# def RM2Euler_ti(R) -> ti.Vector:  # matrix no type hint needed
+#     theta_x = ti.atan2(R[2, 1], R[2, 2])
+#     theta_y = ti.atan2(-R[2, 0], ti.sqrt(R[2, 1]*R[2, 1]+R[2, 2]*R[2, 2]))
+#     theta_z = ti.atan2(R[2, 0], R[0, 0])
+#     return ti.Vector([theta_x, theta_y, theta_z])
 
 
 def calcR(A_pq):
@@ -302,3 +302,15 @@ def RM2Euler(A):  # numpy
     return np.array([theta_x, theta_y, theta_z]), np.array([S[0, 0], S[1, 1], S[2, 2]])
 
 
+@ti.kernel
+def RM2Euler_ti(A_finals: ti.ext_arr(), R_array: ti.ext_arr(), S_array: ti.ext_arr(), vert_num: ti.i32):
+    for i in range(vert_num):
+        vert_mat = ti.Matrix.rows([[A_finals[i, 0, 0], A_finals[i, 0, 1], A_finals[i, 0, 2]],
+                                   [A_finals[i, 1, 0], A_finals[i, 1, 1], A_finals[i, 1, 2]],
+                                   [A_finals[i, 2, 0], A_finals[i, 2, 1], A_finals[i, 2, 2]]])
+        vert_R, vert_S = ti.polar_decompose(vert_mat)
+        theta_x = ti.atan2(vert_R[2, 1], vert_R[2, 2]) * 180.0 / 3.141592653589793
+        theta_y = ti.atan2(-vert_R[2, 0], ti.sqrt(vert_R[2, 1]*vert_R[2, 1]+vert_R[2, 2]*vert_R[2, 2])) * 180.0 / 3.141592653589793
+        theta_z = ti.atan2(vert_R[2, 0], vert_R[0, 0]) * 180.0 / 3.141592653589793
+        R_array[i, 0], R_array[i, 1], R_array[i, 2] = theta_x, theta_y, theta_z
+        S_array[i, 0], S_array[i, 1], S_array[i, 2] = vert_S[0, 0], vert_S[1, 1], vert_S[2, 2]
