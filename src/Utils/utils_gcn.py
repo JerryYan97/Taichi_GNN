@@ -57,7 +57,7 @@ def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, culled_bd
         gvec_dir += "/SimData/TrainPreGenGlobalFeatureVec/"
     elif mode == 1:
         gvec_dir += "/SimData/TestPreGenGlobalFeatureVec/"
-
+    print("proc", proc_idx, "-- start idx:", workload_list[proc_idx][0], " end idx:", workload_list[proc_idx][1])
     for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
         fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
         if dim == 2:
@@ -92,7 +92,7 @@ def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, culled_bd
                   'filename': files[idx]}
         sample_list.append(sample)
 
-    print("proc", proc_idx, "-- start idx:", workload_list[proc_idx][0], " end idx:", workload_list[proc_idx][1])
+    print("proc", proc_idx, " finish works.")
     return sample_list
 
 
