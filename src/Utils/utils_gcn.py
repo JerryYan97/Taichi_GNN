@@ -45,107 +45,17 @@ def mp_load_global_data(workload_list, proc_idx,
     return sample_list
 
 
-# Each sample in it is in normal PyTorch format.
-# filepath is used to determine whether read files from training data folder or testing data folder.
-# It won't append global feature vector to each sample, because it will blow up the RAM.
-# def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, culled_bd_idx, culled_idx, dim):
-#     sample_list = []
-#     culled_bd_pts_num = culled_bd_idx.shape[0]
-#     culled_pts_num = len(culled_idx)
-#     gvec_dir = os.getcwd()
-#     if mode == 0:
-#         gvec_dir += "/SimData/TrainPreGenGlobalFeatureVec/"
-#     elif mode == 1:
-#         gvec_dir += "/SimData/TestPreGenGlobalFeatureVec/"
-#     print("proc", proc_idx, "-- start idx:", workload_list[proc_idx][0], " end idx:", workload_list[proc_idx][1])
-#     for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
-#         fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
-#         if dim == 2:
-#             other = fperframe[culled_bd_idx, 4:]
-#             pn_dis = fperframe[culled_bd_idx, 2:4]
-#             pd_dis = fperframe[culled_bd_idx, 0:2]  # a[start:stop] items start through stop-1
-#         else:
-#             feat_idx = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 18, 19, 20, 21, 22, 23])
-#
-#             # For the purpose of local training data:
-#             other_tmp = fperframe[culled_bd_idx, :]
-#             other = np.take(other_tmp, feat_idx, axis=1)
-#             pn_dis = fperframe[culled_bd_idx, 3:6]
-#             pd_dis = fperframe[culled_bd_idx, 0:3]  # a[start:stop] items start through stop-1
-#
-#             # To produce global feature data:
-#             other_tmp_full = fperframe[culled_idx, :]
-#             other_full = np.take(other_tmp_full, feat_idx, axis=1)
-#             pn_dis_full = fperframe[culled_idx, 3:6]
-#             pd_dis_full = fperframe[culled_idx, 0:3]
-#
-#         y_frame_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((culled_bd_pts_num, -1)))
-#         x_frame_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((culled_bd_pts_num, -1)))
-#
-#         y_frame_full_data = torch.from_numpy(np.subtract(pn_dis_full, pd_dis_full).reshape((culled_pts_num, -1)))
-#         x_frame_full_data = torch.from_numpy(np.hstack((pd_dis_full, other_full)).reshape((culled_pts_num, -1)))
-#
-#         sample = {'x_frame': x_frame_data,
-#                   'y_frame': y_frame_data,
-#                   'x_frame_full': x_frame_full_data,
-#                   'y_frame_full': y_frame_full_data,
-#                   'filename': files[idx]}
-#         sample_list.append(sample)
-#
-#     print("proc", proc_idx, " finish works.")
-#     return sample_list
-
-# Each sample in it is in normal PyTorch format.
-# filepath is used to determine whether read files from training data folder or testing data folder.
-# It won't append global feature vector to each sample, because it will blow up the RAM.
-def mp_load_local_data(start_file_idx, end_file_idx, proc_idx, filepath, files, culled_bd_idx, culled_idx, dim):
-    sample_list = []
-    culled_bd_pts_num = culled_bd_idx.shape[0]
-    culled_pts_num = len(culled_idx)
-    print("proc", proc_idx, "-- start idx:", start_file_idx, " end idx:", end_file_idx)
-    for idx in range(start_file_idx, end_file_idx+1):
-        fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
-        feat_idx = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 18, 19, 20, 21, 22, 23])
-        # For the purpose of local training data:
-        other_tmp = fperframe[culled_bd_idx, :]
-        other = np.take(other_tmp, feat_idx, axis=1)
-        pn_dis = fperframe[culled_bd_idx, 3:6]
-        pd_dis = fperframe[culled_bd_idx, 0:3]  # a[start:stop] items start through stop-1
-
-        # To produce global feature data:
-        other_tmp_full = fperframe[culled_idx, :]
-        other_full = np.take(other_tmp_full, feat_idx, axis=1)
-        pn_dis_full = fperframe[culled_idx, 3:6]
-        pd_dis_full = fperframe[culled_idx, 0:3]
-
-        y_frame_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((culled_bd_pts_num, -1)))
-        x_frame_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((culled_bd_pts_num, -1)))
-        y_frame_full_data = torch.from_numpy(np.subtract(pn_dis_full, pd_dis_full).reshape((culled_pts_num, -1)))
-        x_frame_full_data = torch.from_numpy(np.hstack((pd_dis_full, other_full)).reshape((culled_pts_num, -1)))
-
-        sample = {'x_frame': x_frame_data,
-                  'y_frame': y_frame_data,
-                  'x_frame_full': x_frame_full_data,
-                  'y_frame_full': y_frame_full_data,
-                  'filename': files[idx]}
-        sample_list.append(sample)
-
-    print("proc", proc_idx, " finish works.")
-    return sample_list
-
-
 class SIM_Data_Local(Dataset):
-    def __init__(self, filepath, global_nn, mode, i_features_num, o_features_num, device, edge_idx, culled_idx,
+    def __init__(self, train_info, filepath, global_nn, mode, i_features_num, o_features_num, device, edge_idx, culled_idx,
                  culled_cluster, cluster_num,
                  global_culled_boundary_points_id, local_culled_boundary_points_id, dim,
                  include_global_vec=True, transform=None):
-        # Read file names
-        self._files = []
-        for _, _, files in os.walk(filepath):
-            self._files.extend(files)
-        self._files.sort()
-        # Set init parameters
-        self._filepath = filepath
+        files_names = []
+        file_path = os.getcwd() + "/SimData/TrainingData"
+        for _, _, files in os.walk(file_path):
+            files_names.extend(files)
+        self._files = files_names
+
         self._input_features_num = i_features_num
         self._output_features_num = o_features_num
         self._local_culled_boundary_node_num = len(local_culled_boundary_points_id)
@@ -187,43 +97,9 @@ class SIM_Data_Local(Dataset):
         #     sub_sample_list = proc_list[i].get()
         #     self._sample_list.extend(sub_sample_list)
 
-        cpu_cnt = os.cpu_count()
-        print("cpu core account: ", cpu_cnt)
-
-        # Divide workload
-        # According to experiments, the cluster cannot send back a large amount of data for each process like our local
-        # computer. So, we need to reduce the workload to get result.
-        max_proc_workload = 10
-        proc_idx = 0
-        files_cnt = len(self._files)
-        rest_files_cnt = files_cnt
-        pool = mp.Pool()
-        self._sample_list = []
-        while rest_files_cnt != 0:
-            proc_list = []
-            for i in range(cpu_cnt):
-                if rest_files_cnt != 0:
-                    exe_files_cnt = files_cnt - rest_files_cnt
-                    start_idx = exe_files_cnt
-                    end_idx = exe_files_cnt + max_proc_workload - 1
-                    if max_proc_workload > rest_files_cnt:
-                        end_idx = exe_files_cnt + rest_files_cnt - 1
-                    proc_list.append(pool.apply_async(func=mp_load_local_data,
-                                                      args=(start_idx, end_idx, proc_idx, self._filepath, self._files,
-                                                            local_culled_boundary_points_id, culled_idx, dim,)))
-                    proc_idx += 1
-                    rest_files_cnt -= (end_idx - exe_files_cnt + 1)
-                else:
-                    break
-            print("After assigning the workload.")
-            for i in range(len(proc_list)):
-                self._sample_list.extend(proc_list[i].get())
-            print("After get the workloads.")
-            print("Sample list length:", len(self._sample_list))
-        pool.close()
-        pool.join()
-
-        print("Final sample list length:", len(self._sample_list))
+        # Load train info
+        # Read case_info (We cannot use PyMesh on the cluster)
+        self._sample_list = train_info['local_sample_list']
 
         # Calculate the global vec for each frame:
         # Put Data into NN:
@@ -442,7 +318,7 @@ class SIM_Data_Geo(InMemoryDataset):
 
 
 # 0 -- train, 1 -- test
-def load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
+def load_local_data(case_info, train_info, hash_table, edge_idx, culled_idx, culled_cluster,
                     simulator_feature_num, global_feature_num, culled_cluster_num,
                     global_nn, device, mode=0, path="/Outputs", include_global_vec=True):
     file_dir = os.getcwd()
@@ -468,7 +344,7 @@ def load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
     if include_global_vec:
         total_feature_num += global_feature_num
 
-    tmp_dataset = SIM_Data_Local(file_dir, global_nn, mode, total_feature_num, 3, device, edge_idx, culled_idx,
+    tmp_dataset = SIM_Data_Local(train_info, file_dir, global_nn, mode, total_feature_num, 3, device, edge_idx, culled_idx,
                                  culled_cluster, culled_cluster_num,
                                  global_culled_boundary_pt_idx,
                                  local_culled_boundary_pt_idx, case_info['dim'], include_global_vec)

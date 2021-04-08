@@ -58,6 +58,8 @@ if args.cuda:
 
 # Read case_info (We cannot use PyMesh on the cluster)
 case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(case_id) + ".p", "rb"))
+train_info = pickle.load(open(os.getcwd() + "/SimData/TrainingDataPickle/train_info" + str(case_id) +
+                              "_full_data.p", "rb"))
 
 # Load and set global NN:
 GLOBAL_NN_PATH = "TrainedNN/GlobalNN/GlobalNN_IrregularBeam_18.pt"
@@ -74,7 +76,7 @@ global_model = GCN3D_Mar28_PoolingDeepGlobal(
 global_model.load_state_dict(torch.load(GLOBAL_NN_PATH))
 
 load_data_t_start = time.time()
-simDataset = load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
+simDataset = load_local_data(case_info, train_info, hash_table, edge_idx, culled_idx, culled_cluster,
                              simulator_feature_num, global_model.global_feat_num, culled_cluster_num,
                              global_model, device, 0, "/SimData/TrainingData", True)
 # simDataset.to_device(device)
