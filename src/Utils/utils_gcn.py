@@ -48,40 +48,78 @@ def mp_load_global_data(workload_list, proc_idx,
 # Each sample in it is in normal PyTorch format.
 # filepath is used to determine whether read files from training data folder or testing data folder.
 # It won't append global feature vector to each sample, because it will blow up the RAM.
-def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, culled_bd_idx, culled_idx, dim):
+# def mp_load_local_data(workload_list, mode, proc_idx, filepath, files, culled_bd_idx, culled_idx, dim):
+#     sample_list = []
+#     culled_bd_pts_num = culled_bd_idx.shape[0]
+#     culled_pts_num = len(culled_idx)
+#     gvec_dir = os.getcwd()
+#     if mode == 0:
+#         gvec_dir += "/SimData/TrainPreGenGlobalFeatureVec/"
+#     elif mode == 1:
+#         gvec_dir += "/SimData/TestPreGenGlobalFeatureVec/"
+#     print("proc", proc_idx, "-- start idx:", workload_list[proc_idx][0], " end idx:", workload_list[proc_idx][1])
+#     for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
+#         fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
+#         if dim == 2:
+#             other = fperframe[culled_bd_idx, 4:]
+#             pn_dis = fperframe[culled_bd_idx, 2:4]
+#             pd_dis = fperframe[culled_bd_idx, 0:2]  # a[start:stop] items start through stop-1
+#         else:
+#             feat_idx = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 18, 19, 20, 21, 22, 23])
+#
+#             # For the purpose of local training data:
+#             other_tmp = fperframe[culled_bd_idx, :]
+#             other = np.take(other_tmp, feat_idx, axis=1)
+#             pn_dis = fperframe[culled_bd_idx, 3:6]
+#             pd_dis = fperframe[culled_bd_idx, 0:3]  # a[start:stop] items start through stop-1
+#
+#             # To produce global feature data:
+#             other_tmp_full = fperframe[culled_idx, :]
+#             other_full = np.take(other_tmp_full, feat_idx, axis=1)
+#             pn_dis_full = fperframe[culled_idx, 3:6]
+#             pd_dis_full = fperframe[culled_idx, 0:3]
+#
+#         y_frame_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((culled_bd_pts_num, -1)))
+#         x_frame_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((culled_bd_pts_num, -1)))
+#
+#         y_frame_full_data = torch.from_numpy(np.subtract(pn_dis_full, pd_dis_full).reshape((culled_pts_num, -1)))
+#         x_frame_full_data = torch.from_numpy(np.hstack((pd_dis_full, other_full)).reshape((culled_pts_num, -1)))
+#
+#         sample = {'x_frame': x_frame_data,
+#                   'y_frame': y_frame_data,
+#                   'x_frame_full': x_frame_full_data,
+#                   'y_frame_full': y_frame_full_data,
+#                   'filename': files[idx]}
+#         sample_list.append(sample)
+#
+#     print("proc", proc_idx, " finish works.")
+#     return sample_list
+
+# Each sample in it is in normal PyTorch format.
+# filepath is used to determine whether read files from training data folder or testing data folder.
+# It won't append global feature vector to each sample, because it will blow up the RAM.
+def mp_load_local_data(start_file_idx, end_file_idx, proc_idx, filepath, files, culled_bd_idx, culled_idx, dim):
     sample_list = []
     culled_bd_pts_num = culled_bd_idx.shape[0]
     culled_pts_num = len(culled_idx)
-    gvec_dir = os.getcwd()
-    if mode == 0:
-        gvec_dir += "/SimData/TrainPreGenGlobalFeatureVec/"
-    elif mode == 1:
-        gvec_dir += "/SimData/TestPreGenGlobalFeatureVec/"
-    print("proc", proc_idx, "-- start idx:", workload_list[proc_idx][0], " end idx:", workload_list[proc_idx][1])
-    for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
+    print("proc", proc_idx, "-- start idx:", start_file_idx, " end idx:", end_file_idx)
+    for idx in range(start_file_idx, end_file_idx+1):
         fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
-        if dim == 2:
-            other = fperframe[culled_bd_idx, 4:]
-            pn_dis = fperframe[culled_bd_idx, 2:4]
-            pd_dis = fperframe[culled_bd_idx, 0:2]  # a[start:stop] items start through stop-1
-        else:
-            feat_idx = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 18, 19, 20, 21, 22, 23])
+        feat_idx = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 18, 19, 20, 21, 22, 23])
+        # For the purpose of local training data:
+        other_tmp = fperframe[culled_bd_idx, :]
+        other = np.take(other_tmp, feat_idx, axis=1)
+        pn_dis = fperframe[culled_bd_idx, 3:6]
+        pd_dis = fperframe[culled_bd_idx, 0:3]  # a[start:stop] items start through stop-1
 
-            # For the purpose of local training data:
-            other_tmp = fperframe[culled_bd_idx, :]
-            other = np.take(other_tmp, feat_idx, axis=1)
-            pn_dis = fperframe[culled_bd_idx, 3:6]
-            pd_dis = fperframe[culled_bd_idx, 0:3]  # a[start:stop] items start through stop-1
-
-            # To produce global feature data:
-            other_tmp_full = fperframe[culled_idx, :]
-            other_full = np.take(other_tmp_full, feat_idx, axis=1)
-            pn_dis_full = fperframe[culled_idx, 3:6]
-            pd_dis_full = fperframe[culled_idx, 0:3]
+        # To produce global feature data:
+        other_tmp_full = fperframe[culled_idx, :]
+        other_full = np.take(other_tmp_full, feat_idx, axis=1)
+        pn_dis_full = fperframe[culled_idx, 3:6]
+        pd_dis_full = fperframe[culled_idx, 0:3]
 
         y_frame_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((culled_bd_pts_num, -1)))
         x_frame_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((culled_bd_pts_num, -1)))
-
         y_frame_full_data = torch.from_numpy(np.subtract(pn_dis_full, pd_dis_full).reshape((culled_pts_num, -1)))
         x_frame_full_data = torch.from_numpy(np.hstack((pd_dis_full, other_full)).reshape((culled_pts_num, -1)))
 
@@ -116,52 +154,76 @@ class SIM_Data_Local(Dataset):
         self._include_global_vec = include_global_vec
         # Read file data
         # Divide workloads:
-        cpu_cnt = os.cpu_count()
-        print("cpu core account: ", cpu_cnt)
-        files_cnt = len(self._files)
-        min_files_per_proc_cnt = files_cnt // cpu_cnt
-        max_files_per_proc_cnt = min_files_per_proc_cnt + 1
-        workload_list = []
-        procced_files_cnt = 0
-        for i in range(cpu_cnt):
-            # [[proc1 first file idx, proc1 last file idx] ... []]
-            files_per_proc_cnt = max_files_per_proc_cnt
-            if min_files_per_proc_cnt * (cpu_cnt - i) == (files_cnt - procced_files_cnt):
-                files_per_proc_cnt = min_files_per_proc_cnt
-            cur_proc_workload = [procced_files_cnt, procced_files_cnt + files_per_proc_cnt - 1]
-            procced_files_cnt += files_per_proc_cnt
-            workload_list.append(cur_proc_workload)
-
-        # files_per_proc_cnt = files_cnt // cpu_cnt
+        # cpu_cnt = os.cpu_count()
+        # print("cpu core account: ", cpu_cnt)
+        # files_cnt = len(self._files)
+        # min_files_per_proc_cnt = files_cnt // cpu_cnt
+        # max_files_per_proc_cnt = min_files_per_proc_cnt + 1
         # workload_list = []
+        # procced_files_cnt = 0
         # for i in range(cpu_cnt):
         #     # [[proc1 first file idx, proc1 last file idx] ... []]
-        #     cur_proc_workload = [i * files_per_proc_cnt, (i + 1) * files_per_proc_cnt - 1]
-        #     if i == cpu_cnt - 1:
-        #         # Last workload may needs to do more than others.
-        #         cur_proc_workload[1] = files_cnt - 1
+        #     files_per_proc_cnt = max_files_per_proc_cnt
+        #     if min_files_per_proc_cnt * (cpu_cnt - i) == (files_cnt - procced_files_cnt):
+        #         files_per_proc_cnt = min_files_per_proc_cnt
+        #     cur_proc_workload = [procced_files_cnt, procced_files_cnt + files_per_proc_cnt - 1]
+        #     procced_files_cnt += files_per_proc_cnt
         #     workload_list.append(cur_proc_workload)
-
-        print("After determining the workload.")
-        # Call multi-processing func to load samples:
-        pool = mp.Pool()
-        proc_list = []
-        self._sample_list = []
-        for i in range(cpu_cnt):
-            proc_list.append(pool.apply_async(func=mp_load_local_data,
-                                              args=(workload_list, mode, i, self._filepath, self._files,
-                                                    local_culled_boundary_points_id, culled_idx, dim,)))
-
-        print("After assigning the workload.")
+        #
+        # print("After determining the workload.")
+        # # Call multi-processing func to load samples:
+        # pool = mp.Pool()
+        # proc_list = []
+        # self._sample_list = []
+        # for i in range(cpu_cnt):
+        #     proc_list.append(pool.apply_async(func=mp_load_local_data,
+        #                                       args=(workload_list, mode, i, self._filepath, self._files,
+        #                                             local_culled_boundary_points_id, culled_idx, dim,)))
+        #
+        # print("After assigning the workload.")
 
         # Get multi-processing res:
-        for i in range(cpu_cnt):
-            sub_sample_list = proc_list[i].get()
-            self._sample_list.extend(sub_sample_list)
+        # for i in range(cpu_cnt):
+        #     sub_sample_list = proc_list[i].get()
+        #     self._sample_list.extend(sub_sample_list)
+
+        cpu_cnt = os.cpu_count()
+        print("cpu core account: ", cpu_cnt)
+
+        # Divide workload
+        # According to experiments, the cluster cannot send back a large amount of data for each process like our local
+        # computer. So, we need to reduce the workload to get result.
+        max_proc_workload = 10
+        proc_idx = 0
+        files_cnt = len(self._files)
+        rest_files_cnt = files_cnt
+        pool = mp.Pool()
+        self._sample_list = []
+        while rest_files_cnt != 0:
+            proc_list = []
+            for i in range(cpu_cnt):
+                if rest_files_cnt != 0:
+                    exe_files_cnt = files_cnt - rest_files_cnt
+                    start_idx = exe_files_cnt
+                    end_idx = exe_files_cnt + max_proc_workload - 1
+                    if max_proc_workload > rest_files_cnt:
+                        end_idx = exe_files_cnt + rest_files_cnt - 1
+                    proc_list.append(pool.apply_async(func=mp_load_local_data,
+                                                      args=(start_idx, end_idx, proc_idx, self._filepath, self._files,
+                                                            local_culled_boundary_points_id, culled_idx, dim,)))
+                    proc_idx += 1
+                    rest_files_cnt -= (end_idx - exe_files_cnt + 1)
+                else:
+                    break
+            print("After assigning the workload.")
+            for i in range(len(proc_list)):
+                self._sample_list.extend(proc_list[i].get())
+            print("After get the workloads.")
+            print("Sample list length:", len(self._sample_list))
         pool.close()
         pool.join()
 
-        print("Sample list length:", len(self._sample_list))
+        print("Final sample list length:", len(self._sample_list))
 
         # Calculate the global vec for each frame:
         # Put Data into NN:
