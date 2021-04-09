@@ -35,6 +35,8 @@ epoch_num = 300
 simulator_feature_num = 18
 case_id = 1011
 cluster_num = 128
+additional_note = 'full_data'
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
@@ -48,7 +50,6 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# device = torch.device('cpu')
 
 # set random seed
 np.random.seed(args.seed)
@@ -57,17 +58,15 @@ if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
 # Read case_info (We cannot use PyMesh on the cluster)
-case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(case_id) + ".p", "rb"))
-train_info = pickle.load(open(os.getcwd() + "/SimData/TrainingDataPickle/train_info" + str(case_id) +
-                              "_full_data.p", "rb"))
+train_info = pickle.load(open(os.getcwd() + "/SimData/TrainingDataPickle/train_info" + str(case_id) + "_" +
+                              str(cluster_num) + "_" + additional_note + ".p", "rb"))
 
 # Load and set global NN:
 GLOBAL_NN_PATH = "TrainedNN/GlobalNN/GlobalNN_IrregularBeam_18.pt"
-culled_cluster_num, graph_node_num, edge_idx, hash_table, culled_cluster, culled_idx = load_global_info(case_info, case_id, cluster_num)
 global_model = GCN3D_Mar28_PoolingDeepGlobal(
     nfeat=simulator_feature_num,
-    graph_node_num=graph_node_num,
-    cluster_num=culled_cluster_num,
+    graph_node_num=train_info['graph_node_num'],
+    cluster_num=train_info['culled_cluster_num'],
     fc_out=3,
     dropout=0,
     device=device,
@@ -76,14 +75,11 @@ global_model = GCN3D_Mar28_PoolingDeepGlobal(
 global_model.load_state_dict(torch.load(GLOBAL_NN_PATH))
 
 load_data_t_start = time.time()
-simDataset = load_local_data(case_info, train_info, hash_table, edge_idx, culled_idx, culled_cluster,
-                             simulator_feature_num, global_model.global_feat_num, culled_cluster_num,
-                             global_model, device, 0, "/SimData/TrainingData", True)
-# simDataset.to_device(device)
+simDataset = load_local_data(train_info, simulator_feature_num, global_model.global_feat_num,
+                             global_model, device, True)
+
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
-
-dim = case_info['dim']
 
 train_loader = DataLoader(dataset=simDataset,
                           batch_size=256,
@@ -165,7 +161,7 @@ def Sim_train():
         if epoch > epoch_num-80:
             if epoch % 4 == 0:
                 torch.save(local_model.state_dict(),
-                           "TrainedNN/LocalNN/LocalNN_" + case_info['case_name'] + str(record_times) + ".pt")
+                           "TrainedNN/LocalNN/LocalNN_" + train_info['case_name'] + str(record_times) + ".pt")
                 record_times = record_times + 1
 
 

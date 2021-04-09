@@ -14,6 +14,7 @@ os.makedirs('TrainedNN/GlobalNN', exist_ok=True)
 
 case_id = 1011
 cluster_num = 128
+additional_note = 'full_data'
 
 for root, dirs, files in os.walk("../runs/"):
     for name in files:
@@ -46,11 +47,11 @@ if args.cuda:
 
 
 load_data_t_start = time.time()
-simDataset, case_info, cluster_parent, cluster_belong = load_global_data(case_id, cluster_num, "/SimData/TrainingData")
+train_info = pickle.load(open(os.getcwd() + "/SimData/TrainingDataPickle/train_info" + str(case_id) + "_" +
+                              str(cluster_num) + "_" + additional_note + ".p", "rb"))
+simDataset, cluster_parent, cluster_belong = load_global_data(train_info)
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
-
-dim = case_info['dim']
 
 # Used to determine whether we are using a cluster.
 pin_memory_option = False
@@ -65,7 +66,7 @@ model = GCN3D_Mar28_PoolingDeepGlobal(
     nfeat=simDataset.input_features_num,
     graph_node_num=simDataset.node_num,
     cluster_num=simDataset.cluster_num,
-    fc_out=dim,
+    fc_out=3,
     dropout=0,
     device=device,
     batch_num=batch_size
@@ -103,8 +104,8 @@ def Sim_train():
             top_vec = LA.norm(output_cpu - data.y, dim=1).numpy()
             bottom_vec = (LA.norm(data.y, dim=1)).cpu().detach().numpy()
 
-            top_vec_b = np.take(top_vec, simDataset.boundary_pt_idx)
-            bottom_vec_b = np.take(bottom_vec, simDataset.boundary_pt_idx)
+            top_vec_b = np.take(top_vec, simDataset.global_culled_boundary_pt_idx)
+            bottom_vec_b = np.take(bottom_vec, simDataset.global_culled_boundary_pt_idx)
 
             big_idx = np.where(bottom_vec_b > 1e-10)
             top_cull_vec = np.take(top_vec_b, big_idx)
@@ -120,7 +121,7 @@ def Sim_train():
             optimizer.step()
             epoch_loss += loss_train.cpu().detach().numpy()
 
-        metric1 /= (len(simDataset.boundary_pt_idx) * len(simDataset.raw_file_names) - small_cnt)
+        metric1 /= (len(simDataset.global_culled_boundary_pt_idx) * simDataset.len() - small_cnt)
 
         writer.add_scalar('metric1', metric1, epoch)
         print("Epoch:", epoch + 1,
@@ -132,7 +133,7 @@ def Sim_train():
         if epoch > epoch_num-80:
             if epoch % 4 == 0:
                 torch.save(model.state_dict(),
-                           "TrainedNN/GlobalNN/GlobalNN_" + case_info['case_name'] + "_" + str(record_times) + ".pt")
+                           "TrainedNN/GlobalNN/GlobalNN_" + train_info['case_name'] + "_" + str(record_times) + ".pt")
                 record_times = record_times + 1
 
 

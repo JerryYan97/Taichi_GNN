@@ -15,46 +15,16 @@ from scipy.sparse import lil_matrix
 from torch import linalg as torch_LA
 
 
-# Each sample in it is in PyG format
-def mp_load_global_data(workload_list, proc_idx,
-                        filepath, files, node_num, edge_idx, culled_idx, cluster, transform, dim):
-    sample_list = []
-    for idx in range(workload_list[proc_idx][0], workload_list[proc_idx][1] + 1):
-        fperframe = np.genfromtxt(filepath + "/" + files[idx], delimiter=',')
-        # print("name: ", files[idx])
-        if dim == 2:
-            other = fperframe[:, 4:]
-            pn_dis = fperframe[:, 2:4]
-            pd_dis = fperframe[:, 0:2]  # a[start:stop] items start through stop-1
-        else:
-            # print("name: ", files[idx], " shape: ", fperframe.shape)
-            # other = fperframe[:, 6:]
-            pn_dis = fperframe[culled_idx, 3:6]
-            pd_dis = fperframe[culled_idx, 0:3]  # a[start:stop] items start through stop-1
-            other_tmp = fperframe[culled_idx, :]
-            feat_idx = np.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 18, 19, 20, 21, 22, 23])
-            other = np.take(other_tmp, feat_idx, axis=1)
-        y_data = torch.from_numpy(np.subtract(pn_dis, pd_dis).reshape((node_num, -1)))
-        x_data = torch.from_numpy(np.hstack((pd_dis, other)).reshape((node_num, -1)))
-        sample = Data(x=x_data, edge_index=edge_idx, y=y_data, cluster=cluster)
-        if transform:
-            sample = transform(sample)
-        sample_list.append(sample)
-
-    print("proc", proc_idx, "-- start idx:", workload_list[proc_idx][0], " end idx:", workload_list[proc_idx][1])
-    return sample_list
-
-
 class SIM_Data_Local(Dataset):
-    def __init__(self, train_info, filepath, global_nn, mode, i_features_num, o_features_num, device, edge_idx, culled_idx,
-                 culled_cluster, cluster_num,
-                 global_culled_boundary_points_id, local_culled_boundary_points_id, dim,
-                 include_global_vec=True, transform=None):
-        files_names = []
-        file_path = os.getcwd() + "/SimData/TrainingData"
-        for _, _, files in os.walk(file_path):
-            files_names.extend(files)
-        self._files = files_names
+    def __init__(self, data_info, global_nn, i_features_num, o_features_num, device, include_global_vec=True):
+
+        self._files_num = data_info['files_num']
+        global_culled_boundary_points_id = data_info['global_culled_boundary_points_id']
+        local_culled_boundary_points_id = data_info['local_culled_boundary_points_id']
+        culled_idx = data_info['culled_idx']
+        edge_idx = data_info['edge_idx']
+        culled_cluster = data_info['culled_cluster']
+        cluster_num = data_info['culled_cluster_num']
 
         self._input_features_num = i_features_num
         self._output_features_num = o_features_num
@@ -62,44 +32,10 @@ class SIM_Data_Local(Dataset):
         self._cluster_num = cluster_num
         self._local_culled_boundary_pts_id = torch.from_numpy(local_culled_boundary_points_id)
         self._include_global_vec = include_global_vec
-        # Read file data
-        # Divide workloads:
-        # cpu_cnt = os.cpu_count()
-        # print("cpu core account: ", cpu_cnt)
-        # files_cnt = len(self._files)
-        # min_files_per_proc_cnt = files_cnt // cpu_cnt
-        # max_files_per_proc_cnt = min_files_per_proc_cnt + 1
-        # workload_list = []
-        # procced_files_cnt = 0
-        # for i in range(cpu_cnt):
-        #     # [[proc1 first file idx, proc1 last file idx] ... []]
-        #     files_per_proc_cnt = max_files_per_proc_cnt
-        #     if min_files_per_proc_cnt * (cpu_cnt - i) == (files_cnt - procced_files_cnt):
-        #         files_per_proc_cnt = min_files_per_proc_cnt
-        #     cur_proc_workload = [procced_files_cnt, procced_files_cnt + files_per_proc_cnt - 1]
-        #     procced_files_cnt += files_per_proc_cnt
-        #     workload_list.append(cur_proc_workload)
-        #
-        # print("After determining the workload.")
-        # # Call multi-processing func to load samples:
-        # pool = mp.Pool()
-        # proc_list = []
-        # self._sample_list = []
-        # for i in range(cpu_cnt):
-        #     proc_list.append(pool.apply_async(func=mp_load_local_data,
-        #                                       args=(workload_list, mode, i, self._filepath, self._files,
-        #                                             local_culled_boundary_points_id, culled_idx, dim,)))
-        #
-        # print("After assigning the workload.")
-
-        # Get multi-processing res:
-        # for i in range(cpu_cnt):
-        #     sub_sample_list = proc_list[i].get()
-        #     self._sample_list.extend(sub_sample_list)
 
         # Load train info
         # Read case_info (We cannot use PyMesh on the cluster)
-        self._sample_list = train_info['local_sample_list']
+        self._sample_list = data_info['local_sample_list']
 
         # Calculate the global vec for each frame:
         # Put Data into NN:
@@ -133,13 +69,13 @@ class SIM_Data_Local(Dataset):
                     metric1 += np.sum(tmp)
                     # Save data to sample_list:
                     self._sample_list[i]["gvec"] = g_feat.cpu().detach()
-            metric1 /= (len(global_culled_boundary_points_id) * len(self._files) - small_cnt)
+            metric1 /= (len(global_culled_boundary_points_id) * self._files_num - small_cnt)
             print("Avg metric1:", metric1)
         else:
             print("Doesn't include Global feature.")
 
     def __len__(self):
-        return len(self._files) * self._local_culled_boundary_node_num
+        return self._files_num * self._local_culled_boundary_node_num
 
     def __getitem__(self, idx):
         if torch.is_tensor(idx):
@@ -182,7 +118,7 @@ class SIM_Data_Local(Dataset):
         return self._local_culled_boundary_pts_id
 
     def len(self):
-        return len(self._files)
+        return self._files_num
 
     def to_device(self, device):
         import time
@@ -195,92 +131,19 @@ class SIM_Data_Local(Dataset):
 
 
 class SIM_Data_Geo(InMemoryDataset):
-    def __init__(self, filepath, mesh_edge_idx,
-                 i_features_num, o_features_num,
-                 case_info, cluster, clusters_num, dim,
+    def __init__(self, data_info, i_features_num, o_features_num,
                  transform=None, pre_transform=None):
         super(SIM_Data_Geo, self).__init__(None, transform, pre_transform)
-        import time
 
-        # Section 5-1
-        t5_1_start = time.time()
-        self._files = []
-        for _, _, files in os.walk(filepath):
-            self._files.extend(files)
-        t5_1_end = time.time()
-        print("t5-1:", t5_1_end - t5_1_start)
-
-        # Section 5-2
-        t5_2_start = time.time()
-        self._files.sort()
-        t5_2_end = time.time()
-        print("t5-2:", t5_2_end - t5_2_start)
-        self._edge_idx = mesh_edge_idx
-        self._filepath = filepath
+        self._files_num = data_info['files_num']
+        self._edge_idx = data_info['edge_idx']
+        self._node_num = data_info['graph_node_num']
+        self._cluster = data_info['culled_cluster']
+        self._cluster_num = data_info['culled_cluster_num']
+        self._global_culled_bd_pt_idx = data_info['global_culled_boundary_points_id']
         self._input_features_num = i_features_num
-        # self._node_num = case_info['mesh_num_vert']
-        self._node_num = case_info['mesh_num_dyn_vert']
-
-        ori_b_pt_idx = np.sort(np.fromiter(case_info['boundary'][0], int))
-        hash_table = case_info['hash_table']
-        new_b_pt_list = []
-        for i in range(len(ori_b_pt_idx)):
-            if hash_table.get(ori_b_pt_idx[i]) is not None:
-                new_b_pt_list.append(hash_table[ori_b_pt_idx[i]])
-
-        self._b_pt_idx = torch.from_numpy(np.array(new_b_pt_list))
-
         self._output_features_num = o_features_num
-
-        self._cluster = cluster
-        self._cluster_num = clusters_num
-
-        # Section 5-3 multi-processing
-        pool = mp.Pool()
-        sample_list = []
-        # Divide workloads:
-        cpu_cnt = os.cpu_count()
-        print("cpu core account: ", cpu_cnt)
-
-        files_cnt = self.len()
-        min_files_per_proc_cnt = files_cnt // cpu_cnt
-        max_files_per_proc_cnt = min_files_per_proc_cnt + 1
-        workload_list = []
-        proc_list = []
-        procced_files_cnt = 0
-        for i in range(cpu_cnt):
-            # [[proc1 first file idx, proc1 last file idx] ... []]
-            files_per_proc_cnt = max_files_per_proc_cnt
-            if min_files_per_proc_cnt * (cpu_cnt - i) == (files_cnt - procced_files_cnt):
-                files_per_proc_cnt = min_files_per_proc_cnt
-            cur_proc_workload = [procced_files_cnt, procced_files_cnt + files_per_proc_cnt - 1]
-            procced_files_cnt += files_per_proc_cnt
-            workload_list.append(cur_proc_workload)
-
-        # files_cnt = self.len()
-        # files_per_proc_cnt = files_cnt // cpu_cnt
-        # workload_list = []
-        # proc_list = []
-        # for i in range(cpu_cnt):
-        #     # [[proc1 first file idx, proc1 last file idx] ... []]
-        #     cur_proc_workload = [i * files_per_proc_cnt, (i + 1) * files_per_proc_cnt - 1]
-        #     if i == cpu_cnt - 1:
-        #         # Last workload may needs to do more than others.
-        #         cur_proc_workload[1] = files_cnt - 1
-        #     workload_list.append(cur_proc_workload)
-        # Call multi-processing func:
-        for i in range(cpu_cnt):
-            proc_list.append(pool.apply_async(func=mp_load_global_data,
-                                              args=(workload_list, i, self._filepath, self._files, self.node_num,
-                                                    self._edge_idx, case_info['culled_idx'], self._cluster,
-                                                    self.transform, dim,)))
-        # Get multi-processing res:
-        for i in range(cpu_cnt):
-            # print("i: ", i, ", get shape: ", len(proc_list[i].get()))
-            sample_list.extend(proc_list[i].get())
-
-        pool.close()
-        pool.join()
+        sample_list = data_info['global_sample_list']
 
         print("Sample list length:", len(sample_list))
         self.data, self.slices = self.collate(sample_list)
@@ -292,10 +155,6 @@ class SIM_Data_Geo(InMemoryDataset):
     @property
     def cluster_num(self):
         return self._cluster_num
-
-    @property
-    def raw_file_names(self):
-        return self._files
 
     @property
     def input_features_num(self):
@@ -310,44 +169,19 @@ class SIM_Data_Geo(InMemoryDataset):
         return self._node_num
 
     @property
-    def boundary_pt_idx(self):
-        return self._b_pt_idx
+    def global_culled_boundary_pt_idx(self):
+        return self._global_culled_bd_pt_idx
 
     def len(self):
-        return len(self.raw_file_names)
+        return self._files_num
 
 
 # 0 -- train, 1 -- test
-def load_local_data(case_info, train_info, hash_table, edge_idx, culled_idx, culled_cluster,
-                    simulator_feature_num, global_feature_num, culled_cluster_num,
-                    global_nn, device, mode=0, path="/Outputs", include_global_vec=True):
-    file_dir = os.getcwd()
-    file_dir = file_dir + path
-    ori_boundary_pt_idx = case_info['boundary'][0]
-    ori_boundary_pt_idx = np.sort(np.fromiter(ori_boundary_pt_idx, int))
-    # NOTE: The culled boundary index in local is different from the culled boundary index in global.
-    # The boundary index for local should be index for pts in simulator data which excludes fixed pts, because it is
-    # used to read training data.
-    #
-    # The boundary index for global should be index for pts in culled fixed pts data, because it is used to calculate
-    # the metric1 for output of the global NN.
-    global_culled_boundary_pt_list = []
-    local_culled_boundary_pt_list = []
-    for i in range(len(ori_boundary_pt_idx)):
-        if hash_table.get(ori_boundary_pt_idx[i]) is not None:
-            global_culled_boundary_pt_list.append(hash_table[ori_boundary_pt_idx[i]])
-            local_culled_boundary_pt_list.append(ori_boundary_pt_idx[i])
-    global_culled_boundary_pt_idx = np.asarray(global_culled_boundary_pt_list)
-    local_culled_boundary_pt_idx = np.asarray(local_culled_boundary_pt_list)
-
+def load_local_data(train_info, simulator_feature_num, global_feature_num, global_nn, device, include_global_vec=True):
     total_feature_num = simulator_feature_num
     if include_global_vec:
         total_feature_num += global_feature_num
-
-    tmp_dataset = SIM_Data_Local(train_info, file_dir, global_nn, mode, total_feature_num, 3, device, edge_idx, culled_idx,
-                                 culled_cluster, culled_cluster_num,
-                                 global_culled_boundary_pt_idx,
-                                 local_culled_boundary_pt_idx, case_info['dim'], include_global_vec)
+    tmp_dataset = SIM_Data_Local(train_info, global_nn, total_feature_num, 3, device, include_global_vec)
     return tmp_dataset
 
 
@@ -370,148 +204,11 @@ def load_cluster(file_dir, test_case, cluster_num, vert_num):
     return belonging, cluster_num, cluster_parent, cluster_belongs, belonging_len
 
 
-def load_global_info(case_info, case_id, cluster_num):
-    full_idx = np.arange(case_info['mesh_num_vert'])
-    culled_idx = np.delete(full_idx, case_info['dirichlet'])
-    hash_table = {}
-    for i in range(len(culled_idx)):
-        hash_table[culled_idx[i]] = i
-    cluster, _, _, _, _ = load_cluster(os.getcwd(), case_id, cluster_num, case_info['mesh_num_vert'])
-    cluster = cluster[culled_idx]
-    unique_num = len(np.unique(cluster))
-    edges = set()
-    edge_index = np.zeros(shape=(2, 0), dtype=np.int32)
-    for [i, j, k, m] in case_info['elements']:
-        if i not in case_info['dirichlet'] and j not in case_info['dirichlet']:
-            edges.add((hash_table[i], hash_table[j]))
-            edges.add((hash_table[j], hash_table[i]))
-        if i not in case_info['dirichlet'] and k not in case_info['dirichlet']:
-            edges.add((hash_table[i], hash_table[k]))
-            edges.add((hash_table[k], hash_table[i]))
-        if i not in case_info['dirichlet'] and m not in case_info['dirichlet']:
-            edges.add((hash_table[i], hash_table[m]))
-            edges.add((hash_table[m], hash_table[i]))
-        if j not in case_info['dirichlet'] and k not in case_info['dirichlet']:
-            edges.add((hash_table[j], hash_table[k]))
-            edges.add((hash_table[k], hash_table[j]))
-        if j not in case_info['dirichlet'] and m not in case_info['dirichlet']:
-            edges.add((hash_table[j], hash_table[m]))
-            edges.add((hash_table[m], hash_table[j]))
-        if k not in case_info['dirichlet'] and m not in case_info['dirichlet']:
-            edges.add((hash_table[k], hash_table[m]))
-            edges.add((hash_table[m], hash_table[k]))
-    for (i, j) in edges:
-        edge_index = np.hstack((edge_index, [[i], [j]]))
-    edge_index = torch.LongTensor(edge_index)
-    return unique_num, len(culled_idx), edge_index, hash_table, cluster, culled_idx
-
-
-# Load data record:
-# case 1001 -- 9.8G (Without optimization):
-# t1: 0.003854036331176758  t2: 0.03281879425048828  t3: 0.00013327598571777344  t4: 0.0012357234954833984
-def load_global_data(test_case, cluster_num, path="/Outputs"):
-    file_dir = os.getcwd()
-    file_dir = file_dir + path
-    print(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case))
-    case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(test_case) + ".p", "rb"))
-    # case_info = read(test_case)
-    # mesh = case_info['mesh']
-
-    edges = set()
-    edge_index = np.zeros(shape=(2, 0), dtype=np.int32)
-    if case_info['dim'] == 2:
-        raise Exception("Doesn't support 2D now.")
-        # for [i, j, k] in mesh.faces:
-        #     edges.add((i, j))
-        #     edges.add((j, k))
-        #     edges.add((k, i))
-        # for [i, j, k] in mesh.faces:
-        #     if (j, i) not in edges:
-        #         edge_index = np.hstack((edge_index, [[j], [i]]))
-        #         edge_index = np.hstack((edge_index, [[i], [j]]))
-        #     if (k, j) not in edges:
-        #         edge_index = np.hstack((edge_index, [[j], [k]]))
-        #         edge_index = np.hstack((edge_index, [[k], [j]]))
-        #     if (i, k) not in edges:
-        #         edge_index = np.hstack((edge_index, [[k], [i]]))
-        #         edge_index = np.hstack((edge_index, [[i], [k]]))
-        # edge_index = torch.LongTensor(edge_index)
-        # cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num, mesh.num_vertices)
-        # # Note: boundary labels are not feed into the dataset.
-        # return SIM_Data_Geo(file_dir, edge_index, 14, 2, mesh, cluster, cluster_num, cluster_parent, belongs, 2)
-    else:
-        import time
-        t1_start = time.time()
-
-        # Construct full idx to fixed index cull hashtable:
-        hash_table = {}
-        full_idx = np.arange(case_info['mesh_num_vert'])
-        culled_idx = np.delete(full_idx, case_info['dirichlet'])
-        for i in range(len(culled_idx)):
-            hash_table[culled_idx[i]] = i
-        case_info['culled_idx'] = culled_idx
-        case_info['mesh_num_dyn_vert'] = len(culled_idx)
-        case_info['hash_table'] = hash_table
-
-        # Load Section 1
-        for [i, j, k, m] in case_info['elements']:
-            if i not in case_info['dirichlet'] and j not in case_info['dirichlet']:
-                edges.add((hash_table[i], hash_table[j]))
-                edges.add((hash_table[j], hash_table[i]))
-            if i not in case_info['dirichlet'] and k not in case_info['dirichlet']:
-                edges.add((hash_table[i], hash_table[k]))
-                edges.add((hash_table[k], hash_table[i]))
-            if i not in case_info['dirichlet'] and m not in case_info['dirichlet']:
-                edges.add((hash_table[i], hash_table[m]))
-                edges.add((hash_table[m], hash_table[i]))
-            if j not in case_info['dirichlet'] and k not in case_info['dirichlet']:
-                edges.add((hash_table[j], hash_table[k]))
-                edges.add((hash_table[k], hash_table[j]))
-            if j not in case_info['dirichlet'] and m not in case_info['dirichlet']:
-                edges.add((hash_table[j], hash_table[m]))
-                edges.add((hash_table[m], hash_table[j]))
-            if k not in case_info['dirichlet'] and m not in case_info['dirichlet']:
-                edges.add((hash_table[k], hash_table[m]))
-                edges.add((hash_table[m], hash_table[k]))
-
-        t1_end = time.time()
-
-        t2_start = time.time()
-        # Load Section 2
-        for (i, j) in edges:
-            edge_index = np.hstack((edge_index, [[i], [j]]))
-        t2_end = time.time()
-
-        print("t1:", t1_end - t1_start, " t2:", t2_end - t2_start)
-
-        # Load Section 3
-        t3_start = time.time()
-        edge_index = torch.LongTensor(edge_index)
-        t3_end = time.time()
-        print("t3:", t3_end - t3_start)
-
-        # Load Section 4
-        t4_start = time.time()
-        cluster, cluster_num, cluster_parent, belongs, belongs_len = load_cluster(os.getcwd(), test_case, cluster_num,
-                                                                                  case_info['mesh_num_vert'])
-        t4_end = time.time()
-        print("t4:", t4_end - t4_start)
-
-        # Load Section 5
-        t5_start = time.time()
-        cluster = cluster[culled_idx]
-        unique_num = len(np.unique(cluster))
-        if unique_num != cluster_num:
-            print("Warning: Culled Cluster Number is smaller than the original Cluster Number.")
-            print("The original cluster number is:", cluster_num)
-            print("The culled cluster number is:", unique_num)
-        tmp_data = SIM_Data_Geo(file_dir, edge_index, 18, 3,
-                                case_info,
-                                cluster, unique_num, 3)
-        t5_end = time.time()
-        print("t5:", t5_end - t5_start)
-
-        return tmp_data, case_info, cluster_parent, belongs
+def load_global_data(data_info):
+    cluster_parent = data_info['cluster_parent']
+    belongs = data_info['belongs']
+    tmp_data = SIM_Data_Geo(data_info, 18, 3)
+    return tmp_data, cluster_parent, belongs
 
 
 def normalize(mx):
