@@ -14,7 +14,7 @@ os.makedirs('TrainedNN/GlobalNN', exist_ok=True)
 
 case_id = 1011
 cluster_num = 128
-additional_note = 'full_data'
+additional_note = '7sets_data'
 
 for root, dirs, files in os.walk("../runs/"):
     for name in files:
