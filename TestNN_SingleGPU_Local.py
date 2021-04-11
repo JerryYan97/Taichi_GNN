@@ -20,6 +20,7 @@ from torch_geometric.data import DataLoader
 simulator_feature_num = 18
 case_id = 1011
 cluster_num = 128
+additional_note = '1set_data'
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 
@@ -29,17 +30,18 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Read case_info (We cannot use PyMesh on the cluster)
-case_info = pickle.load(open(os.getcwd() + "/MeshModels/MeshInfo/case_info" + str(case_id) + ".p", "rb"))
+test_info = pickle.load(open(os.getcwd() + "/SimData/TestingDataPickle/test_info" + str(case_id) + "_" +
+                             str(cluster_num) + "_" + additional_note + ".p", "rb"))
+
 
 # Loading global NN:
 # on_hash_table: old index (Not culled) -> New index (Culled);
 # no_hash_table: New index (Culled) -> Old index (Not culled);
 GLOBAL_NN_PATH = "TrainedNN/GlobalNN/GlobalNN_IrregularBeam_18.pt"
-culled_cluster_num, graph_node_num, edge_idx, hash_table, culled_cluster, culled_idx = load_global_info(case_info, case_id, cluster_num)
 global_model = GCN3D_Mar28_PoolingDeepGlobal(
     nfeat=simulator_feature_num,
-    graph_node_num=graph_node_num,
-    cluster_num=culled_cluster_num,
+    graph_node_num=test_info['graph_node_num'],
+    cluster_num=test_info['culled_cluster_num'],
     fc_out=3,
     dropout=0,
     device=device,
@@ -48,13 +50,12 @@ global_model = GCN3D_Mar28_PoolingDeepGlobal(
 global_model.load_state_dict(torch.load(GLOBAL_NN_PATH))
 
 # Loading local NN:
-LOCAL_NN_PATH = "TrainedNN/LocalNN/LocalNN_IrregularBeam7.pt"
+LOCAL_NN_PATH = "TrainedNN/LocalNN/LocalNN_IrregularBeam18.pt"
 
 # Model and optimizer
-simDataset = load_local_data(case_info, hash_table, edge_idx, culled_idx, culled_cluster,
-                             simulator_feature_num, global_model.global_feat_num, culled_cluster_num,
-                             global_model, device, 0, "/SimData/TestingData", True)
-dim = case_info['dim']
+simDataset = load_local_data(test_info, simulator_feature_num, global_model.global_feat_num,
+                             global_model, device, True)
+
 test_loader = DataLoader(dataset=simDataset, batch_size=simDataset.boundary_node_num, shuffle=False)
 
 local_model = VertNN_Mar12_LocalLinear_RBN_Deep(
@@ -103,7 +104,7 @@ def RunNN():
 
             print("File id:", file_id)
             # PD displacement, PD-GNN, PN displacement
-            dis = npinputs[:, 0:dim]
+            dis = npinputs[:, 0:3]
             outfinal = np.hstack((dis, npouts))
             outfinal = np.hstack((outfinal, data['y']))
             np.savetxt(outname, outfinal, delimiter=',')

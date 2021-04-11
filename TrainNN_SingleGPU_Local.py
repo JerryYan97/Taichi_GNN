@@ -35,7 +35,7 @@ epoch_num = 300
 simulator_feature_num = 18
 case_id = 1011
 cluster_num = 128
-additional_note = '7sets_data'
+additional_note = '8set_data'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')

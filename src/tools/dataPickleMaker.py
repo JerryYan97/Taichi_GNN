@@ -63,10 +63,15 @@ if __name__ == '__main__':
     # Read file names
     case_id = 1011
     cluster_num = 128
-    additional_note = '7sets_data'
+    additional_note = '8set_data'
+    training_data = True
     case_info = pickle.load(open("../../MeshModels/MeshInfo/case_info" + str(case_id) + ".p", "rb"))
     files_names = []
     file_path = "../../SimData/TrainingData"
+    if not training_data:
+        file_path = "../../SimData/TestingData"
+        os.makedirs("../../SimData/TestingDataPickle", exist_ok=True)
+
     for _, _, files in os.walk(file_path):
         files_names.extend(files)
     files_names.sort()
@@ -151,7 +156,7 @@ if __name__ == '__main__':
     for i in range(cpu_cnt):
         start_idx = workload_list[i][0]
         end_idx = workload_list[i][1]
-        loaded_files_names = files_names[start_idx:end_idx+1]
+        loaded_files_names = files_names[start_idx:end_idx + 1]
         proc_list.append(pool.apply_async(func=mp_load_data,
                                           args=(start_idx, end_idx, i, edge_index, file_path, loaded_files_names,
                                                 local_culled_boundary_pt_idx, culled_idx,)))
@@ -185,8 +190,11 @@ if __name__ == '__main__':
         "belongs": belongs
     }
 
-    pickle.dump(train_info, open("../../SimData/TrainingDataPickle/train_info" + str(case_id) + "_" +
+    pickle_name = "TrainingDataPickle/train_info"
+    if not training_data:
+        pickle_name = "TestingDataPickle/test_info"
+
+    pickle.dump(train_info, open("../../SimData/" + pickle_name + str(case_id) + "_" +
                                  str(cluster_num) + "_" + additional_note + ".p", "wb"))
 
     print("Data process time:", time.time() - load_data_t_start)
-
