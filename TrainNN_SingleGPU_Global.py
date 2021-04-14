@@ -24,8 +24,8 @@ for root, dirs, files in os.walk("../runs/"):
 writer = SummaryWriter('../runs/GCN_Global_' + str(case_id) + '_single')
 
 # Training settings
-epoch_num = 150
-batch_size = 8
+epoch_num = 300
+batch_size = 16
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
@@ -91,6 +91,17 @@ def Sim_train():
     record_times = 0
     t = time.time()
     model.train()
+    # Batch Global Culled Boundary Idx:
+    short_batch_len = simDataset.len() % batch_size
+    gcbp_idx_len = len(simDataset.global_culled_boundary_pt_idx)
+    bgcb_idx_long = np.zeros(gcbp_idx_len * batch_size, dtype=int)
+    bgcb_idx_short = np.zeros(gcbp_idx_len * short_batch_len, dtype=int)
+
+    for i in range(batch_size):
+        bgcb_idx_long[i * gcbp_idx_len:(i+1) * gcbp_idx_len] = simDataset.global_culled_boundary_pt_idx + i * gcbp_idx_len
+    for i in range(short_batch_len):
+        bgcb_idx_short[i * gcbp_idx_len:(i+1) * gcbp_idx_len] = simDataset.global_culled_boundary_pt_idx + i * gcbp_idx_len
+
     for epoch in range(args.epochs):
         epoch_loss = 0.0
         metric1 = 0.0
@@ -108,9 +119,15 @@ def Sim_train():
 
             top_vec = LA.norm(output_cpu - data.y, dim=1).numpy()
             bottom_vec = (LA.norm(data.y, dim=1)).cpu().detach().numpy()
-
-            top_vec_b = np.take(top_vec, simDataset.global_culled_boundary_pt_idx)
-            bottom_vec_b = np.take(bottom_vec, simDataset.global_culled_boundary_pt_idx)
+            cur_batch_size = len(data.batch) / simDataset.node_num
+            if cur_batch_size == batch_size:
+                top_vec_b = np.take(top_vec, bgcb_idx_long)
+                bottom_vec_b = np.take(bottom_vec, bgcb_idx_long)
+            elif cur_batch_size == short_batch_len:
+                top_vec_b = np.take(top_vec, bgcb_idx_short)
+                bottom_vec_b = np.take(bottom_vec, bgcb_idx_short)
+            else:
+                raise Exception("Top")
 
             big_idx = np.where(bottom_vec_b > 1e-10)
             top_cull_vec = np.take(top_vec_b, big_idx)
