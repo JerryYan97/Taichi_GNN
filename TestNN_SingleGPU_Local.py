@@ -20,7 +20,7 @@ from torch_geometric.data import DataLoader
 simulator_feature_num = 18
 case_id = 1011
 cluster_num = 128
-additional_note = '1set_data'
+additional_note = '1set_60_300_data'
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 

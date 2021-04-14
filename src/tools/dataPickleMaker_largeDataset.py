@@ -94,6 +94,7 @@ if __name__ == '__main__':
     files_names = []
     for _, _, files in os.walk(zip_tmp_file_path):
         files_names.extend(files)
+    files_names.sort()
 
     # Construct boundary idx
     full_idx = np.arange(case_info['mesh_num_vert'])
@@ -147,58 +148,14 @@ if __name__ == '__main__':
     graph_node_num = len(culled_idx)
     culled_cluster = cluster
 
-    # Read file data
-    # Divide workloads:
-    cpu_cnt = os.cpu_count()
-    print("cpu core account: ", cpu_cnt)
+    # Read files and write to Pickle
+    mode_str = "TrainingDataPickle/train_info"
+    pickle_name = "../../SimData/" + mode_str + str(case_id) + "_" + str(cluster_num) + "_" + additional_note + ".p"
+    pickle_handle = open(pickle_name, "wb")
 
-    files_cnt = len(files_names)
-    min_files_per_proc_cnt = files_cnt // cpu_cnt
-    max_files_per_proc_cnt = min_files_per_proc_cnt + 1
-    workload_list = []
-    procced_files_cnt = 0
-    for i in range(cpu_cnt):
-        # [[proc1 first file idx, proc1 last file idx] ... []]
-        files_per_proc_cnt = max_files_per_proc_cnt
-        if min_files_per_proc_cnt * (cpu_cnt - i) == (files_cnt - procced_files_cnt):
-            files_per_proc_cnt = min_files_per_proc_cnt
-        cur_proc_workload = [procced_files_cnt, procced_files_cnt + files_per_proc_cnt - 1]
-        procced_files_cnt += files_per_proc_cnt
-        workload_list.append(cur_proc_workload)
-    print("After determining the workload.")
-
-    # Call multi-processing func to load samples:
-    pool = mp.Pool()
-    proc_list = []
-    local_sample_list = []
-    global_sample_list = []
-    for i in range(cpu_cnt):
-        start_idx = workload_list[i][0]
-        end_idx = workload_list[i][1]
-        loaded_files_names = files_names[start_idx:end_idx + 1]
-        proc_list.append(pool.apply_async(func=mp_load_data,
-                                          args=(start_idx, end_idx, i, edge_index, zip_tmp_file_path,
-                                                loaded_files_names, local_culled_boundary_pt_idx, culled_idx,)))
-    print("After assigning the workload.")
-
-    # Get multi-processing res:
-    for i in range(cpu_cnt):
-        sub_sample_list = proc_list[i].get()
-        local_sample_list.extend(sub_sample_list['local_sample_list'])
-        global_sample_list.extend(sub_sample_list['global_sample_list'])
-        del sub_sample_list
-        gc.collect()
-
-    pool.close()
-    pool.join()
-
-    print("Local sample length:", len(local_sample_list))
-    print("Global sample length:", len(global_sample_list))
-
-    train_info = {
+    # Dump general training info:
+    general_train_info = {
         "case_name": case_info['case_name'],
-        "local_sample_list": local_sample_list,
-        "global_sample_list": global_sample_list,
         "local_culled_boundary_points_id": local_culled_boundary_pt_idx,
         "global_culled_boundary_points_id": global_culled_boundary_pt_idx,
         "culled_cluster_num": culled_cluster_num,
@@ -210,13 +167,143 @@ if __name__ == '__main__':
         "cluster_parent": cluster_parent,
         "belongs": belongs
     }
+    pickle.dump(general_train_info, pickle_handle)
 
-    pickle_name = "TrainingDataPickle/train_info"
-    if not training_data:
-        pickle_name = "TestingDataPickle/test_info"
+    # Read and dump training samples
+    # Divide workloads:
+    cpu_cnt = os.cpu_count()
+    print("cpu core account: ", cpu_cnt)
+    files_cnt = len(files_names)
+    rest_files_cnt = len(files_names)
+    workload_list = []
+    max_files_per_proc_cnt = 500
+    work_id = 0
 
-    pickle.dump(train_info, open("../../SimData/" + pickle_name + str(case_id) + "_" +
-                                 str(cluster_num) + "_" + additional_note + ".p", "wb"))
+    while rest_files_cnt != 0:
+        cur_work_len = max_files_per_proc_cnt
+        if rest_files_cnt < max_files_per_proc_cnt:
+            cur_work_len = rest_files_cnt
+        assigned_files_cnt = files_cnt - rest_files_cnt
+        workload_list.append([assigned_files_cnt, assigned_files_cnt + cur_work_len - 1])
+        rest_files_cnt -= cur_work_len
 
-    print("Data process time:", time.time() - load_data_t_start)
+    # Read and dump
+    pool = mp.Pool()
+    rest_files_cnt = len(files_names)
+    local_sample_cnt = 0
+    global_sample_cnt = 0
+    procced_workload = 0
+    while rest_files_cnt != 0:
+        proc_list = []
+        local_sample_list = []
+        global_sample_list = []
+        for i in range(cpu_cnt):
+            if rest_files_cnt != 0:
+                start_idx = workload_list[procced_workload][0]
+                end_idx = workload_list[procced_workload][1]
+                loaded_files_names = files_names[start_idx:end_idx + 1]
+                proc_list.append(pool.apply_async(func=mp_load_data,
+                                                  args=(start_idx, end_idx, i, edge_index, zip_tmp_file_path,
+                                                        loaded_files_names, local_culled_boundary_pt_idx, culled_idx,)))
+                rest_files_cnt -= (end_idx - start_idx + 1)
+                procced_workload += 1
+        for i in range(len(proc_list)):
+            sub_sample_list = proc_list[i].get()
+            local_sample_list.extend(sub_sample_list['local_sample_list'])
+            global_sample_list.extend(sub_sample_list['global_sample_list'])
+            del sub_sample_list
+
+        sub_sample_data_info = {
+            "local_sample_list": local_sample_list,
+            "global_sample_list": global_sample_list
+        }
+        local_sample_cnt += len(local_sample_list)
+        global_sample_cnt += len(global_sample_list)
+        pickle.dump(sub_sample_data_info, pickle_handle)
+
+        del proc_list
+        del local_sample_list
+        del global_sample_list
+        gc.collect()
+
+    pool.close()
+    pool.join()
+    print("Local sample length:", local_sample_cnt)
+    print("Global sample length:", global_sample_cnt)
+    pickle_handle.close()
     shutil.rmtree(zip_tmp_file_path)
+    print("Data process time:", time.time() - load_data_t_start)
+
+    # Read file data
+    # Divide workloads:
+    # cpu_cnt = os.cpu_count()
+    # print("cpu core account: ", cpu_cnt)
+    #
+    # files_cnt = len(files_names)
+    # min_files_per_proc_cnt = files_cnt // cpu_cnt
+    # max_files_per_proc_cnt = min_files_per_proc_cnt + 1
+    # workload_list = []
+    # procced_files_cnt = 0
+    # for i in range(cpu_cnt):
+    #     # [[proc1 first file idx, proc1 last file idx] ... []]
+    #     files_per_proc_cnt = max_files_per_proc_cnt
+    #     if min_files_per_proc_cnt * (cpu_cnt - i) == (files_cnt - procced_files_cnt):
+    #         files_per_proc_cnt = min_files_per_proc_cnt
+    #     cur_proc_workload = [procced_files_cnt, procced_files_cnt + files_per_proc_cnt - 1]
+    #     procced_files_cnt += files_per_proc_cnt
+    #     workload_list.append(cur_proc_workload)
+    # print("After determining the workload.")
+    #
+    # # Call multi-processing func to load samples:
+    # pool = mp.Pool()
+    # proc_list = []
+    # local_sample_list = []
+    # global_sample_list = []
+    # for i in range(cpu_cnt):
+    #     start_idx = workload_list[i][0]
+    #     end_idx = workload_list[i][1]
+    #     loaded_files_names = files_names[start_idx:end_idx + 1]
+    #     proc_list.append(pool.apply_async(func=mp_load_data,
+    #                                       args=(start_idx, end_idx, i, edge_index, zip_tmp_file_path,
+    #                                             loaded_files_names, local_culled_boundary_pt_idx, culled_idx,)))
+    # print("After assigning the workload.")
+    #
+    # # Get multi-processing res:
+    # for i in range(cpu_cnt):
+    #     sub_sample_list = proc_list[i].get()
+    #     local_sample_list.extend(sub_sample_list['local_sample_list'])
+    #     global_sample_list.extend(sub_sample_list['global_sample_list'])
+    #     del sub_sample_list
+    #     gc.collect()
+    #
+    # pool.close()
+    # pool.join()
+    #
+    # print("Local sample length:", len(local_sample_list))
+    # print("Global sample length:", len(global_sample_list))
+    #
+    # train_info = {
+    #     "case_name": case_info['case_name'],
+    #     "local_sample_list": local_sample_list,
+    #     "global_sample_list": global_sample_list,
+    #     "local_culled_boundary_points_id": local_culled_boundary_pt_idx,
+    #     "global_culled_boundary_points_id": global_culled_boundary_pt_idx,
+    #     "culled_cluster_num": culled_cluster_num,
+    #     "graph_node_num": graph_node_num,
+    #     "edge_idx": edge_index,
+    #     "culled_cluster": culled_cluster,
+    #     "culled_idx": culled_idx,
+    #     "files_num": len(files_names),
+    #     "cluster_parent": cluster_parent,
+    #     "belongs": belongs
+    # }
+    #
+    # pickle_name = "TrainingDataPickle/train_info"
+    # if not training_data:
+    #     pickle_name = "TestingDataPickle/test_info"
+    #
+    # pickle.dump(train_info, open("../../SimData/" + pickle_name + str(case_id) + "_" +
+    #                              str(cluster_num) + "_" + additional_note + ".p", "wb"))
+    #
+    # print("Data process time:", time.time() - load_data_t_start)
+    # shutil.rmtree(zip_tmp_file_path)

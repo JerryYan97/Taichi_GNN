@@ -24,7 +24,8 @@ test_case = 1011
 # pd->pn
 if __name__ == '__main__':
     is_test = 0
-    is_test = int(input("Data generation mode [0 -- training data /1 -- test data]:"))
+    if len(sys.argv) == 1:
+        is_test = int(input("Data generation mode [0 -- training data /1 -- test data]:"))
     os.makedirs('SimData/PDAnimSeq/', exist_ok=True)
     os.makedirs('SimData/PNAnimSeq/', exist_ok=True)
     os.makedirs('SimData/TmpRenderedImgs/', exist_ok=True)
@@ -95,9 +96,13 @@ if __name__ == '__main__':
             # acc_info['p_mag'] = 5.8
             # acc_info['p_radius'] = 0.2
             acc_info['acc_type'] = 'dir'
-            acc_info['exf_angle1'] = 57.5
-            acc_info['exf_angle2'] = 302.5
+            acc_info['exf_angle1'] = 75.0
+            acc_info['exf_angle2'] = 0.0
             acc_info['exf_mag'] = 980.0
+            if len(sys.argv) > 1:
+                print("sys.argv:", sys.argv)
+                acc_info['exf_angle1'] = float(sys.argv[1])
+                acc_info['exf_angle2'] = float(sys.argv[2])
 
         pd.set_acc(acc_info)
         pn.set_acc(acc_info)

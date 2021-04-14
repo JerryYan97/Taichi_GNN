@@ -80,6 +80,8 @@ def polarR(M):
 
 def get_local_trans_parallel_call(workloads_list, proc_idx, adj_list, pos, initial_rel_pos, mass, dim):
     a_final_list = []
+    R_list = []
+    S_list = []
     for vert_idx in range(workloads_list[proc_idx][0], workloads_list[proc_idx][1] + 1):
         adj_v = adj_list[vert_idx]
         init_rel_adj_pos = initial_rel_pos[adj_v, :]
@@ -91,8 +93,16 @@ def get_local_trans_parallel_call(workloads_list, proc_idx, adj_list, pos, initi
         # A_final = np.matmul(A_pq, A_qq).reshape((1, -1))
         # A_final = np.matmul(A_pq, A_qq.transpose()).reshape((1, -1)) # this is the right formula
         A_final = np.matmul(A_pq, A_qq)  # this is the right formula
+        R, S = RM2Euler(A_final)
         a_final_list.append(A_final)
-    return a_final_list
+        R_list.append(R)
+        S_list.append(S)
+    output_res = {
+        'a_final_list': a_final_list,
+        'R_list': R_list,
+        'S_list': S_list
+    }
+    return output_res
 
 
 def get_local_transformation(n_vertices, mesh, pos, init_pos, mass, dim):
@@ -102,6 +112,7 @@ def get_local_transformation(n_vertices, mesh, pos, init_pos, mass, dim):
     works_per_proc_cnt = n_vertices // cpu_cnt
     workloads_list = []
     proc_list = []
+    # print("workloads list:\n", workloads_list)
     for i in range(cpu_cnt):
         cur_proc_workload = [i * works_per_proc_cnt, (i + 1) * works_per_proc_cnt - 1]
         if i == cpu_cnt - 1:
@@ -119,11 +130,16 @@ def get_local_transformation(n_vertices, mesh, pos, init_pos, mass, dim):
 
     # Get results
     a_finals_list = []
+    R_list = []
+    S_list = []
     for t in range(cpu_cnt):
-        a_finals_list.extend(proc_list[t].get())
+        res_dict = proc_list[t].get()
+        a_finals_list.extend(res_dict['a_final_list'])
+        R_list.extend(res_dict['R_list'])
+        S_list.extend(res_dict['S_list'])
     pool.close()
     pool.join()
-    return a_finals_list
+    return a_finals_list, R_list, S_list
 
 
 class PDSimulation(SimulatorBase):
@@ -736,6 +752,20 @@ class PDSimulation(SimulatorBase):
             self.ti_vel_last[i] = self.ti_vel[i]
         return times
 
+    @ti.kernel
+    def RM2Euler_ti(self, A_finals: ti.ext_arr(), R_array: ti.ext_arr(), S_array: ti.ext_arr(), vert_num: ti.i32):
+        for i in range(vert_num):
+            vert_mat = ti.Matrix.rows([[A_finals[i, 0, 0], A_finals[i, 0, 1], A_finals[i, 0, 2]],
+                                       [A_finals[i, 1, 0], A_finals[i, 1, 1], A_finals[i, 1, 2]],
+                                       [A_finals[i, 2, 0], A_finals[i, 2, 1], A_finals[i, 2, 2]]])
+            vert_R, vert_S = ti.polar_decompose(vert_mat)
+            theta_x = ti.atan2(vert_R[2, 1], vert_R[2, 2]) * 180.0 / 3.141592653589793
+            theta_y = ti.atan2(-vert_R[2, 0], ti.sqrt(
+                vert_R[2, 1] * vert_R[2, 1] + vert_R[2, 2] * vert_R[2, 2])) * 180.0 / 3.141592653589793
+            theta_z = ti.atan2(vert_R[2, 0], vert_R[0, 0]) * 180.0 / 3.141592653589793
+            R_array[i, 0], R_array[i, 1], R_array[i, 2] = theta_x, theta_y, theta_z
+            S_array[i, 0], S_array[i, 1], S_array[i, 2] = vert_S[0, 0], vert_S[1, 1], vert_S[2, 2]
+
     def output_network_data(self, pd_dis, pn_dis, gradE, init_rel_pos, frame, T):
         vel = self.ti_vel.to_numpy()
         ex_acc = self.ti_ex_acc.to_numpy()
@@ -796,9 +826,17 @@ class PDSimulation(SimulatorBase):
         ele_count = 29
         out = np.ones([self.n_vertices, ele_count], dtype=float)
         
-        A_finals = get_local_transformation(self.n_vertices, self.mesh, self.ti_x.to_numpy(), init_rel_pos,
-                                            self.ti_mass.to_numpy(), self.dim)
-        boundary_label_np = self.ti_boundary_labels.to_numpy()
+        A_finals, R_list, S_list = get_local_transformation(self.n_vertices, self.mesh, self.ti_x.to_numpy(),
+                                                            init_rel_pos, self.ti_mass.to_numpy(), self.dim)
+        R_array = np.asarray(R_list)
+        S_array = np.asarray(S_list)
+        gradE_reshape = gradE[0:self.n_vertices*3]
+        gradE_reshape = gradE_reshape.reshape((-1, 3))
+        dt_array = np.full((self.n_vertices, 1), self.dt)
+        geo_expand = np.expand_dims(self.geodiesc, axis=1)
+        pot_expand = np.expand_dims(self.potential, axis=1)
+        dig_expand = np.expand_dims(self.digression, axis=1)
+        boundary_label_np = np.expand_dims(self.ti_boundary_labels.to_numpy(), axis=1)
         i = 0
         pos_init_out = self.mesh.vertices
         if self.dim == 2:
@@ -813,24 +851,26 @@ class PDSimulation(SimulatorBase):
                 # TODO: Add fixed point labels
                 i = i + 1
         else:
-            for res in A_finals:
-                out[i, 0:3] = pd_dis[i, :]  # pd pos
-                out[i, 3:6] = pn_dis[i, :]  # pn pos
-                R, S = RM2Euler(res)
-                out[i, 6:9] = R
-                out[i, 9:12] = S
-                out[i, 12:15] = gradE[i * 3: i * 3 + 3]
-                out[i, 15:18] = ex_acc[i, :]
-                out[i, 18:21] = vel[i, :]
-                out[i, 21:24] = pos_init_out[i, :]
-                out[i, 24] = boundary_label_np[i]
-                out[i, 25] = self.dt
-                out[i, 26] = self.geodiesc[i]
-                out[i, 27] = self.potential[i]
-                out[i, 28] = self.digression[i]
-                i = i + 1
+            output = np.concatenate((pd_dis, pn_dis, R_array, S_array, gradE_reshape, ex_acc, vel, pos_init_out,
+                                     boundary_label_np, dt_array, geo_expand, pot_expand, dig_expand), axis=1)
+            # for res in A_finals:
+            #     out[i, 0:3] = pd_dis[i, :]  # pd pos
+            #     out[i, 3:6] = pn_dis[i, :]  # pn pos
+            #     R, S = RM2Euler(res)
+            #     out[i, 6:9] = R
+            #     out[i, 9:12] = S
+            #     out[i, 12:15] = gradE[i * 3: i * 3 + 3]
+            #     out[i, 15:18] = ex_acc[i, :]
+            #     out[i, 18:21] = vel[i, :]
+            #     out[i, 21:24] = pos_init_out[i, :]
+            #     out[i, 24] = boundary_label_np[i]
+            #     out[i, 25] = self.dt
+            #     out[i, 26] = self.geodiesc[i]
+            #     out[i, 27] = self.potential[i]
+            #     out[i, 28] = self.digression[i]
+            #     i = i + 1
 
-        np.savetxt(out_name, out, delimiter=',')
+        np.savetxt(out_name, output, delimiter=',')
 
     def output_aux_data(self, f, pn_pos):
         if self.dim == 3:
@@ -1170,6 +1210,7 @@ class PDSimulation(SimulatorBase):
             self.output_aux_data(frame_counter, _pn_pos)
 
             # set stop check
+            # if frame_counter > 500:
             if frame_counter > 500:
                 break
             # if self.check_acceleration_status_times() > 800 and frame_counter > 500:

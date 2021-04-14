@@ -477,3 +477,22 @@ def K_means_multiprocess2(mesh, k):
     pool.join()
 
     return parent_list_last, belonging, belonging_len
+
+
+def load_pickle_data_info(file_name_path):
+    pickle_handle = open(file_name_path, "rb")
+    data_info = pickle.load(pickle_handle)
+    local_sample_list = []
+    global_sample_list = []
+    while True:
+        try:
+            # print(pickle.load(pickle_handle))
+            sub_sample_list = pickle.load(pickle_handle)
+            local_sample_list.extend(sub_sample_list["local_sample_list"])
+            global_sample_list.extend(sub_sample_list["global_sample_list"])
+        except:
+            print("Read pickle end.")
+            break
+    data_info["local_sample_list"] = local_sample_list
+    data_info["global_sample_list"] = global_sample_list
+    return data_info

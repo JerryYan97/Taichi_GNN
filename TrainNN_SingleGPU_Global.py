@@ -4,7 +4,8 @@ import argparse
 import torch.optim as optim
 import torch
 from src.Utils.utils_gcn import *
-from src.NeuralNetworks.GlobalNN.GCN3D_Mar28_PoolingDeepGlobal import *
+# from src.NeuralNetworks.GlobalNN.GCN3D_Mar28_PoolingDeepGlobal import *
+from src.NeuralNetworks.GlobalNN.GCN3D_Apr14_PoolingNoFc import *
 from torch_geometric.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -14,7 +15,7 @@ os.makedirs('TrainedNN/GlobalNN', exist_ok=True)
 
 case_id = 1011
 cluster_num = 128
-additional_note = '8set_data'
+additional_note = '36d_LUCorner_data'
 
 for root, dirs, files in os.walk("../runs/"):
     for name in files:
@@ -24,7 +25,7 @@ writer = SummaryWriter('../runs/GCN_Global_' + str(case_id) + '_single')
 
 # Training settings
 epoch_num = 300
-batch_size = 1
+batch_size = 8
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')
@@ -47,8 +48,10 @@ if args.cuda:
 
 
 load_data_t_start = time.time()
-train_info = pickle.load(open(os.getcwd() + "/SimData/TrainingDataPickle/train_info" + str(case_id) + "_" +
-                              str(cluster_num) + "_" + additional_note + ".p", "rb"))
+pickle_file_name_path = os.getcwd() + "/SimData/TrainingDataPickle/train_info" + str(case_id) + "_" + str(cluster_num) + "_" + additional_note + ".p"
+
+train_info = load_pickle_data_info(pickle_file_name_path)
+
 simDataset, cluster_parent, cluster_belong = load_global_data(train_info)
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
@@ -62,10 +65,12 @@ train_loader = DataLoader(dataset=simDataset, batch_size=batch_size,
                           shuffle=True,
                           num_workers=os.cpu_count(), pin_memory=pin_memory_option)
 
-model = GCN3D_Mar28_PoolingDeepGlobal(
+model = GCN3D_Apr14_PoolingNoFc(
     nfeat=simDataset.input_features_num,
     graph_node_num=simDataset.node_num,
-    cluster_num=simDataset.cluster_num,
+    culled_cluster_num=simDataset.cluster_num,
+    origin_cluster_num=cluster_num,
+    files_num=len(simDataset),
     fc_out=3,
     dropout=0,
     device=device,
@@ -130,11 +135,13 @@ def Sim_train():
         scheduler.step(epoch_loss)
 
         # record the model
-        if epoch > epoch_num-80:
+        if epoch > epoch_num-80 or metric1 < 0.04:
             if epoch % 4 == 0:
                 torch.save(model.state_dict(),
                            "TrainedNN/GlobalNN/GlobalNN_" + train_info['case_name'] + "_" + str(record_times) + ".pt")
                 record_times = record_times + 1
+            if metric1 < 0.04 and record_times > 5:
+                break
 
 
 if __name__ == '__main__':
