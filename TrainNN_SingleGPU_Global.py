@@ -24,7 +24,7 @@ for root, dirs, files in os.walk("../runs/"):
 writer = SummaryWriter('../runs/GCN_Global_' + str(case_id) + '_single')
 
 # Training settings
-epoch_num = 300
+epoch_num = 150
 batch_size = 8
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
@@ -80,7 +80,7 @@ model = GCN3D_Apr14_PoolingNoFc(
 model.to(device)
 mse = nn.MSELoss(reduction='sum').to(device)
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=6, verbose=True, eps=1e-20)
+scheduler = ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5, verbose=True, eps=1e-20)
 
 model.cuda()
 mse.cuda()

@@ -13,8 +13,8 @@ from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_ReduceBN import *
 from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar31_Local_RBN_Mid import *
-
-from src.NeuralNetworks.GlobalNN.GCN3D_Mar28_PoolingDeepGlobal import *
+from src.NeuralNetworks.GlobalNN.GCN3D_Apr14_PoolingNoFc import *
+# from src.NeuralNetworks.GlobalNN.GCN3D_Mar28_PoolingDeepGlobal import *
 
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -35,7 +35,7 @@ epoch_num = 300
 simulator_feature_num = 18
 case_id = 1011
 cluster_num = 128
-additional_note = '8set_data'
+additional_note = '36d_LUCorner_data'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
@@ -58,15 +58,19 @@ if args.cuda:
     torch.cuda.manual_seed(args.seed)
 
 # Read case_info (We cannot use PyMesh on the cluster)
-train_info = pickle.load(open(os.getcwd() + "/SimData/TrainingDataPickle/train_info" + str(case_id) + "_" +
-                              str(cluster_num) + "_" + additional_note + ".p", "rb"))
+# train_info = pickle.load(open(os.getcwd() + "/SimData/TrainingDataPickle/train_info" + str(case_id) + "_" +
+#                               str(cluster_num) + "_" + additional_note + ".p", "rb"))
+pickle_file_name_path = os.getcwd() + "/SimData/TrainingDataPickle/train_info" + str(case_id) + "_" + str(cluster_num) + "_" + additional_note + ".p"
+train_info = load_pickle_data_info(pickle_file_name_path)
 
 # Load and set global NN:
-GLOBAL_NN_PATH = "TrainedNN/GlobalNN/GlobalNN_IrregularBeam_18.pt"
-global_model = GCN3D_Mar28_PoolingDeepGlobal(
+GLOBAL_NN_PATH = "TrainedNN/GlobalNN/GlobalNN_IrregularBeam_5.pt"
+global_model = GCN3D_Apr14_PoolingNoFc(
     nfeat=simulator_feature_num,
     graph_node_num=train_info['graph_node_num'],
-    cluster_num=train_info['culled_cluster_num'],
+    culled_cluster_num=train_info['culled_cluster_num'],
+    origin_cluster_num=cluster_num,
+    files_num=train_info['files_num'],
     fc_out=3,
     dropout=0,
     device=device,
@@ -82,7 +86,7 @@ load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
 
 train_loader = DataLoader(dataset=simDataset,
-                          batch_size=256,
+                          batch_size=1024,
                           shuffle=True,
                           num_workers=os.cpu_count(),
                           pin_memory=True)

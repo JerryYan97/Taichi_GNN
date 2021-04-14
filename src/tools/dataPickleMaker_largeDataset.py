@@ -66,7 +66,7 @@ if __name__ == '__main__':
     # Read file names
     case_id = 1011
     cluster_num = 128
-    additional_note = '36d_LUCorner_data'
+    additional_note = '1d_NNTest_data'
     training_data = True
     case_info = pickle.load(open("../../MeshModels/MeshInfo/case_info" + str(case_id) + ".p", "rb"))
     # files_names = []
