@@ -25,7 +25,7 @@ writer = SummaryWriter('../runs/GCN_Global_' + str(case_id) + '_single')
 
 # Training settings
 epoch_num = 300
-batch_size = 16
+batch_size = 32
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 parser.add_argument('--seed', type=int, default=1345, help='Random seed.')

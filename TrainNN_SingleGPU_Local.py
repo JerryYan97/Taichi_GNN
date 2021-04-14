@@ -64,7 +64,7 @@ pickle_file_name_path = os.getcwd() + "/SimData/TrainingDataPickle/train_info" +
 train_info = load_pickle_data_info(pickle_file_name_path)
 
 # Load and set global NN:
-GLOBAL_NN_PATH = "TrainedNN/GlobalNN/GlobalNN_IrregularBeam_5.pt"
+GLOBAL_NN_PATH = "TrainedNN/GlobalNN/GlobalNN_IrregularBeam_18.pt"
 global_model = GCN3D_Apr14_PoolingNoFc(
     nfeat=simulator_feature_num,
     graph_node_num=train_info['graph_node_num'],
@@ -86,7 +86,7 @@ load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
 
 train_loader = DataLoader(dataset=simDataset,
-                          batch_size=1024,
+                          batch_size=2048,
                           shuffle=True,
                           num_workers=os.cpu_count(),
                           pin_memory=True)
@@ -162,11 +162,13 @@ def Sim_train():
         scheduler.step(epoch_loss)
 
         # record the model
-        if epoch > epoch_num-80:
+        if epoch > epoch_num-80 or metric1 < 0.04:
             if epoch % 4 == 0:
                 torch.save(local_model.state_dict(),
                            "TrainedNN/LocalNN/LocalNN_" + train_info['case_name'] + str(record_times) + ".pt")
                 record_times = record_times + 1
+            if metric1 < 0.04 and record_times > 5:
+                break
 
 
 if __name__ == '__main__':
