@@ -35,7 +35,8 @@ epoch_num = 300
 simulator_feature_num = 18
 case_id = 1011
 cluster_num = 128
-additional_note = '36d_LUCorner_data'
+include_global_nn = True
+additional_note = '43d_LUCorner_data'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
@@ -64,29 +65,34 @@ pickle_file_name_path = os.getcwd() + "/SimData/TrainingDataPickle/train_info" +
 train_info = load_pickle_data_info(pickle_file_name_path)
 
 # Load and set global NN:
-GLOBAL_NN_PATH = "TrainedNN/GlobalNN/GlobalNN_IrregularBeam_18.pt"
-global_model = GCN3D_Apr14_PoolingNoFc(
-    nfeat=simulator_feature_num,
-    graph_node_num=train_info['graph_node_num'],
-    culled_cluster_num=train_info['culled_cluster_num'],
-    origin_cluster_num=cluster_num,
-    files_num=train_info['files_num'],
-    fc_out=3,
-    dropout=0,
-    device=device,
-    batch_num=1  # Global Batch size should always be 1.
-).to(device)
-global_model.load_state_dict(torch.load(GLOBAL_NN_PATH))
+if include_global_nn:
+    GLOBAL_NN_PATH = "TrainedNN/GlobalNN/GlobalNN_IrregularBeam_18.pt"
+    global_model = GCN3D_Apr14_PoolingNoFc(
+        nfeat=simulator_feature_num,
+        graph_node_num=train_info['graph_node_num'],
+        culled_cluster_num=train_info['culled_cluster_num'],
+        origin_cluster_num=cluster_num,
+        files_num=train_info['files_num'],
+        fc_out=3,
+        dropout=0,
+        device=device,
+        batch_num=1  # Global Batch size should always be 1.
+    ).to(device)
+    global_model.load_state_dict(torch.load(GLOBAL_NN_PATH))
+    global_feat_num = global_model.global_feat_num
+else:
+    global_model = None
+    global_feat_num = 0
 
 load_data_t_start = time.time()
-simDataset = load_local_data(train_info, simulator_feature_num, global_model.global_feat_num,
-                             global_model, device, True)
+simDataset = load_local_data(train_info, simulator_feature_num, global_feat_num,
+                             global_model, device, include_global_nn)
 
 load_data_t_end = time.time()
 print("data load time:", load_data_t_end - load_data_t_start)
 
 train_loader = DataLoader(dataset=simDataset,
-                          batch_size=2048,
+                          batch_size=1024,
                           shuffle=True,
                           num_workers=os.cpu_count(),
                           pin_memory=True)

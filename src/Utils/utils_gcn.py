@@ -39,12 +39,12 @@ class SIM_Data_Local(Dataset):
 
         # Calculate the global vec for each frame:
         # Put Data into NN:
-        global_nn.eval()
-        culled_node_num = len(culled_idx)
-        batch = torch.zeros(culled_node_num)
-        metric1 = 0.0
-        small_cnt = 0
         if include_global_vec:
+            global_nn.eval()
+            culled_node_num = len(culled_idx)
+            batch = torch.zeros(culled_node_num)
+            metric1 = 0.0
+            small_cnt = 0
             print("Calculating the Global feature...")
             for i in range(len(self._sample_list)):
                 with torch.no_grad():
