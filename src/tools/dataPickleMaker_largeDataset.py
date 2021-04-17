@@ -65,9 +65,9 @@ if __name__ == '__main__':
     load_data_t_start = time.time()
     # Read file names
     case_id = 1011
-    cluster_num = 64
-    additional_note = '43d_LUCorner_data'
-    training_data = True
+    cluster_num = 3
+    additional_note = '1d_NNTest_Diff1_LFC_data'
+    training_data = False
     case_info = pickle.load(open("../../MeshModels/MeshInfo/case_info" + str(case_id) + ".p", "rb"))
     # files_names = []
     # file_path = "../../SimData/TrainingData"
@@ -150,6 +150,8 @@ if __name__ == '__main__':
 
     # Read files and write to Pickle
     mode_str = "TrainingDataPickle/train_info"
+    if not training_data:
+        mode_str = "TestingDataPickle/test_info"
     pickle_name = "../../SimData/" + mode_str + str(case_id) + "_" + str(cluster_num) + "_" + additional_note + ".p"
     pickle_handle = open(pickle_name, "wb")
 
@@ -298,9 +300,7 @@ if __name__ == '__main__':
     #     "belongs": belongs
     # }
     #
-    # pickle_name = "TrainingDataPickle/train_info"
-    # if not training_data:
-    #     pickle_name = "TestingDataPickle/test_info"
+
     #
     # pickle.dump(train_info, open("../../SimData/" + pickle_name + str(case_id) + "_" +
     #                              str(cluster_num) + "_" + additional_note + ".p", "wb"))

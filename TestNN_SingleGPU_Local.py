@@ -8,10 +8,10 @@ from src.Utils.utils_gcn import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local_MoreShallow import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar31_Local_RBN_Mid import *
-from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
+from src.NeuralNetworks.GlobalNN.GCN3D_Apr14_PoolingNoFc import *
 import pickle
 
-from src.NeuralNetworks.GlobalNN.GCN3D_Mar28_PoolingDeepGlobal import *
+from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
 
 import math
 from torch_geometric.data import DataLoader
@@ -20,7 +20,8 @@ from torch_geometric.data import DataLoader
 simulator_feature_num = 18
 case_id = 1011
 cluster_num = 128
-additional_note = '1set_60_300_data'
+include_global_nn = True
+additional_note = '1d_NNTest_Diff4_LFC_data'
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 
@@ -30,31 +31,40 @@ args.cuda = not args.no_cuda and torch.cuda.is_available()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Read case_info (We cannot use PyMesh on the cluster)
-test_info = pickle.load(open(os.getcwd() + "/SimData/TestingDataPickle/test_info" + str(case_id) + "_" +
-                             str(cluster_num) + "_" + additional_note + ".p", "rb"))
+# test_info = pickle.load(open(os.getcwd() + "/SimData/TestingDataPickle/test_info" + str(case_id) + "_" +
+#                              str(cluster_num) + "_" + additional_note + ".p", "rb"))
+pickle_file_name_path = os.getcwd() + "/SimData/TestingDataPickle/test_info" + str(case_id) + "_" + str(cluster_num) + "_" + additional_note + ".p"
+test_info = load_pickle_data_info(pickle_file_name_path)
 
 
 # Loading global NN:
 # on_hash_table: old index (Not culled) -> New index (Culled);
 # no_hash_table: New index (Culled) -> Old index (Not culled);
-GLOBAL_NN_PATH = "TrainedNN/GlobalNN/GlobalNN_IrregularBeam_18.pt"
-global_model = GCN3D_Mar28_PoolingDeepGlobal(
-    nfeat=simulator_feature_num,
-    graph_node_num=test_info['graph_node_num'],
-    cluster_num=test_info['culled_cluster_num'],
-    fc_out=3,
-    dropout=0,
-    device=device,
-    batch_num=1  # Global Batch size should always be 1.
-).to(device)
-global_model.load_state_dict(torch.load(GLOBAL_NN_PATH))
+if include_global_nn:
+    GLOBAL_NN_PATH = "TrainedNN/GlobalNN/GlobalNN_IrregularBeam_18.pt"
+    global_model = GCN3D_Apr14_PoolingNoFc(
+        nfeat=simulator_feature_num,
+        graph_node_num=test_info['graph_node_num'],
+        culled_cluster_num=test_info['culled_cluster_num'],
+        origin_cluster_num=cluster_num,
+        files_num=test_info['files_num'],
+        fc_out=3,
+        dropout=0,
+        device=device,
+        batch_num=1  # Global Batch size should always be 1.
+    ).to(device)
+    global_model.load_state_dict(torch.load(GLOBAL_NN_PATH))
+    global_feat_num = global_model.global_feat_num
+else:
+    global_model = None
+    global_feat_num = 0
 
 # Loading local NN:
-LOCAL_NN_PATH = "TrainedNN/LocalNN/LocalNN_IrregularBeam18.pt"
+LOCAL_NN_PATH = "TrainedNN/LocalNN/LocalNN_IrregularBeam5.pt"
 
 # Model and optimizer
-simDataset = load_local_data(test_info, simulator_feature_num, global_model.global_feat_num,
-                             global_model, device, True)
+simDataset = load_local_data(test_info, simulator_feature_num, global_feat_num,
+                             global_model, device, include_global_nn)
 
 test_loader = DataLoader(dataset=simDataset, batch_size=simDataset.boundary_node_num, shuffle=False)
 
