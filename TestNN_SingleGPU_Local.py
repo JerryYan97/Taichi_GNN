@@ -19,9 +19,9 @@ from torch_geometric.data import DataLoader
 # Training settings
 simulator_feature_num = 18
 case_id = 1011
-cluster_num = 128
+cluster_num = 8
 include_global_nn = True
-additional_note = '1d_NNTest_Diff4_LFC_data'
+additional_note = '1d_NNTest_Diff1_LFC_data'
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
 

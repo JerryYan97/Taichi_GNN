@@ -5,14 +5,11 @@ import numpy as np
 import torch
 import torch.optim as optim
 from src.Utils.utils_gcn import *
-# from src.NeuralNetworks.LocalNN.VertNN_Feb28_LocalLinear import *
-# from src.NeuralNetworks.LocalNN.VertNN_Mar3_Local import *
-# from src.NeuralNetworks.LocalNN.VertNN_Mar21_Local_MoreShallow import *
-# from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_Simple import *
-# from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local import *
-# from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_ReduceBN import *
-from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
+
+# from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar31_Local_RBN_Mid import *
+# from src.NeuralNetworks.LocalNN.VertNN_Apr17_Local_RBN_Shallow import *
+from src.NeuralNetworks.LocalNN.VertNN_Apr17_Local_RBN_ShallowPlus import *
 from src.NeuralNetworks.GlobalNN.GCN3D_Apr14_PoolingNoFc import *
 # from src.NeuralNetworks.GlobalNN.GCN3D_Mar28_PoolingDeepGlobal import *
 
@@ -37,6 +34,7 @@ case_id = 1011
 cluster_num = 128
 include_global_nn = True
 additional_note = '43d_LUCorner_data'
+# additional_note = '1d_NNTest_Diff1_LFC_data'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
@@ -97,14 +95,8 @@ train_loader = DataLoader(dataset=simDataset,
                           num_workers=os.cpu_count(),
                           pin_memory=True)
 
-# model = VertNN_Feb28_LocalLinear(
-#     nfeat=simDataset.input_features_num,
-#     fc_out=simDataset.output_features_num,
-#     dropout=0,
-#     device=device
-# ).to(device)
 
-local_model = VertNN_Mar12_LocalLinear_RBN_Deep(
+local_model = VertNN_Apr17_LocalLinear_RBN_ShallowPlus(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,
