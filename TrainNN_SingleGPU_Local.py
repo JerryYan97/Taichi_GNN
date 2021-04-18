@@ -6,10 +6,10 @@ import torch
 import torch.optim as optim
 from src.Utils.utils_gcn import *
 
-# from src.NeuralNetworks.LocalNN.VertNN_Mar12_Local_RBN_Deep import *
+from src.NeuralNetworks.LocalNN.VertNN_Apr18_Local_RBN_Shallow_1MP import *
 # from src.NeuralNetworks.LocalNN.VertNN_Mar31_Local_RBN_Mid import *
 # from src.NeuralNetworks.LocalNN.VertNN_Apr17_Local_RBN_Shallow import *
-from src.NeuralNetworks.LocalNN.VertNN_Apr17_Local_RBN_ShallowPlus import *
+# from src.NeuralNetworks.LocalNN.VertNN_Apr17_Local_RBN_ShallowPlus import *
 from src.NeuralNetworks.GlobalNN.GCN3D_Apr14_PoolingNoFc import *
 # from src.NeuralNetworks.GlobalNN.GCN3D_Mar28_PoolingDeepGlobal import *
 
@@ -33,8 +33,8 @@ simulator_feature_num = 18
 case_id = 1011
 cluster_num = 128
 include_global_nn = True
-additional_note = '43d_LUCorner_data'
-# additional_note = '1d_NNTest_Diff1_LFC_data'
+# additional_note = '43d_LUCorner_data'
+additional_note = '1d_NNTest_Diff1_LFC_data'
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
@@ -96,7 +96,7 @@ train_loader = DataLoader(dataset=simDataset,
                           pin_memory=True)
 
 
-local_model = VertNN_Apr17_LocalLinear_RBN_ShallowPlus(
+local_model = VertNN_Apr18_LocalLinear_RBN_Shallow_1MP(
     nfeat=simDataset.input_features_num,
     fc_out=simDataset.output_features_num,
     dropout=0,
