@@ -3,9 +3,9 @@ import torch.nn as nn
 
 
 # Local vertex NN
-class VertNN_Mar18_LocalLinear_RBN_Deep_5MP(nn.Module):
+class VertNN_Apr18_LocalLinear_RBN_Deep_5MP(nn.Module):
     def __init__(self, nfeat, fc_out, dropout, device):
-        super(VertNN_Mar18_LocalLinear_RBN_Deep_5MP, self).__init__()
+        super(VertNN_Apr18_LocalLinear_RBN_Deep_5MP, self).__init__()
         self.fc1 = nn.Linear(nfeat, 720)  # Hidden layers' width is influenced by your cluster num.
         self.fc2 = nn.Linear(720, 1024)
         self.fc3 = nn.Linear(1024, 2048)
